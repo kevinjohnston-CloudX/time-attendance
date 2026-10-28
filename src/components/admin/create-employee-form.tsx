@@ -8,7 +8,7 @@ import type { CopyFromEmployee } from "@/lib/employee-copy";
 import type { Site, Department, RuleSet } from "@prisma/client";
 import { Banner, Button, Input, SegmentedControl, Select } from "@/components/ui";
 import { Overlay } from "@/components/ui/overlay";
-import { BriefcaseBusiness, Check, CircleCheck, Plus, UserPlus, UserRound, Wallet, X } from "lucide-react";
+import { Check, CircleCheck, Plus, UserPlus, X } from "lucide-react";
 import styles from "./new-employee-window.module.css";
 
 /**
@@ -19,13 +19,13 @@ import styles from "./new-employee-window.module.css";
  * set, and a half-filled employee page with no id to save against would need a
  * draft state the server has no concept of.
  *
- * <p>The window follows the Export window on Live Attendance: a grey frame, a
- * rail and a form card. The rail shows the person as the record will, and the
- * three parts of the record with what each still needs, so a required field on
- * a part nobody opened is never a mystery.
+ * <p>The window follows the Export window on Live Attendance: a grey frame and
+ * one white card. Three steps in order; Continue checks the step's required
+ * fields before moving on, so a required field is never left behind on a step
+ * nobody opened. The header turns into the person once a name is typed.
  *
- * <p>The parts are visual only — every field stays mounted, so one submit sends
- * the whole record. Hiding a part must not drop the fields on it; a new hire
+ * <p>The steps are visual only — every field stays mounted, so one submit sends
+ * the whole record. Hiding a step must not drop the fields on it; a new hire
  * created without a pay category is a timecard that will not export.
  */
 
@@ -41,39 +41,15 @@ const BUILTIN_ROLES = [
 
 type BuiltinRole = (typeof BUILTIN_ROLES)[number]["value"];
 
-type Part = "job" | "pay" | "personal";
+type Step = "job" | "pay" | "personal";
 
-const PARTS: { value: Part; title: string; short: string; line: string; icon: ReactNode; heading: string; intro: string }[] = [
-  {
-    value: "job",
-    title: "Job and badge",
-    short: "Job",
-    line: "Name, badge, sign in, team",
-    icon: <BriefcaseBusiness aria-hidden="true" />,
-    heading: "Job and badge",
-    intro: "Who they are, how they sign in, and where they work.",
-  },
-  {
-    value: "pay",
-    title: "Pay and schedule",
-    short: "Pay",
-    line: "Rule set, shift, pay rate",
-    icon: <Wallet aria-hidden="true" />,
-    heading: "Pay and schedule",
-    intro: "How their hours are counted and paid.",
-  },
-  {
-    value: "personal",
-    title: "Personal details",
-    short: "Personal",
-    line: "Phone and address",
-    icon: <UserRound aria-hidden="true" />,
-    heading: "Personal details",
-    intro: "Optional. These can also be added later from their profile.",
-  },
+const STEPS: { value: Step; title: string; optional?: boolean }[] = [
+  { value: "job", title: "Job and badge" },
+  { value: "pay", title: "Pay and schedule" },
+  { value: "personal", title: "Personal details", optional: true },
 ];
 
-/** The fields the server refuses to save without, and the part each sits on. */
+/** The fields the server refuses to save without, and the step each sits on. */
 type Snapshot = {
   name: string;
   hireDate: string;
@@ -82,16 +58,15 @@ type Snapshot = {
   email: string;
   departmentId: string;
   ruleSetId: string;
-  jobTitleId: string;
 };
 
-const NEEDED: { part: Part; label: string; missing: (s: Snapshot) => boolean }[] = [
-  { part: "job", label: "full name", missing: (s) => !s.name.trim() },
-  { part: "job", label: "hire date", missing: (s) => !s.hireDate },
-  { part: "job", label: "badge ID", missing: (s) => !s.wmsId.trim() },
-  { part: "job", label: "a work or personal email", missing: (s) => !s.workEmail.trim() && !s.email.trim() },
-  { part: "job", label: "department", missing: (s) => !s.departmentId },
-  { part: "pay", label: "rule set", missing: (s) => !s.ruleSetId },
+const NEEDED: { step: Step; label: string; missing: (s: Snapshot) => boolean }[] = [
+  { step: "job", label: "full name", missing: (s) => !s.name.trim() },
+  { step: "job", label: "hire date", missing: (s) => !s.hireDate },
+  { step: "job", label: "badge ID", missing: (s) => !s.wmsId.trim() },
+  { step: "job", label: "a work or personal email", missing: (s) => !s.workEmail.trim() && !s.email.trim() },
+  { step: "job", label: "department", missing: (s) => !s.departmentId },
+  { step: "pay", label: "rule set", missing: (s) => !s.ruleSetId },
 ];
 
 interface Props {
@@ -139,12 +114,11 @@ function SelectField({
   required,
   children,
   id,
-  className,
   ...rest
 }: SelectHTMLAttributes<HTMLSelectElement> & { label: string; children: ReactNode }) {
   const fieldId = id ?? `c-${label.replace(/\s+/g, "-").toLowerCase()}`;
   return (
-    <div className={`${styles.field} ${className ?? ""}`}>
+    <div className={styles.field}>
       <label htmlFor={fieldId} className={styles.fieldLabel}>
         {label}
         {required && (
@@ -160,14 +134,28 @@ function SelectField({
   );
 }
 
-/** A group of fields inside the form card, under a quiet label. */
-function Block({ label, note, children }: { label: string; note?: string; children: ReactNode }) {
+/** A group of fields in the card: a name, an optional line, then its rows. */
+function Block({ label, note, noteTone, children }: { label: string; note?: string; noteTone?: "error"; children: ReactNode }) {
   return (
     <section className={styles.block}>
-      <h4 className={styles.blockLabel}>{label}</h4>
-      <div className={styles.grid}>{children}</div>
-      {note && <p className={styles.blockNote}>{note}</p>}
+      <div className={styles.blockHead}>
+        <h3 className={styles.blockLabel}>{label}</h3>
+        {note && (
+          <p className={styles.blockNote} data-tone={noteTone} role={noteTone ? "alert" : undefined}>
+            {note}
+          </p>
+        )}
+      </div>
+      <div className={styles.rows}>{children}</div>
     </section>
+  );
+}
+
+function Row({ cols = 2, children }: { cols?: 1 | 2 | 3 | 4; children: ReactNode }) {
+  return (
+    <div className={styles.row} data-cols={cols}>
+      {children}
+    </div>
   );
 }
 
@@ -177,7 +165,10 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
   const [error, setError] = useState<string | null>(null);
   const [copy, setCopy] = useState<CopyFromEmployee | null>(copyFrom ?? null);
   const [open, setOpen] = useState(!!copyFrom);
-  const [part, setPart] = useState<Part>("job");
+  const [step, setStep] = useState<Step>("job");
+  // Steps the person has moved past; only those can show as done.
+  const [visited, setVisited] = useState<Set<Step>>(() => new Set());
+  const [emailError, setEmailError] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const windowRef = useRef<HTMLDivElement>(null);
 
@@ -210,8 +201,8 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
   const filteredDepts = departments.filter((d) => d.sites.some((ds) => ds.site.id === selectedSiteId));
   const activeAgencies = agencies.filter((a) => !a.inactiveOn || new Date(a.inactiveOn) > new Date());
 
-  // What the rail and the footer read. The fields stay uncontrolled; this is
-  // read back from the form whenever one of them changes.
+  // What the header, the steps and the footer read. The fields stay
+  // uncontrolled; this is read back from the form whenever one changes.
   const blankSnapshot = (c: CopyFromEmployee | null, siteId: string): Snapshot => ({
     name: "",
     hireDate: "",
@@ -222,7 +213,6 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
     departmentId:
       c?.departmentId ?? departments.find((d) => d.sites.some((ds) => ds.site.id === siteId))?.id ?? "",
     ruleSetId: c?.ruleSetId ?? ruleSets[0]?.id ?? "",
-    jobTitleId: c?.jobTitleId ?? "",
   });
   const [snap, setSnap] = useState<Snapshot>(() => blankSnapshot(copyFrom ?? null, copyFrom?.siteId ?? defaultSiteId));
 
@@ -231,7 +221,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
     if (!f) return;
     const fd = new FormData(f);
     const v = (k: string) => (fd.get(k) as string | null) ?? "";
-    setSnap({
+    const next = {
       name: v("name"),
       hireDate: v("hireDate"),
       wmsId: v("wmsId"),
@@ -239,15 +229,18 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
       email: v("email"),
       departmentId: v("departmentId"),
       ruleSetId: v("ruleSetId"),
-      jobTitleId: v("jobTitleId"),
-    });
+    };
+    setSnap(next);
+    if (next.workEmail.trim() || next.email.trim()) setEmailError(false);
   }
 
   function handleClose() {
     setOpen(false);
     // A list that failed to load is asked for again on the next open.
     setSupervisorsFailed(false);
-    setPart("job");
+    setStep("job");
+    setVisited(new Set());
+    setEmailError(false);
     setError(null);
     if (copy) {
       // The next Add Employee starts blank, and a refresh does not reopen the copy.
@@ -285,8 +278,55 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
     };
   }, [open]);
 
+  const stepIndex = STEPS.findIndex((s) => s.value === step);
+  const nextStep = STEPS[stepIndex + 1];
+  const prevStep = STEPS[stepIndex - 1];
+  const onLast = !nextStep;
+
+  function goTo(target: Step) {
+    setVisited((v) => new Set(v).add(step));
+    setStep(target);
+    requestAnimationFrame(() => {
+      windowRef.current?.querySelector(`.${styles.card}`)?.scrollTo({ top: 0 });
+    });
+  }
+
+  /** The step's own required fields, checked where the person can see them. */
+  function stepIsReady(s: Step): boolean {
+    const panel = formRef.current?.querySelector<HTMLElement>(`[data-step="${s}"]`);
+    const fields = panel ? Array.from(panel.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input, select")) : [];
+    const bad = fields.find((f) => !f.checkValidity());
+    if (bad) {
+      bad.reportValidity();
+      return false;
+    }
+    if (s === "job" && !snap.workEmail.trim() && !snap.email.trim()) {
+      setEmailError(true);
+      formRef.current?.querySelector<HTMLInputElement>('input[name="workEmail"]')?.focus();
+      return false;
+    }
+    return true;
+  }
+
+  function handleContinue() {
+    if (nextStep && stepIsReady(step)) goTo(nextStep.value);
+  }
+
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    // Enter in a field on an early step moves on rather than creating.
+    if (!onLast) {
+      handleContinue();
+      return;
+    }
+    // Saved from the last step with an earlier step incomplete (reached by
+    // clicking ahead): go back to it and say what is missing there.
+    const firstGap = NEEDED.find((n) => n.missing(snap));
+    if (firstGap && firstGap.step !== step) {
+      setStep(firstGap.step);
+      requestAnimationFrame(() => stepIsReady(firstGap.step));
+      return;
+    }
     setError(null);
     const fd = new FormData(e.currentTarget);
 
@@ -347,27 +387,31 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
   }
 
   /**
-   * A part's panel.
+   * A step's panel.
    *
-   * <p>The inactive parts are switched off in an inline style, not with a
+   * <p>The inactive steps are switched off in an inline style, not with a
    * `hidden` class. They stay in the DOM either way: `display: none` fields
    * are still submitted, and dropping them would create employees with no pay
    * category.
    */
   const invalidShown = useRef(false);
-  const panelStyle = (p: Part): React.CSSProperties => ({ display: part === p ? "block" : "none" });
+  const panelStyle = (s: Step): React.CSSProperties => ({ display: step === s ? "block" : "none" });
 
   const missing = NEEDED.filter((n) => n.missing(snap));
-  const missingOn = (p: Part) => missing.filter((n) => n.part === p).length;
-  const partIndex = PARTS.findIndex((p) => p.value === part);
-  const nextPart = PARTS[partIndex + 1];
-  const current = PARTS[partIndex];
+  const stepDone = (s: Step) =>
+    !STEPS.find((x) => x.value === s)?.optional && visited.has(s) && !missing.some((n) => n.step === s);
 
-  const siteName = sites.find((s) => s.id === selectedSiteId)?.name ?? "";
-  const deptName = departments.find((d) => d.id === snap.departmentId)?.name ?? "";
-  const jobName = jobTitles.find((j) => j.id === snap.jobTitleId)?.name ?? "";
-  const initials = initialsOf(snap.name);
-  const startDate = snap.hireDate ? format(parseISO(snap.hireDate), "MMM d, yyyy") : "";
+  const name = snap.name.trim();
+  const initials = initialsOf(name);
+  const facts = [
+    snap.wmsId.trim() && `Badge ${snap.wmsId.trim()}`,
+    snap.hireDate && `Starts ${format(parseISO(snap.hireDate), "MMM d, yyyy")}`,
+  ].filter(Boolean) as string[];
+  const subtitle = copy
+    ? `Setup copied from ${copy.sourceName}. Name, emails, badge, hire date, personal details and pay rate start blank.`
+    : facts.length
+      ? `${facts.join(". ")}.`
+      : "Three short steps. Personal details are optional.";
 
   return (
     <>
@@ -393,39 +437,56 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
             className={`${styles.window} ta-sheet`}
           >
             <header className={styles.head}>
-              <span className={styles.glyph} aria-hidden="true">
-                <UserPlus />
+              <span className={styles.glyph} data-person={!!initials} aria-hidden="true">
+                {initials || <UserPlus />}
               </span>
               <span className={styles.titles}>
                 <h2 id="new-employee-title" className={styles.title}>
-                  New employee
+                  {name || "New employee"}
                 </h2>
-                <span className={`${styles.subtitle} truncate`}>
-                  {copy
-                    ? `Setup copied from ${copy.sourceName}. Name, emails, badge, hire date, personal details and pay rate start blank.`
-                    : "Start with the job and badge. Pay and personal details can follow."}
-                </span>
+                <span className={styles.subtitle} title={subtitle}>{subtitle}</span>
               </span>
               <Button hierarchy="tertiary" size="sm" iconOnly onClick={handleClose} aria-label="Close">
                 <X className="h-4 w-4" />
               </Button>
             </header>
 
-            {/* One form: the parts only hide fields, they never unmount them. */}
+            <ol className={styles.steps} aria-label="Steps">
+              {STEPS.map((s, i) => (
+                <li key={s.value}>
+                  <button
+                    type="button"
+                    className={styles.step}
+                    aria-current={step === s.value ? "step" : undefined}
+                    data-done={stepDone(s.value)}
+                    onClick={() => goTo(s.value)}
+                  >
+                    <span className={styles.stepBar} aria-hidden="true" />
+                    <span className={styles.stepText}>
+                      <span className={styles.stepNum}>{i + 1}</span>
+                      <Check className={styles.stepDone} strokeWidth={3} aria-label="Done" />
+                      <span className={styles.stepTitle}>{s.title}</span>
+                      {s.optional && <span className={styles.stepOptional}>Optional</span>}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ol>
+
+            {/* One form: the steps only hide fields, they never unmount them. */}
             <form
               ref={formRef}
               className={styles.form}
               onSubmit={handleSubmit}
               onChange={readForm}
-              // Saved with a required field empty on a part that is not open,
-              // the browser refuses without showing why. Open that part, then
-              // let the browser point at the field.
+              // A required field the browser refuses on a step that is not
+              // open: open that step, then let the browser point at it.
               onInvalidCapture={(e) => {
                 const field = e.target as HTMLInputElement;
                 if (invalidShown.current) return;
                 invalidShown.current = true;
-                const p = field.closest<HTMLElement>("[data-part]")?.dataset.part as Part | undefined;
-                if (p) setPart(p);
+                const s = field.closest<HTMLElement>("[data-step]")?.dataset.step as Step | undefined;
+                if (s) setStep(s);
                 requestAnimationFrame(() => {
                   invalidShown.current = false;
                   field.reportValidity();
@@ -433,311 +494,274 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
               }}
             >
               <div className={styles.body}>
-                {/* ── The rail ─────────────────────────────────────────── */}
-                <aside className={styles.rail} aria-label="New employee summary">
-                  <div className={styles.person}>
-                    <div className={styles.personTop}>
-                      <span className={styles.avatar} data-empty={!initials} aria-hidden="true">
-                        {initials || <UserRound />}
-                      </span>
-                      <span className={styles.personText}>
-                        <span className={styles.personName} data-empty={!snap.name.trim()}>
-                          {snap.name.trim() || "New employee"}
-                        </span>
-                        <span className={styles.personJob}>{jobName || "No job title yet"}</span>
-                      </span>
-                    </div>
-                    <dl className={styles.facts}>
-                      <div className={`${styles.fact} ${styles.badgeFact}`}>
-                        <dt>Badge ID</dt>
-                        <dd data-empty={!snap.wmsId.trim()}>{snap.wmsId.trim() || "Not set"}</dd>
-                      </div>
-                      <div className={styles.fact}>
-                        <dt>Department</dt>
-                        <dd data-empty={!deptName} title={deptName}>{deptName || "Not set"}</dd>
-                      </div>
-                      <div className={styles.fact}>
-                        <dt>Site</dt>
-                        <dd data-empty={!siteName} title={siteName}>{siteName || "Not set"}</dd>
-                      </div>
-                      <div className={styles.fact}>
-                        <dt>Starts</dt>
-                        <dd data-empty={!startDate}>{startDate || "Not set"}</dd>
-                      </div>
-                    </dl>
-                  </div>
-
-                  <nav className={styles.parts} aria-label="Parts of the record">
-                    {PARTS.map((p) => {
-                      const left = missingOn(p.value);
-                      const optional = !NEEDED.some((n) => n.part === p.value);
-                      return (
-                        <button
-                          key={p.value}
-                          type="button"
-                          className={styles.part}
-                          aria-current={part === p.value ? "true" : undefined}
-                          onClick={() => setPart(p.value)}
-                        >
-                          <span className={styles.partIcon}>{p.icon}</span>
-                          <span className={styles.partText}>
-                            <span className={styles.partTitle}>
-                              <span className={styles.long}>{p.title}</span>
-                              <span className={styles.short}>{p.short}</span>
-                            </span>
-                            <span className={styles.partLine}>{p.line}</span>
-                          </span>
-                          {optional ? (
-                            <span className={styles.status} data-tone="optional">Optional</span>
-                          ) : left > 0 ? (
-                            <span className={styles.status} data-tone="needs" aria-label={`${left} still needed`}>
-                              {left}
-                            </span>
-                          ) : (
-                            <span className={styles.status} data-tone="done" aria-label="Complete">
-                              <Check strokeWidth={3} aria-hidden="true" />
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </nav>
-                </aside>
-
-                {/* ── The form card ────────────────────────────────────── */}
                 <div className={`ta-scroll ${styles.card}`}>
-                  <div className={styles.cardHead}>
-                    <h3 className={styles.cardTitle}>{current.heading}</h3>
-                    <p className={styles.cardLine}>{current.intro}</p>
-                  </div>
-
                   {error && (
                     <div className={styles.banner}>
                       <Banner tone="error" body={error} />
                     </div>
                   )}
 
-                  {/* ── Job and badge ── */}
-                  <div data-part="job" style={panelStyle("job")}>
+                  {/* ── 1. Job and badge ── */}
+                  <div data-step="job" style={panelStyle("job")}>
                     <Block label="Person">
-                      <div className={styles.wide}>
+                      <Row cols={1}>
                         <Input label="Full Name" name="name" required autoComplete="off" />
-                      </div>
-                      <Input label="Hire Date" name="hireDate" type="date" required />
-                      <Input label="Badge ID (WMS)" name="wmsId" placeholder="The number on their QR badge" required autoComplete="off" />
+                      </Row>
+                      <Row>
+                        <Input label="Hire Date" name="hireDate" type="date" required />
+                        <Input label="Badge ID (WMS)" name="wmsId" placeholder="The number on their QR badge" required autoComplete="off" />
+                      </Row>
                     </Block>
 
                     {/* Either email signs the person in (password or Google); at
-                        least one is needed, which the save says if both are blank. */}
-                    <Block label="Sign in" note="At least one email is needed. Invites go to the work email first.">
-                      <Input label="Work Email" name="workEmail" type="email" autoComplete="off" />
-                      <Input label="Personal Email" name="email" type="email" autoComplete="off" />
-                      <SelectField label="Role" name="role" defaultValue={copy?.role} className={styles.wide}>
-                        {BUILTIN_ROLES.map((r) => (
-                          <option key={r.value} value={r.value}>{r.label}</option>
-                        ))}
-                        {customRoles.map((r) => (
-                          <option key={r.id} value={`custom:${r.id}`}>{r.name}</option>
-                        ))}
-                      </SelectField>
+                        least one is needed, which Continue and the save both say. */}
+                    <Block
+                      label="Sign in"
+                      note={emailError ? "Add a work or personal email so they can sign in." : "At least one email is needed. Invites go to the work email first."}
+                      noteTone={emailError ? "error" : undefined}
+                    >
+                      <Row>
+                        <Input label="Work Email" name="workEmail" type="email" autoComplete="off" />
+                        <Input label="Personal Email" name="email" type="email" autoComplete="off" />
+                      </Row>
                     </Block>
 
                     <Block label="Placement">
-                      <SelectField
-                        label="Site"
-                        name="siteId"
-                        value={selectedSiteId}
-                        onChange={(e) => {
-                          setSelectedSiteId(e.target.value);
-                          // The department list changes with the site; read it
-                          // back once the new options are in.
-                          requestAnimationFrame(readForm);
-                        }}
-                      >
-                        {sites.map((s) => (
-                          <option key={s.id} value={s.id}>{s.name}</option>
-                        ))}
-                      </SelectField>
-
-                      <SelectField label="Department" name="departmentId" required defaultValue={copy?.departmentId}>
-                        {filteredDepts.map((d) => (
-                          <option key={d.id} value={d.id}>{d.name}</option>
-                        ))}
-                      </SelectField>
-
-                      {supervisors ? (
-                        <SelectField label="Supervisor" name="supervisorId" defaultValue={copy?.supervisorId ?? ""}>
-                          <option value="">None</option>
-                          {supervisors.map((emp) => (
-                            <option key={emp.id} value={emp.id}>{emp.user.name}</option>
+                      <Row>
+                        <SelectField
+                          label="Site"
+                          name="siteId"
+                          value={selectedSiteId}
+                          onChange={(e) => {
+                            setSelectedSiteId(e.target.value);
+                            // The department list changes with the site; read it
+                            // back once the new options are in.
+                            requestAnimationFrame(readForm);
+                          }}
+                        >
+                          {sites.map((s) => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
                           ))}
                         </SelectField>
-                      ) : (
-                        // Until the list arrives: the field holds its place, and
-                        // the copied supervisor (or None) is what a save sends, so
-                        // an early save never drops it. The real list mounts with
-                        // the same default once it lands.
-                        <>
-                          <input type="hidden" name="supervisorId" value={copy?.supervisorId ?? ""} />
-                          <SelectField label="Supervisor" disabled value="">
-                            <option value="">{supervisorsFailed ? "The list did not load. Close and open again." : "Loading supervisors…"}</option>
+                        <SelectField label="Department" name="departmentId" required defaultValue={copy?.departmentId}>
+                          {filteredDepts.map((d) => (
+                            <option key={d.id} value={d.id}>{d.name}</option>
+                          ))}
+                        </SelectField>
+                      </Row>
+                      <Row>
+                        <SelectField label="Job Title" name="jobTitleId" defaultValue={copy?.jobTitleId ?? ""}>
+                          <option value="">None</option>
+                          {jobTitles.map((jt) => (
+                            <option key={jt.id} value={jt.id}>
+                              {jt.name}{jt.externalId ? ` (${jt.externalId})` : ""}
+                            </option>
+                          ))}
+                        </SelectField>
+                        {supervisors ? (
+                          <SelectField label="Supervisor" name="supervisorId" defaultValue={copy?.supervisorId ?? ""}>
+                            <option value="">None</option>
+                            {supervisors.map((emp) => (
+                              <option key={emp.id} value={emp.id}>{emp.user.name}</option>
+                            ))}
                           </SelectField>
-                        </>
-                      )}
-
-                      <SelectField label="Job Title" name="jobTitleId" defaultValue={copy?.jobTitleId ?? ""}>
-                        <option value="">None</option>
-                        {jobTitles.map((jt) => (
-                          <option key={jt.id} value={jt.id}>
-                            {jt.name}{jt.externalId ? ` (${jt.externalId})` : ""}
-                          </option>
-                        ))}
-                      </SelectField>
-                      {/* Agencies past their inactive date stay on file for the
-                          people already in them, but are not offered for new hires. */}
-                      <SelectField label="Agency" name="agencyId" defaultValue={copy?.agencyId ?? ""} className={styles.wide}>
-                        <option value="">None</option>
-                        {activeAgencies.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.code} ({a.description})
-                          </option>
-                        ))}
-                      </SelectField>
+                        ) : (
+                          // Until the list arrives: the field holds its place, and
+                          // the copied supervisor (or None) is what a save sends, so
+                          // an early save never drops it. The real list mounts with
+                          // the same default once it lands.
+                          <>
+                            <input type="hidden" name="supervisorId" value={copy?.supervisorId ?? ""} />
+                            <SelectField label="Supervisor" disabled value="">
+                              <option value="">{supervisorsFailed ? "The list did not load. Close and open again." : "Loading supervisors…"}</option>
+                            </SelectField>
+                          </>
+                        )}
+                      </Row>
+                      <Row>
+                        <SelectField label="Role" name="role" defaultValue={copy?.role}>
+                          {BUILTIN_ROLES.map((r) => (
+                            <option key={r.value} value={r.value}>{r.label}</option>
+                          ))}
+                          {customRoles.map((r) => (
+                            <option key={r.id} value={`custom:${r.id}`}>{r.name}</option>
+                          ))}
+                        </SelectField>
+                        {/* Agencies past their inactive date stay on file for the
+                            people already in them, but are not offered for new hires. */}
+                        <SelectField label="Agency" name="agencyId" defaultValue={copy?.agencyId ?? ""}>
+                          <option value="">None</option>
+                          {activeAgencies.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.code} ({a.description})
+                            </option>
+                          ))}
+                        </SelectField>
+                      </Row>
                     </Block>
                   </div>
 
-                  {/* ── Pay and schedule ── */}
-                  <div data-part="pay" style={panelStyle("pay")}>
-                    <Block label="Time rules">
-                      <SelectField label="Rule Set" name="ruleSetId" required defaultValue={copy?.ruleSetId}>
-                        {ruleSets.map((rs) => (
-                          <option key={rs.id} value={rs.id}>{rs.name}</option>
-                        ))}
-                      </SelectField>
-                      <SelectField label="Holiday Rule" name="holidayRuleId" defaultValue={copy?.holidayRuleId ?? ""}>
-                        <option value="">None</option>
-                        {holidayRules.map((r) => (
-                          <option key={r.id} value={r.id}>{r.name}</option>
-                        ))}
-                      </SelectField>
-                      <SelectField label="Shift" name="shiftId" defaultValue={copy?.shiftId ?? ""} className={styles.wide}>
-                        <option value="">None</option>
-                        {shifts.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name} ({fmtTime(s.startTime)} – {fmtTime(s.endTime)})
-                          </option>
-                        ))}
-                      </SelectField>
+                  {/* ── 2. Pay and schedule ── */}
+                  <div data-step="pay" style={panelStyle("pay")}>
+                    <Block label="Time rules" note="How their hours are counted.">
+                      <Row>
+                        <SelectField label="Rule Set" name="ruleSetId" required defaultValue={copy?.ruleSetId}>
+                          {ruleSets.map((rs) => (
+                            <option key={rs.id} value={rs.id}>{rs.name}</option>
+                          ))}
+                        </SelectField>
+                        <SelectField label="Holiday Rule" name="holidayRuleId" defaultValue={copy?.holidayRuleId ?? ""}>
+                          <option value="">None</option>
+                          {holidayRules.map((r) => (
+                            <option key={r.id} value={r.id}>{r.name}</option>
+                          ))}
+                        </SelectField>
+                      </Row>
+                      <Row cols={1}>
+                        <SelectField label="Shift" name="shiftId" defaultValue={copy?.shiftId ?? ""}>
+                          <option value="">None</option>
+                          {shifts.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name} ({fmtTime(s.startTime)} – {fmtTime(s.endTime)})
+                            </option>
+                          ))}
+                        </SelectField>
+                      </Row>
                     </Block>
 
-                    <Block label="Pay">
-                      <div className={`${styles.field} ${styles.wide}`}>
-                        <span className={styles.fieldLabel} id="c-pay-method">Pay Method</span>
-                        <input type="hidden" name="payType" value={payType} />
-                        <SegmentedControl
-                          ariaLabel="Pay method"
-                          items={[
-                            { value: "HOURLY", label: "Hourly" },
-                            { value: "SALARY", label: "Salary" },
-                            { value: "", label: "Not set" },
-                          ]}
-                          value={payType}
-                          onChange={setPayType}
+                    <Block label="Pay rate">
+                      <Row>
+                        <div className={styles.field}>
+                          <span className={styles.fieldLabel}>Pay Method</span>
+                          <input type="hidden" name="payType" value={payType} />
+                          <SegmentedControl
+                            ariaLabel="Pay method"
+                            fullWidth
+                            items={[
+                              { value: "HOURLY", label: "Hourly" },
+                              { value: "SALARY", label: "Salary" },
+                              { value: "", label: "Not set" },
+                            ]}
+                            value={payType}
+                            onChange={setPayType}
+                          />
+                        </div>
+                        <Input
+                          label={payType === "HOURLY" ? "Pay Rate (per hour)" : payType === "SALARY" ? "Pay Rate (per year)" : "Pay Rate"}
+                          name="payRate"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="0.00"
+                          leadingIcon={<span className={styles.unit}>$</span>}
                         />
-                      </div>
-                      <Input
-                        label={payType === "HOURLY" ? "Pay Rate (per hour)" : payType === "SALARY" ? "Pay Rate (per year)" : "Pay Rate"}
-                        name="payRate"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="0.00"
-                        leadingIcon={<span className={styles.unit}>$</span>}
-                      />
-                      <SelectField label="Pay Category" name="payCategoryId" defaultValue={copy?.payCategoryId ?? ""}>
-                        <option value="">None</option>
-                        {payCategories.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.number}{c.description ? ` (${c.description})` : ""}
-                          </option>
-                        ))}
-                      </SelectField>
-                      <SelectField label="Pay Type" name="payTypeId" defaultValue={copy?.payTypeId ?? ""}>
-                        <option value="">None</option>
-                        {payTypes.map((pt) => (
-                          <option key={pt.id} value={pt.id}>
-                            {pt.number}{pt.description ? ` (${pt.description})` : ""}
-                          </option>
-                        ))}
-                      </SelectField>
-                      <Input label="ADP Worker ID" name="adpWorkerId" placeholder="From ADP Workforce Now" autoComplete="off" />
+                      </Row>
+                    </Block>
+
+                    <Block label="Payroll" note="Used when their hours are sent to payroll.">
+                      <Row cols={3}>
+                        <SelectField label="Pay Category" name="payCategoryId" defaultValue={copy?.payCategoryId ?? ""}>
+                          <option value="">None</option>
+                          {payCategories.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.number}{c.description ? ` (${c.description})` : ""}
+                            </option>
+                          ))}
+                        </SelectField>
+                        <SelectField label="Pay Type" name="payTypeId" defaultValue={copy?.payTypeId ?? ""}>
+                          <option value="">None</option>
+                          {payTypes.map((pt) => (
+                            <option key={pt.id} value={pt.id}>
+                              {pt.number}{pt.description ? ` (${pt.description})` : ""}
+                            </option>
+                          ))}
+                        </SelectField>
+                        <Input label="ADP Worker ID" name="adpWorkerId" autoComplete="off" />
+                      </Row>
                     </Block>
                   </div>
 
-                  {/* ── Personal details ── */}
-                  <div data-part="personal" style={panelStyle("personal")}>
-                    <Block label="Contact">
-                      <Input label="Phone 1" name="phone" type="tel" />
-                      <Input label="Phone 2" name="phone2" type="tel" />
+                  {/* ── 3. Personal details ── */}
+                  <div data-step="personal" style={panelStyle("personal")}>
+                    <Block label="Contact" note="Optional. These can also be added later from their profile.">
+                      <Row>
+                        <Input label="Phone 1" name="phone" type="tel" />
+                        <Input label="Phone 2" name="phone2" type="tel" />
+                      </Row>
                     </Block>
 
                     <Block label="Emergency contact">
-                      <Input label="Contact Name" name="emergencyContact" />
-                      <Input label="Contact Phone" name="emergencyPhone" type="tel" />
-                      <Input label="Relationship" name="emergencyRelationship" placeholder="For example, spouse" />
+                      <Row cols={3}>
+                        <Input label="Contact Name" name="emergencyContact" />
+                        <Input label="Contact Phone" name="emergencyPhone" type="tel" />
+                        <Input label="Relationship" name="emergencyRelationship" placeholder="For example, spouse" />
+                      </Row>
                     </Block>
 
                     <Block label="Address">
-                      <div className={styles.wide}>
+                      <Row>
                         <Input label="Address Line 1" name="address1" />
-                      </div>
-                      <div className={styles.wide}>
                         <Input label="Address Line 2" name="address2" />
-                      </div>
-                      <Input label="City" name="city" />
-                      <Input label="State / Province" name="state" />
-                      <Input label="Zip Code" name="zipCode" />
-                      <Input label="Country" name="country" />
+                      </Row>
+                      <Row cols={4}>
+                        <Input label="City" name="city" />
+                        <Input label="State / Province" name="state" />
+                        <Input label="Zip Code" name="zipCode" />
+                        <Input label="Country" name="country" />
+                      </Row>
                     </Block>
 
                     <Block label="About">
-                      <Input label="Gender" name="gender" />
-                      <SelectField label="Marital Status" name="maritalStatus">
-                        <option value="">Not specified</option>
-                        <option value="Single">Single</option>
-                        <option value="Married">Married</option>
-                        <option value="Divorced">Divorced</option>
-                        <option value="Widowed">Widowed</option>
-                        <option value="Other">Other</option>
-                      </SelectField>
+                      <Row>
+                        <Input label="Gender" name="gender" />
+                        <SelectField label="Marital Status" name="maritalStatus">
+                          <option value="">Not specified</option>
+                          <option value="Single">Single</option>
+                          <option value="Married">Married</option>
+                          <option value="Divorced">Divorced</option>
+                          <option value="Widowed">Widowed</option>
+                          <option value="Other">Other</option>
+                        </SelectField>
+                      </Row>
                     </Block>
                   </div>
                 </div>
               </div>
 
               <footer className={styles.foot}>
-                <span className={styles.footHint} data-ready={missing.length === 0} aria-live="polite">
-                  {missing.length === 0 ? (
-                    <>
-                      <CircleCheck aria-hidden="true" />
-                      Ready to create.
-                    </>
-                  ) : (
-                    `Still needed: ${listOf(missing.map((m) => m.label))}.`
-                  )}
+                <span className={styles.footHint} data-ready={onLast && missing.length === 0} aria-live="polite">
+                  {onLast ? (
+                    missing.length === 0 ? (
+                      <>
+                        <CircleCheck aria-hidden="true" />
+                        Ready to create.
+                      </>
+                    ) : (
+                      `Still needed: ${listOf(missing.map((m) => m.label))}.`
+                    )
+                  ) : missing.some((m) => m.step === step) ? (
+                    `Still needed: ${listOf(missing.filter((m) => m.step === step).map((m) => m.label))}.`
+                  ) : null}
                 </span>
                 <span className={`${styles.footActions} ta-sheet-actions`}>
-                  <Button type="button" hierarchy="tertiary" onClick={handleClose}>
-                    Cancel
-                  </Button>
-                  {nextPart && (
-                    <Button type="button" hierarchy="secondary" className={styles.next} onClick={() => setPart(nextPart.value)}>
-                      Next: {nextPart.title}
+                  {prevStep ? (
+                    <Button type="button" hierarchy="secondary" onClick={() => goTo(prevStep.value)}>
+                      Back
+                    </Button>
+                  ) : (
+                    <Button type="button" hierarchy="secondary" onClick={handleClose}>
+                      Cancel
                     </Button>
                   )}
-                  <Button type="submit" disabled={isPending}>
-                    {isPending ? "Creating…" : "Create employee"}
-                  </Button>
+                  {onLast ? (
+                    <Button type="submit" disabled={isPending}>
+                      {isPending ? "Creating…" : "Create employee"}
+                    </Button>
+                  ) : (
+                    <Button type="button" onClick={handleContinue}>
+                      Continue
+                    </Button>
+                  )}
                 </span>
               </footer>
             </form>
