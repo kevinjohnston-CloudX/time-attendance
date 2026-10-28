@@ -5,7 +5,7 @@ import { Braces, Check, ChevronDown, Copy, Lock } from "lucide-react";
 
 /**
  * The external API reference, from the Integrations handoff: an "On this
- * page" list beside one panel of three sections that open and close.
+ * page" list beside one panel of sections that open and close.
  *
  * <p>Written against the two routes under /api/external, not against the
  * old copy of this page. The leave request route submits what it creates, so
@@ -17,7 +17,7 @@ import { Braces, Check, ChevronDown, Copy, Lock } from "lucide-react";
  * the server so the examples a vendor copies point at the right place.
  */
 
-export type DocSection = "auth" | "lt" | "pto";
+export type DocSection = "auth" | "lt" | "pto" | "people" | "person";
 
 const MONO = "var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)";
 const PANEL: CSSProperties = { background: "var(--surface-card)", borderRadius: 18, boxShadow: "var(--ta-shell-shadow)" };
@@ -204,10 +204,18 @@ const TOC: { id: DocSection; method: "" | "GET" | "POST"; label: string }[] = [
   { id: "auth", method: "", label: "Authentication" },
   { id: "lt", method: "GET", label: "List Leave Types" },
   { id: "pto", method: "POST", label: "Submit a Leave Request" },
+  { id: "people", method: "GET", label: "List Employees" },
+  { id: "person", method: "GET", label: "Get an Employee" },
 ];
 
 export function ApiDocumentation({ baseUrl, initialOpen, stickyTop }: { baseUrl: string; initialOpen?: DocSection; stickyTop: number }) {
-  const [open, setOpen] = useState<Record<DocSection, boolean>>({ auth: true, lt: initialOpen === "lt", pto: initialOpen === "pto" });
+  const [open, setOpen] = useState<Record<DocSection, boolean>>({
+    auth: true,
+    lt: initialOpen === "lt",
+    pto: initialOpen === "pto",
+    people: initialOpen === "people",
+    person: initialOpen === "person",
+  });
   const toggle = (id: DocSection) => setOpen((o) => ({ ...o, [id]: !o[id] }));
   // Jumps aim below the bar at its full height: a jump near the top of the
   // page makes a slimmed bar grow back, and it would cover the section.
@@ -262,6 +270,47 @@ export function ApiDocumentation({ baseUrl, initialOpen, stickyTop }: { baseUrl:
   "status": "PENDING",
   "durationMinutes": 720
 }`;
+
+  const peopleReq = `GET ${baseUrl}/api/external/people?status=active&page=1&pageSize=50\nAuthorization: Bearer ta_a1b2c3d4...`;
+  const lookupReq = `GET ${baseUrl}/api/external/people?email=jane.doe@example.com\nAuthorization: Bearer ta_a1b2c3d4...`;
+  const person = `{
+    "id": "clx9k2m4p0001ab12cd34ef56",
+    "name": "Jane Doe",
+    "wmsName": "JANE D",
+    "username": "jane.doe",
+    "workEmail": "jane.doe@example.com",
+    "personalEmail": "janedoe88@gmail.com",
+    "employeeCode": "100245",
+    "badgeId": "100245",
+    "barcodes": ["0851064226"],
+    "status": "active",
+    "hireDate": "2024-03-18",
+    "terminatedAt": null,
+    "jobTitle": "Warehouse Associate",
+    "site": { "id": "clx1s2i3t4e5", "name": "Main Warehouse" },
+    "department": { "id": "clx1d2e3p4t5", "name": "Receiving" },
+    "agency": null,
+    "supervisor": { "id": "clx7s8u9p0r1", "name": "Sam Lee", "employeeCode": "100012" }
+  }`;
+  const peopleRes = `{\n  "people": [\n    ${person.replace(/\n/g, "\n    ")}\n  ],\n  "page": 1,\n  "pageSize": 50,\n  "total": 1\n}`;
+  const personReq = `GET ${baseUrl}/api/external/people/clx9k2m4p0001ab12cd34ef56\nAuthorization: Bearer ta_a1b2c3d4...`;
+  const personRes = `{\n  "person": ${person.replace(/\n  /g, "\n")}\n}`;
+  const access = (
+    <div className="mb-1 px-3 py-2" style={{ borderRadius: 10, background: "var(--surface-warning)", font: "var(--type-body2)", color: "var(--text-warning)" }}>
+      Only keys with <b style={{ fontWeight: 600 }}>directory access</b> can use this. Allow it from the key&apos;s menu on the API Keys tab. Other keys
+      receive a <Code>403</Code>.
+    </div>
+  );
+  const peopleErrors = (
+    <Fields
+      rows={[
+        { name: "401", text: "Missing or invalid API key." },
+        { name: "403", text: "The key is valid but does not have directory access." },
+        { name: "400", text: "A filter is not valid, for example a pageSize over 200. Includes a details object." },
+        { name: "404", text: "No employee with that id in your company." },
+      ]}
+    />
+  );
 
   const para: CSSProperties = { margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)", textWrap: "pretty" };
 
@@ -405,6 +454,70 @@ export function ApiDocumentation({ baseUrl, initialOpen, stickyTop }: { baseUrl:
                 { name: "404", text: "Employee or leave type not found." },
               ]}
             />
+          </Section>
+
+          <Section
+            id="people"
+            offset={reach}
+            open={open.people}
+            onToggle={() => toggle("people")}
+            badge={<Method method="GET" wide />}
+            title="List Employees"
+            path="/api/external/people"
+          >
+            {access}
+            <p style={{ ...para, marginTop: 10 }}>
+              Returns your company&apos;s employees a page at a time, sorted by name. Each one comes with what identifies them: names, username,
+              work and personal email, employee code, badge IDs, site, department, job title, agency and supervisor. Pay, rates, address, phone
+              numbers, date of birth and emergency contacts are never included.
+            </p>
+            <Label>Query Parameters</Label>
+            <Fields
+              rows={[
+                { name: "q", type: "string", text: "Search names, usernames, emails, employee code and badge ID. Partial matches count." },
+                { name: "email", type: "string", text: "Exact work or personal email. Capitals are ignored." },
+                { name: "username", type: "string", text: "Exact username. Capitals are ignored." },
+                { name: "badge", type: "string", text: "A badge ID or barcode, in either form the time clocks accept, with or without leading zeros." },
+                { name: "employeeCode", type: "string", text: "Exact employee code." },
+                { name: "siteId", type: "string", text: "Only employees at this site (the site id from a response)." },
+                { name: "status", type: "string", text: "active, inactive or all. Defaults to all." },
+                { name: "page", type: "integer", text: "Page number, starting at 1. Defaults to 1." },
+                { name: "pageSize", type: "integer", text: "Employees per page, 1 to 200. Defaults to 50." },
+              ]}
+            />
+            <p style={{ margin: "8px 0 0", font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+              Filters combine. To find one person, send one exact filter such as <Code>email</Code> or <Code>badge</Code>. Use <Code>total</Code>{" "}
+              to know how many pages there are.
+            </p>
+            <Label>Example Request: one page</Label>
+            <CodeBlock lang="http" code={peopleReq} />
+            <Label>Example Request: one person by email</Label>
+            <CodeBlock lang="http" code={lookupReq} />
+            <Label>Example Response</Label>
+            <CodeBlock code={peopleRes} />
+            <Label>Error Responses</Label>
+            {peopleErrors}
+          </Section>
+
+          <Section
+            id="person"
+            offset={reach}
+            open={open.person}
+            onToggle={() => toggle("person")}
+            badge={<Method method="GET" wide />}
+            title="Get an Employee"
+            path="/api/external/people/{id}"
+          >
+            {access}
+            <p style={{ ...para, marginTop: 10 }}>
+              Returns one employee by the <Code>id</Code> from List Employees, with the same fields.
+            </p>
+            <Label>Example Request</Label>
+            <CodeBlock lang="http" code={personReq} />
+            <Label>Example Response</Label>
+            <CodeBlock code={personRes} />
+            <Label>Error Responses</Label>
+            {peopleErrors}
           </Section>
         </div>
       </section>

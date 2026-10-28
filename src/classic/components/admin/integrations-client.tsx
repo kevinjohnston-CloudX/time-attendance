@@ -12,6 +12,7 @@ type ApiKey = {
   createdAt: Date;
   lastUsedAt: Date | null;
   isActive: boolean;
+  scopes: string[];
 };
 
 type Tab = "api-keys" | "api-docs";

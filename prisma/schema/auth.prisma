@@ -114,6 +114,9 @@ model ApiKey {
   createdAt   DateTime  @default(now())
   lastUsedAt  DateTime?
   isActive    Boolean   @default(true)
+  /// What this key may read beyond leave types and time off requests, which
+  /// every active key has. See lib/api/scopes. Empty means nothing more.
+  scopes      String[]  @default([])
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
 

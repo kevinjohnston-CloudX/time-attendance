@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 
-export type ExternalAuthContext = { tenantId: string };
+export type ExternalAuthContext = { tenantId: string; keyId: string; scopes: string[] };
 
 export async function authenticateApiKey(req: NextRequest): Promise<ExternalAuthContext | null> {
   const header = req.headers.get("authorization");
@@ -13,7 +13,7 @@ export async function authenticateApiKey(req: NextRequest): Promise<ExternalAuth
   const keyHash = crypto.createHash("sha256").update(token).digest("hex");
   const key = await db.apiKey.findUnique({
     where: { keyHash },
-    select: { id: true, tenantId: true, isActive: true },
+    select: { id: true, tenantId: true, isActive: true, scopes: true },
   });
 
   if (!key || !key.isActive) return null;
@@ -21,7 +21,15 @@ export async function authenticateApiKey(req: NextRequest): Promise<ExternalAuth
   // Fire-and-forget lastUsedAt update
   db.apiKey.update({ where: { id: key.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
 
-  return { tenantId: key.tenantId };
+  return { tenantId: key.tenantId, keyId: key.id, scopes: key.scopes };
+}
+
+/** A real key that was not given this scope. It names the scope, never the data. */
+export function missingScope(scope: string) {
+  return NextResponse.json(
+    { error: `This API key may not use this endpoint. A company admin can allow "${scope}" for it under Admin, Integrations.` },
+    { status: 403 },
+  );
 }
 
 export function unauthorized() {

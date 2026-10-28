@@ -210,6 +210,83 @@ Content-Type: application/json
         </div>
       </Section>
 
+      {/* GET people */}
+      <Section title="GET: List Employees and Get an Employee">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <Badge method="GET" />
+            <code className="text-sm text-zinc-700 dark:text-zinc-300">/api/external/people</code>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge method="GET" />
+            <code className="text-sm text-zinc-700 dark:text-zinc-300">/api/external/people/{"{id}"}</code>
+          </div>
+        </div>
+        <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+          Only keys with directory access can use these. Allow it on the key above. Other keys receive a 403.
+        </p>
+        <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+          Returns your company&apos;s employees a page at a time, sorted by name, or one employee by id. Each one comes with names, username, work and personal email,
+          employee code, badge IDs, site, department, job title, agency and supervisor. Pay, rates, address, phone numbers, date of birth and emergency contacts are never included.
+        </p>
+
+        <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-zinc-400">Query Parameters</p>
+        <div className="mt-2 rounded-lg border border-zinc-200 dark:border-zinc-800">
+          <Field name="q" type="string" description="Search names, usernames, emails, employee code and badge ID. Partial matches count." />
+          <Field name="email" type="string" description="Exact work or personal email. Capitals are ignored." />
+          <Field name="username" type="string" description="Exact username. Capitals are ignored." />
+          <Field name="badge" type="string" description="A badge ID or barcode, with or without leading zeros." />
+          <Field name="employeeCode" type="string" description="Exact employee code." />
+          <Field name="siteId" type="string" description="Only employees at this site." />
+          <Field name="status" type="string" description="active, inactive or all. Defaults to all." />
+          <Field name="page" type="integer" description="Page number, starting at 1." />
+          <Field name="pageSize" type="integer" description="Employees per page, 1 to 200. Defaults to 50." />
+        </div>
+
+        <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-zinc-400">Example Request</p>
+        <CodeBlock lang="http" code={`GET ${baseUrl}/api/external/people?email=jane.doe@example.com
+Authorization: Bearer ta_a1b2c3d4...`} />
+
+        <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-zinc-400">Example Response</p>
+        <CodeBlock code={`{
+  "people": [
+    {
+      "id": "clx9k2m4p0001ab12cd34ef56",
+      "name": "Jane Doe",
+      "wmsName": "JANE D",
+      "username": "jane.doe",
+      "workEmail": "jane.doe@example.com",
+      "personalEmail": "janedoe88@gmail.com",
+      "employeeCode": "100245",
+      "badgeId": "100245",
+      "barcodes": ["0851064226"],
+      "status": "active",
+      "hireDate": "2024-03-18",
+      "terminatedAt": null,
+      "jobTitle": "Warehouse Associate",
+      "site": { "id": "clx1s2i3t4e5", "name": "Main Warehouse" },
+      "department": { "id": "clx1d2e3p4t5", "name": "Receiving" },
+      "agency": null,
+      "supervisor": { "id": "clx7s8u9p0r1", "name": "Sam Lee", "employeeCode": "100012" }
+    }
+  ],
+  "page": 1,
+  "pageSize": 50,
+  "total": 1
+}`} />
+        <p className="mt-2 text-xs text-zinc-400">
+          /api/external/people/{"{id}"} returns the same fields as <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{`{ "person": { ... } }`}</code>.
+        </p>
+
+        <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-zinc-400">Error Responses</p>
+        <div className="mt-2 rounded-lg border border-zinc-200 dark:border-zinc-800">
+          <Field name="401" type="" description="Missing or invalid API key." />
+          <Field name="403" type="" description="The key is valid but does not have directory access." />
+          <Field name="400" type="" description="A filter is not valid, for example a pageSize over 200." />
+          <Field name="404" type="" description="No employee with that id in your company." />
+        </div>
+      </Section>
+
     </div>
   );
 }

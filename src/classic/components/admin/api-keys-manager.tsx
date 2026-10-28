@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Copy, Check, KeyRound, AlertTriangle } from "lucide-react";
-import { createApiKey, revokeApiKey, regenerateApiKey } from "@/actions/api-key.actions";
+import { createApiKey, revokeApiKey, regenerateApiKey, setApiKeyScopes } from "@/actions/api-key.actions";
 import { format } from "date-fns";
 
 type ApiKey = {
@@ -13,7 +13,10 @@ type ApiKey = {
   createdAt: Date;
   lastUsedAt: Date | null;
   isActive: boolean;
+  scopes: string[];
 };
+
+const DIRECTORY = "people:read";
 
 interface Props { apiKeys: ApiKey[] }
 
@@ -41,6 +44,7 @@ export function ApiKeysManager({ apiKeys: initial }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
+  const [newDirectory, setNewDirectory] = useState(false);
   const [revealedKey, setRevealedKey] = useState<string | null>(null);
   const [revealedName, setRevealedName] = useState<string>("");
 
@@ -49,11 +53,12 @@ export function ApiKeysManager({ apiKeys: initial }: Props) {
     if (!newName.trim()) return;
     setError(null);
     startTransition(async () => {
-      const result = await createApiKey({ name: newName.trim() });
+      const result = await createApiKey({ name: newName.trim(), scopes: newDirectory ? [DIRECTORY] : [] });
       if (!result.success) { setError(result.error); return; }
       setRevealedKey(result.data.fullKey);
       setRevealedName(newName.trim());
       setNewName("");
+      setNewDirectory(false);
       setShowCreate(false);
       router.refresh();
     });
@@ -64,6 +69,21 @@ export function ApiKeysManager({ apiKeys: initial }: Props) {
     setError(null);
     startTransition(async () => {
       const result = await revokeApiKey({ apiKeyId: id });
+      if (!result.success) { setError(result.error); return; }
+      router.refresh();
+    });
+  }
+
+  function handleDirectory(key: ApiKey) {
+    const on = key.scopes.includes(DIRECTORY);
+    const ask = on
+      ? `"${key.name}" will stop reading the employee directory right away. Time off requests keep working.`
+      : `Anything holding "${key.name}" will be able to read every employee in this company: names, usernames, work and personal emails, badge IDs, site, department and supervisor. Pay, address and date of birth are never included.`;
+    if (!confirm(ask)) return;
+    setError(null);
+    startTransition(async () => {
+      const scopes = on ? key.scopes.filter((s) => s !== DIRECTORY) : [...key.scopes, DIRECTORY];
+      const result = await setApiKeyScopes({ apiKeyId: key.id, scopes });
       if (!result.success) { setError(result.error); return; }
       router.refresh();
     });
@@ -137,6 +157,9 @@ export function ApiKeysManager({ apiKeys: initial }: Props) {
               {!key.isActive && (
                 <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800">Revoked</span>
               )}
+              {key.scopes.includes(DIRECTORY) && (
+                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">Directory access</span>
+              )}
             </div>
             <div className="flex shrink-0 items-center gap-4">
               <div className="text-right">
@@ -150,6 +173,13 @@ export function ApiKeysManager({ apiKeys: initial }: Props) {
               </div>
               {key.isActive && (
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleDirectory(key)}
+                    disabled={isPending}
+                    className="whitespace-nowrap rounded-lg border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                  >
+                    {key.scopes.includes(DIRECTORY) ? "Remove directory access" : "Allow directory access"}
+                  </button>
                   <button
                     onClick={() => handleRegenerate(key.id, key.name)}
                     disabled={isPending}
@@ -173,8 +203,8 @@ export function ApiKeysManager({ apiKeys: initial }: Props) {
 
       {/* Create form */}
       {showCreate ? (
-        <form onSubmit={handleCreate} className="mt-3 flex items-end gap-2">
-          <div className="flex-1">
+        <form onSubmit={handleCreate} className="mt-3 flex flex-wrap items-end gap-2">
+          <div className="min-w-[200px] flex-1">
             <label className="mb-1 block text-xs text-zinc-500">Key name</label>
             <input
               value={newName}
@@ -188,9 +218,18 @@ export function ApiKeysManager({ apiKeys: initial }: Props) {
           <button type="submit" disabled={isPending} className={btnCls}>
             {isPending ? "Generating…" : "Generate"}
           </button>
-          <button type="button" onClick={() => { setShowCreate(false); setNewName(""); }} className={cancelBtnCls}>
+          <button type="button" onClick={() => { setShowCreate(false); setNewName(""); setNewDirectory(false); }} className={cancelBtnCls}>
             Cancel
           </button>
+          <label className="flex w-full items-start gap-2 pt-1 text-sm text-zinc-700 dark:text-zinc-300">
+            <input type="checkbox" checked={newDirectory} onChange={(e) => setNewDirectory(e.target.checked)} className="mt-0.5" />
+            <span>
+              Employee directory access
+              <span className="block text-xs text-zinc-500">
+                Names, usernames, both emails, badge IDs, site, department and supervisor. Never pay, address or date of birth. Every key can read leave types and send time off requests.
+              </span>
+            </span>
+          </label>
         </form>
       ) : (
         <button
