@@ -1,6 +1,5 @@
 "use client";
 
-import { Suspense } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, ChevronRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
@@ -9,7 +8,6 @@ import { useBreadcrumbLeafFor } from "./breadcrumb-leaf";
 import { ThemeToggle } from "./theme-toggle";
 import { KeyboardShortcuts } from "./keyboard-shortcuts";
 import { NotificationBell } from "./notification-bell";
-import { DesignSwitch } from "./design-switch";
 import { HelpButton } from "@/components/support/help-button";
 import { SegmentedControl } from "@/components/ui";
 import { navModeStore, useNavMode, collapseStore, useSidebarCollapsed, type NavMode } from "./nav-mode";
@@ -35,18 +33,10 @@ import type { WaitingItem } from "@/lib/dashboard/dashboard-data";
 export function TopBar({
   reachableHrefs,
   waiting,
-  classicOffered = false,
-  classicUntil = null,
-  signInId,
   helpOffered = true,
 }: {
   reachableHrefs: string[];
   waiting: WaitingItem[];
-  /** Whether this person can pick Classic; false draws no design switch. */
-  classicOffered?: boolean;
-  /** The classic design's last day, as words; null for no end date. */
-  classicUntil?: string | null;
-  signInId?: string;
   /** Whether to draw Help & feedback; a wall screen (live attendance only) doesn't. */
   helpOffered?: boolean;
 }) {
@@ -58,8 +48,8 @@ export function TopBar({
   const toggleLabel = collapsed ? "Expand sidebar" : "Collapse sidebar";
 
   return (
-    // z-30: above the pages' pinned headers (z-20), so the bell's list and
-    // the design switch's note open over them rather than behind.
+    // z-30: above the pages' pinned headers (z-20), so the bell's list opens
+    // over them rather than behind.
     <header className="relative z-30 flex h-9 flex-none items-center gap-2 px-3 lg:gap-2.5">
       <nav
         aria-label="Breadcrumb"
@@ -143,12 +133,6 @@ export function TopBar({
       </nav>
 
       <div className="flex-1" />
-
-      {classicOffered && (
-        <Suspense fallback={null}>
-          <DesignSwitch classicUntil={classicUntil} signInId={signInId} />
-        </Suspense>
-      )}
 
       {/* The navigation layout switch: a label and a small segmented control.
           Under 1024px the label goes and the switch stays, so the bell never

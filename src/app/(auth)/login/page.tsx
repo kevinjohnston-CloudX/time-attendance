@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
-import { syncHref } from "@/lib/design-switch";
 import { Banner, Button, Checkbox, Input } from "@/components/ui";
 import { BrandLockup } from "@/components/layout/brand-mark";
 import { rememberedEmailStore, useRememberedEmail } from "@/lib/remembered-email";
@@ -53,8 +52,7 @@ export default function LoginPage() {
   async function handleGoogleSignIn() {
     setError("");
     setLoading(true);
-    // Through the design sync, so they land in the design they last picked.
-    await signIn("google", { callbackUrl: syncHref("/dashboard") });
+    await signIn("google", { callbackUrl: "/dashboard" });
   }
 
   async function handleCredentials(e: React.FormEvent) {
@@ -89,7 +87,7 @@ export default function LoginPage() {
     // by one, so a soft route change here is why nothing was ever saved for
     // this site. It also guarantees the first render after sign-in is made
     // with the new session cookie rather than the one the app started with.
-    window.location.assign(syncHref("/dashboard"));
+    window.location.assign("/dashboard");
   }
 
   return (

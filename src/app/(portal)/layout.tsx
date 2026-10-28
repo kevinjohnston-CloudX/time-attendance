@@ -1,5 +1,4 @@
-// The new design's styles, loaded by its own layouts rather than the shared
-// root, so the classic design never gets them.
+// The app's styles, loaded by each layout (and the error and not found screens).
 import "@/app/globals.css";
 import { PageScrollReveal } from "@/components/layout/page-scroll-reveal";
 import { redirect } from "next/navigation";
@@ -24,7 +23,6 @@ import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
 import { getLegacyPermissions, isLiveAttendanceOnly } from "@/lib/rbac/permission-resolver";
 import { getWaitingOnYou } from "@/lib/dashboard/dashboard-data";
 import { photoUrls } from "@/lib/presence/photos";
-import { classicDesignEnded, classicDesignUntil } from "@/lib/design-switch";
 
 const PRIVILEGED_ROLES = ["SYSTEM_ADMIN", "SUPER_ADMIN"];
 
@@ -214,7 +212,6 @@ export default async function PortalLayout({
   // The phone's Approvals tab counts decisions only, not your own unsent requests.
   const approvalsCount = waiting.filter((i) => i.href !== "/leave").reduce((n, i) => n + i.count, 0);
 
-  const classicUntil = classicDesignUntil();
   const userPhoto = await userPhotoRead;
 
   const destinations: Destination[] = isEmployeeActive
@@ -302,21 +299,14 @@ export default async function PortalLayout({
               viewer's permissions and by whether they are active, so the
               shortcuts list is built from the same set rather than a second
               one that could disagree with it. */}
-          {/* No design switch for a role limited to Live Attendance: the
-              classic design has no such limit, so it would be a way out. Nor
-              once the classic design's last day has passed. */}
           <div className="ta-desktop-only">
             <TopBar
               reachableHrefs={destinations.map((d) => d.href)}
               waiting={waiting}
-              classicOffered={!liveAttendanceOnly && !classicDesignEnded(classicUntil)}
-              classicUntil={classicUntil?.label ?? null}
-              signInId={session.user.signInId}
               helpOffered={!liveAttendanceOnly}
             />
           </div>
-          {/* Phones: this bar instead of the one above, and no design switch,
-              since a phone is always on the new design. */}
+          {/* Phones: this bar instead of the one above. */}
           <PhoneTopBar waiting={waiting} helpOffered={!liveAttendanceOnly} />
           <main className="ta-page-scroll min-h-0 flex-1 overflow-y-auto">
             <PageScrollReveal />

@@ -1,16 +1,6 @@
 import type { NextAuthConfig } from "next-auth";
 import { NextResponse } from "next/server";
 import { REQUEST_PATH_HEADER } from "@/lib/constants";
-import {
-  CLASSIC_PREFIX,
-  DESIGN_COOKIE,
-  DESIGN_PROBE_HEADER,
-  DESIGN_SWITCH_HEADER,
-  DESIGN_SWITCH_PARAM,
-  DESIGN_SWITCH_VALUE,
-  designFromCookie,
-  safeNext,
-} from "@/lib/design-switch";
 
 /**
  * Edge-safe auth config — no Prisma, no bcrypt, no Node.js-only modules.
@@ -39,43 +29,6 @@ const localCookies =
         nonce: localCookie("nonce"),
       };
 
-/**
- * Which addresses the classic design answers. Everything a person opens as a
- * page, except the API, the super admin area (the classic design has none)
- * and "/", which only redirects.
- */
-function classicServes(pathname: string): boolean {
-  return pathname !== "/" && !pathname.startsWith("/api/") && !pathname.startsWith("/super-admin");
-}
-
-/**
- * The response for a request that is allowed through: served from the
- * classic folder when this browser's design is Classic, at the same address,
- * else passed on. One request can pick its design by DESIGN_PROBE_HEADER
- * instead (the not found screen asking New). `headers` carries the portal's
- * request path header.
- */
-/**
- * A phone always gets the new design, whatever the browser chose: the classic
- * one was never made for a small screen. Read from the browser's "Mobi" token,
- * the standard test for a phone; an iPad reports itself as a desktop and keeps
- * its choice.
- */
-function isPhone(request: Request): boolean {
-  return /Mobi/i.test(request.headers.get("user-agent") ?? "");
-}
-
-function serve(request: Request & { nextUrl: URL; cookies: { get(name: string): { value: string } | undefined } }, headers?: Headers) {
-  const { nextUrl } = request;
-  const init = headers ? { request: { headers } } : undefined;
-  const chosen = request.headers.get(DESIGN_PROBE_HEADER) ?? request.cookies.get(DESIGN_COOKIE)?.value;
-  if (classicServes(nextUrl.pathname) && designFromCookie(chosen) === "classic" && !isPhone(request)) {
-    const url = new URL(`${CLASSIC_PREFIX}${nextUrl.pathname}${nextUrl.search}`, nextUrl);
-    return NextResponse.rewrite(url, init);
-  }
-  return headers ? NextResponse.next(init) : true;
-}
-
 export const authConfig = {
   pages: {
     signIn: "/login",
@@ -98,11 +51,6 @@ export const authConfig = {
     authorized({ auth, request }) {
       const { nextUrl } = request;
 
-      // The classic folder is never opened by its own address: it is served
-      // at the plain one (see serve above), so a typed /classic/... goes there.
-      if (nextUrl.pathname === CLASSIC_PREFIX || nextUrl.pathname.startsWith(`${CLASSIC_PREFIX}/`)) {
-        return Response.redirect(new URL(`${safeNext(nextUrl.pathname)}${nextUrl.search}`, nextUrl));
-      }
       // The mobile app's API is off until the app is being built: its checks
       // are weaker than the web's (the built-in role only, no forced password
       // change, refresh tokens stored readable) and nobody uses it. Set
@@ -143,11 +91,7 @@ export const authConfig = {
         // browser sent under the same name.
         const headers = new Headers(request.headers);
         headers.set(REQUEST_PATH_HEADER, nextUrl.pathname);
-        // Arrived by the design switch, for the not found screen (see
-        // DESIGN_SWITCH_HEADER). Never what the browser sent.
-        if (nextUrl.searchParams.get(DESIGN_SWITCH_PARAM) === DESIGN_SWITCH_VALUE) headers.set(DESIGN_SWITCH_HEADER, "1");
-        else headers.delete(DESIGN_SWITCH_HEADER);
-        return serve(request, headers);
+        return NextResponse.next({ request: { headers } });
       } else if (isLoggedIn && (
         nextUrl.pathname === "/login" ||
         nextUrl.pathname === "/forgot-password"
@@ -155,8 +99,7 @@ export const authConfig = {
         const target = isSuperAdmin ? "/super-admin" : "/dashboard";
         return Response.redirect(new URL(target, nextUrl));
       }
-      // Sign in and the password screens follow this browser's last design.
-      return serve(request);
+      return true;
     },
   },
   providers: [],
