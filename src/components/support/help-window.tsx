@@ -53,9 +53,9 @@ type RequestType = "system_issue" | "suggestion" | "question";
 type Impact = "idea" | "workable" | "blocking";
 
 const TYPES: { value: RequestType; title: string; body: string; icon: LucideIcon }[] = [
-  { value: "system_issue", title: "System issue", body: "Something isn't working", icon: Bug },
-  { value: "suggestion", title: "Suggestion", body: "An idea or an improvement", icon: Lightbulb },
-  { value: "question", title: "Question", body: "How to do something", icon: HelpCircle },
+  { value: "system_issue", title: "System issue", body: "Error or unexpected behavior", icon: Bug },
+  { value: "suggestion", title: "Suggestion", body: "Feature request or improvement", icon: Lightbulb },
+  { value: "question", title: "Question", body: "Help using CloudTime", icon: HelpCircle },
 ];
 
 const IMPACT_ITEMS = [
@@ -65,9 +65,9 @@ const IMPACT_ITEMS = [
 ];
 
 const IMPACT_NOTE: Record<Impact, string> = {
-  idea: "Whenever there's time.",
-  workable: "It slows work down, but there's a way around it.",
-  blocking: "Work has stopped. The support team is alerted right away.",
+  idea: "No effect on daily work.",
+  workable: "Work continues with a workaround.",
+  blocking: "Work is stopped. Support is notified immediately.",
 };
 
 type Attached = { key: string; file: File };
@@ -214,7 +214,7 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
       return false;
     }
     if (overBudget) {
-      setFailure("The files and screenshots are over 9 MB together. Remove some and try again.");
+      setFailure("Attachments exceed 9 MB. Remove a file and try again.");
       return false;
     }
     return true;
@@ -248,7 +248,7 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
       })
       .catch(() => {
         setCheckingCritical(false);
-        setFailure("Support couldn't be reached. Try again in a minute, or email support@cloudxsystems.net.");
+        setFailure("Support could not be reached. Try again, or email support@cloudxsystems.net.");
       })
       .finally(() => setSending(false));
   }
@@ -269,13 +269,13 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
   const hint = sent
     ? ""
     : overBudget
-      ? `Over 9 MB in all (${formatBytes(filesSize + bodySize)}). Remove a file or a screenshot.`
-      : "Paste a screenshot into the details, or drop files anywhere in this window.";
+      ? `Attachments exceed 9 MB (${formatBytes(filesSize + bodySize)}). Remove a file or screenshot.`
+      : "Paste screenshots into Details, or drag files into this window.";
 
   return (
     <Shell
       title="Help & feedback"
-      subtitle="Send a problem, a question or an idea to CloudTime Support."
+      subtitle="Report an issue or send a request to CloudTime Support."
       icon={<LifeBuoy />}
       onClose={requestClose}
       onSubmit={sent ? undefined : onSend}
@@ -323,7 +323,7 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
         )
       }
     >
-      {dragging && !sent && <div className={styles.drop}>Drop to attach</div>}
+      {dragging && !sent && <div className={styles.drop}>Drop files to attach</div>}
 
       {sent ? (
         <div className={styles.sent} role="status">
@@ -335,8 +335,8 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
           <span className={styles.sentSubject}>{subject.trim()}</span>
           <p className={styles.sentBody}>
             {sent.confirmationSent
-              ? `We emailed a confirmation to ${sent.confirmationTo}. Reply to that email to add anything or follow up. Our answer comes to the same place.`
-              : `Our answer will come by email to ${sent.confirmationTo}. Reply to it to add anything or follow up.`}
+              ? `A confirmation was sent to ${sent.confirmationTo}. Reply to that email to add details or follow up.`
+              : `Replies will be sent to ${sent.confirmationTo}.`}
           </p>
         </div>
       ) : (
@@ -347,15 +347,15 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
             {context && !available && (
               <Banner
                 tone="warning"
-                title="Requests aren't set up yet"
-                body="Nothing can be sent from this window yet. Email support@cloudxsystems.net instead."
+                title="Requests unavailable"
+                body="Email support@cloudxsystems.net instead."
               />
             )}
             {noEmail && (
               <Banner
                 tone="warning"
                 title="No email address on your account"
-                body="We answer by email, so a request needs one. Ask your administrator to add your work or personal email."
+                body="Replies are sent by email. Ask your administrator to add a work or personal email."
               />
             )}
             {failure && <Banner tone="error" title="Not sent" body={failure} />}
@@ -363,7 +363,7 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
             <Input
               id="help-summary"
               label="Summary"
-              placeholder="In a few words, what is it about?"
+              placeholder="Brief summary of the request"
               value={subject}
               maxLength={300}
               autoFocus
@@ -390,7 +390,7 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
                   setFieldError((prev) => (prev?.field === "details" ? null : prev));
                 }}
                 onNonImageFiles={addFiles}
-                onTooBig={() => setFailure("That picture is over 9 MB together with everything else. Attach a smaller one.")}
+                onTooBig={() => setFailure("This image would exceed the 9 MB limit. Attach a smaller one.")}
                 budgetLeft={() => SUPPORT_LIMITS.totalBytes - filesSizeRef.current}
               />
               {fieldError?.field === "details" && (
@@ -487,7 +487,7 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
             </div>
 
             <div className={styles.railBlock}>
-              <span className={styles.groupLabel}>Reply to</span>
+              <span className={styles.groupLabel}>Reporting as</span>
               {context ? (
                 <>
                   <div className={styles.who}>
@@ -503,8 +503,8 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
                   </div>
                   <p className={styles.railNote} data-tone={noEmail ? "warning" : undefined}>
                     {noEmail
-                      ? "A request needs an email address for the answer."
-                      : "You'll get a confirmation at this address. Reply to it to follow up."}
+                      ? "An email address is required to send a request."
+                      : "Confirmation and replies are sent to this address."}
                   </p>
                 </>
               ) : (
@@ -526,7 +526,7 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
           onConfirm={onClose}
           onCancel={() => setConfirmDiscard(false)}
         >
-          What you wrote and attached here will be lost.
+          The text and attachments will be lost.
         </ConfirmDialog>
       )}
     </Shell>
@@ -592,7 +592,7 @@ function DetailsEditor({
         link: { openOnClick: false, autolink: true },
       }),
       Image.configure({ allowBase64: true }),
-      Placeholder.configure({ placeholder: "Describe what happened, what you expected, and the steps to get there." }),
+      Placeholder.configure({ placeholder: "Describe the issue or request. For an issue, include the steps taken and the result." }),
     ],
     editorProps: {
       attributes: {
@@ -688,21 +688,21 @@ function CriticalCheck({
 }) {
   const [level, setLevel] = useState<"blocking" | "workable">("blocking");
   const options = [
-    { value: "blocking" as const, icon: OctagonAlert, title: "Work is blocked", body: "There's no way to keep going until it's fixed." },
-    { value: "workable" as const, icon: CircleCheck, title: "Work can continue", body: "There's a way around it for now." },
+    { value: "blocking" as const, icon: OctagonAlert, title: "Work is stopped", body: "No workaround is available." },
+    { value: "workable" as const, icon: CircleCheck, title: "Work can continue", body: "A workaround is available." },
   ];
   return (
     <Shell
       size="small"
       title="Critical impact"
-      subtitle="Critical is for a problem that stops work right now."
+      subtitle="Use Critical only when work is stopped."
       icon={<TriangleAlert />}
       tone="warning"
       onClose={onBack}
       onSubmit={sending ? undefined : () => onSend(level)}
       foot={
         <>
-          <span className={styles.footHint}>Back keeps what you wrote.</span>
+          <span className={styles.footHint}>Going back keeps the request.</span>
           <Button hierarchy="tertiary" onClick={onBack} disabled={sending}>
             Back
           </Button>
