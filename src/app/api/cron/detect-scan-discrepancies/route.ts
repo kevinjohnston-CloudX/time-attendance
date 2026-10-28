@@ -3,7 +3,7 @@ import { cronAuthorized } from "@/lib/cron-auth";
 import { db } from "@/lib/db";
 import { findScanDiscrepancies } from "@/lib/services/scan-event.service";
 import { findOpenPayPeriod, TOO_SOON_REJECTION } from "@/lib/utils/punch-helpers";
-import { CLIENT_TIME_CLOCK_REJECTION } from "@/lib/utils/client-badge";
+import { isClientBadge } from "@/lib/utils/client-badge";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 
@@ -63,9 +63,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       continue;
     }
 
-    // Likewise a client's badge refused at a time clock (client-badge.ts):
-    // the rule working, and a client keeps no timecard to raise one on.
-    if (d.kind === "REJECTED" && d.rejectionReason === CLIENT_TIME_CLOCK_REJECTION) {
+    // Likewise a client's badge at a time clock (client-badge.ts): the clock
+    // refusing it is the rule working, and a client keeps no timecard to raise
+    // anything on. Known by the badge, not the refusal's wording, which has
+    // changed once already.
+    if (isClientBadge(d.badgeCode)) {
       clientScans += 1;
       continue;
     }

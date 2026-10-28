@@ -27,8 +27,9 @@ import type { Prisma } from "@prisma/client";
  * else, even after its record changed.
  *
  * <p><b>What a client badge changes.</b> The gate admits it without a
- * schedule (eligibility route), a time clock refuses it (punch route), and
- * holding one needs no sign in email. Nothing else.
+ * schedule (eligibility route), a time clock refuses it (punch route), the
+ * tablets show it as a Visitor whatever its department, and holding one needs
+ * no sign in email. Nothing else.
  */
 export const CLIENT_BADGE_PREFIX = "CL";
 
@@ -38,10 +39,20 @@ const CLIENT_BADGE_DIGITS = 5;
 const CLIENT_BADGE = new RegExp(`^${CLIENT_BADGE_PREFIX}(\\d+)$`);
 
 /**
- * Stored as the scan's rejection reason and shown on the time clock. Fixed
- * text, so the scan discrepancy job can recognise the rule working.
+ * Stored as the scan's rejection reason and shown on the time clock. Builds
+ * 163 to 166 draw it as the note under their own "Punch not recorded", so it
+ * says what to do rather than repeating that.
  */
-export const CLIENT_TIME_CLOCK_REJECTION = "Client badges are for the security gate only, not the time clock";
+export const CLIENT_TIME_CLOCK_REJECTION = "Visitors scan at security only, not at the time clock";
+
+/**
+ * What the tablets show as a client's department. The tablets print the
+ * department beside the name on every result screen, and the one a client is
+ * filed under in CloudTime is whatever HR picked (on 2026-10-28 the first one
+ * read "Account Management" at the gate), which says the wrong thing about who
+ * is walking in. CloudTime itself keeps the department as filed.
+ */
+export const CLIENT_DEPARTMENT_ON_TABLETS = "Visitor";
 
 /** A badge CloudTime issued to a client. */
 export function isClientBadge(code: string | null | undefined): boolean {

@@ -6,7 +6,7 @@ import { recordGateRefusal } from "@/lib/presence/gate-refusals.service";
 import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { employmentEnded, madeActiveAt } from "@/lib/presence/employment";
-import { isClientBadge } from "@/lib/utils/client-badge";
+import { CLIENT_DEPARTMENT_ON_TABLETS, isClientBadge } from "@/lib/utils/client-badge";
 
 /**
  * May this badge scan right now, and who is it?
@@ -249,7 +249,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // screen — rather than making every caller do it.
     firstName: space > 0 ? name.slice(0, space) : name,
     lastName: space > 0 ? name.slice(space + 1) : "",
-    department: employee.department?.name ?? null,
+    department: client ? CLIENT_DEPARTMENT_ON_TABLETS : employee.department?.name ?? null,
     terminated,
     scheduled,
     /// WORKDAY | PRESENT | NOT_A_WORKDAY | NO_SCHEDULE | CLIENT — why
