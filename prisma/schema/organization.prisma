@@ -36,6 +36,7 @@ model Tenant {
   jobTitles      JobTitle[]
   agencies       Agency[]
   apiKeys        ApiKey[]
+  webhookEndpoints WebhookEndpoint[]
   syncRuns         SyncRun[]
   rosterCandidates RosterCandidate[]
   scheduleDays     ScheduleDay[]

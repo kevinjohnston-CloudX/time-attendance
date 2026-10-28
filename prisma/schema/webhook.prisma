@@ -1,0 +1,80 @@
+/// A web address another system gave us, told the moment something happens to
+/// one of this company's people: for now a termination and a rehire. Made on
+/// Integrations by a company admin; modelled on the ticketing system's
+/// webhooks so both products sign and retry the same way.
+///
+/// No secret is stored. The secret a receiver checks signatures with is
+/// derived from WEBHOOK_SIGNING_KEY, the endpoint's id and secretVersion (see
+/// src/lib/webhooks/signing.ts), shown once when it is made, and changed by
+/// raising secretVersion. keyCheck says which signing key made it, so a copy
+/// of CloudTime holding a different key leaves the endpoint's messages alone
+/// instead of sending them with a signature the receiver will refuse.
+model WebhookEndpoint {
+  id            String   @id @default(cuid())
+  tenantId      String
+  name          String
+  url           String
+  /// What it is told about; see src/lib/webhooks/events.ts.
+  events        String[]
+  isActive      Boolean  @default(true)
+  secretVersion Int      @default(1)
+  keyCheck      String
+  createdById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant     Tenant            @relation(fields: [tenantId], references: [id])
+  queue      WebhookQueue[]
+  deliveries WebhookDelivery[]
+
+  @@index([tenantId])
+  @@map("webhook_endpoints")
+}
+
+/// One message waiting to go, or gone: what happened, to whom, and the body
+/// as it was when it happened, so a retry sends what was true then.
+model WebhookQueue {
+  id             String    @id @default(cuid())
+  tenantId       String
+  endpointId     String
+  event          String
+  /// The employee it is about.
+  employeeId     String?
+  payload        Json
+  /// PENDING, DELIVERED or FAILED.
+  status         String    @default("PENDING")
+  attempts       Int       @default(0)
+  nextAttemptAt  DateTime  @default(now())
+  lastStatusCode Int?
+  lastError      String?
+  deliveredAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  endpoint WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@index([endpointId])
+  @@map("webhook_queue")
+}
+
+/// Every attempt to send, a test included: what came back and how long it
+/// took. The body is not kept here; the queue row has it.
+model WebhookDelivery {
+  id          String   @id @default(cuid())
+  endpointId  String
+  queueId     String?
+  event       String
+  attempt     Int      @default(1)
+  ok          Boolean
+  statusCode  Int?
+  /// The receiver's answer or the reason it was not reached, cut to 500 characters.
+  response    String?
+  durationMs  Int?
+  attemptedAt DateTime @default(now())
+
+  endpoint WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([endpointId, attemptedAt])
+  @@map("webhook_deliveries")
+}

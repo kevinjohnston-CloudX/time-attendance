@@ -15,15 +15,17 @@ import {
 import { useCondensingBar } from "@/components/layout/use-condensing-bar";
 import { ApiKeysManager, type ApiKey, type KeyFilter } from "@/components/admin/api-keys-manager";
 import { ApiDocumentation, CopyButton, MethodBadge, type DocSection } from "@/components/admin/api-documentation";
+import { WebhooksManager, type WebhookRow } from "@/components/admin/webhooks-manager";
 import styles from "./integrations.module.css";
 
 /**
- * Integrations, from the page handoff: a pinned title and toolbar (the two
+ * Integrations, from the page handoff: a pinned title and toolbar (the three
  * tabs, then the Status filter on the keys tab or the base URL on the docs
  * tab), the key warning and the key list, and a Connect panel with what a
- * vendor needs besides the key.
+ * vendor needs besides the key. The Webhooks tab follows the keys tab's shape:
+ * the list, and a Receiving panel with what the other system gets.
  *
- * <p>The two tabs are links, not local state, so the docs tab can be linked
+ * <p>The tabs are links, not local state, so the docs tab can be linked
  * to and reloaded: it is the page people send a vendor. The Connect panel's
  * endpoints link straight to their section of it (`&open=lt`).
  *
@@ -32,10 +34,11 @@ import styles from "./integrations.module.css";
  * open state is held here and passed down.
  */
 
-export type IntegrationsTab = "api-keys" | "api-docs";
+export type IntegrationsTab = "api-keys" | "webhooks" | "api-docs";
 
 const TABS: { value: IntegrationsTab; label: string; href: string }[] = [
   { value: "api-keys", label: "API Keys", href: "/admin/api-keys" },
+  { value: "webhooks", label: "Webhooks", href: "/admin/api-keys?tab=webhooks" },
   { value: "api-docs", label: "API Documentation", href: "/admin/api-keys?tab=api-docs" },
 ];
 
@@ -79,12 +82,15 @@ function CopyLink({ href }: { href: string }) {
 
 export function IntegrationsClient({
   apiKeys,
+  webhooks,
   tab,
   loadError,
   baseUrl,
   openSection,
 }: {
   apiKeys: ApiKey[];
+  /** Loaded only on the Webhooks tab; the error is set when they could not be read. */
+  webhooks?: { hooks: WebhookRow[]; ready: boolean; note: string | null; error: string | null };
   tab: IntegrationsTab;
   /** Set when the key list could not be read, so an empty table is not read as "no keys". */
   loadError?: string | null;
@@ -94,12 +100,14 @@ export function IntegrationsClient({
   openSection?: DocSection;
 }) {
   const [createOpen, setCreateOpen] = useState(false);
+  const [hookOpen, setHookOpen] = useState(false);
   const [filter, setFilter] = useState<KeyFilter>("all");
   const { barRef, markerRef, condensed, barHeight } = useCondensingBar();
 
   const apiBase = `${baseUrl}/api/external`;
   const active = apiKeys.filter((k) => k.isActive).length;
   const onKeys = tab === "api-keys";
+  const onHooks = tab === "webhooks";
 
   return (
     <div className="relative flex flex-col gap-3.5">
@@ -107,7 +115,7 @@ export function IntegrationsClient({
       <PinnedBar barRef={barRef}>
         <PageHeader
           title="Integrations"
-          subtitle="API keys for time clocks and exports"
+          subtitle="API keys and webhooks for other systems"
           condensed={condensed}
           actions={
             <>
@@ -121,6 +129,16 @@ export function IntegrationsClient({
                   New Key
                 </Button>
               )}
+              {onHooks && (
+                <Button
+                  className="ta-header-primary"
+                  leadingIcon={<Plus className="h-4 w-4" />}
+                  onClick={() => setHookOpen(true)}
+                  disabled={!webhooks || !!webhooks.error || !webhooks.ready}
+                >
+                  New Webhook
+                </Button>
+              )}
             </>
           }
         />
@@ -130,7 +148,7 @@ export function IntegrationsClient({
         >
           <SegmentedLinks items={TABS} active={tab} ariaLabel="Integrations view" />
           <span className={`flex-1 ${styles.toolbarGap}`} />
-          {onKeys ? (
+          {onHooks ? null : onKeys ? (
             <span className={`flex items-center gap-2 ${styles.filter}`}>
               <span className={`whitespace-nowrap ${styles.filterLabel}`} style={{ font: "var(--weight-medium) 13px/1 var(--font-sans)", color: "var(--text-tertiary)" }}>
                 Status
@@ -172,7 +190,56 @@ export function IntegrationsClient({
         />
       )}
 
-      {onKeys ? (
+      {onHooks ? (
+        <div className="flex flex-wrap items-start gap-3.5">
+          <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-3.5">
+            {webhooks?.error ? (
+              <Banner
+                tone="error"
+                title="Could not load the webhooks"
+                body="The webhook list could not be read. Reload the page to try again. An empty list here doesn't mean there are none."
+              />
+            ) : (
+              <WebhooksManager
+                hooks={webhooks?.hooks ?? []}
+                ready={webhooks?.ready ?? false}
+                note={webhooks?.note ?? null}
+                createOpen={hookOpen}
+                onCreateOpenChange={setHookOpen}
+              />
+            )}
+          </div>
+          <aside className="flex max-w-full flex-[1_1_300px] flex-col gap-3.5">
+            <section className="px-4 pb-4 pt-4" style={PANEL}>
+              <div style={{ font: "var(--weight-semibold) 15px/20px var(--font-sans)", color: "var(--text-primary)" }}>Receiving</div>
+              <div className="mt-0.5" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                What the other system gets, and how it checks it.
+              </div>
+
+              <div className="mt-3.5" style={EYEBROW}>Request</div>
+              <div className="mt-1.5 flex h-9 items-center gap-2 px-3" style={WELL}>
+                <code className="min-w-0 flex-1 truncate" style={{ fontFamily: MONO, fontSize: 12, color: "var(--text-primary)" }}>
+                  POST, JSON body
+                </code>
+              </div>
+
+              <div className="mt-3" style={EYEBROW}>Headers</div>
+              <div className="mt-1.5 flex flex-col gap-1 px-3 py-2" style={WELL}>
+                {["X-Webhook-Event", "X-Webhook-Id", "X-Webhook-Signature"].map((h) => (
+                  <code key={h} style={{ fontFamily: MONO, fontSize: 12, lineHeight: "20px", color: "var(--text-primary)" }}>
+                    {h}
+                  </code>
+                ))}
+              </div>
+
+              <p style={{ margin: "12px 0 0", font: "var(--type-body2)", color: "var(--text-secondary)", textWrap: "pretty" }}>
+                The signature is <code style={{ fontFamily: MONO, fontSize: 12 }}>sha256=</code> and an HMAC SHA256 of the raw body, made with the
+                webhook&apos;s secret. The receiver should refuse anything that doesn&apos;t match, and answer with any 2xx within 10 seconds.
+              </p>
+            </section>
+          </aside>
+        </div>
+      ) : onKeys ? (
         <div className="flex flex-wrap items-start gap-3.5">
           <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-3.5">
             <div className="flex items-start gap-3.5 py-3.5 pl-3.5 pr-[18px]" style={{ ...PANEL, borderRadius: 16 }}>
