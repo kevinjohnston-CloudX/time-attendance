@@ -9,7 +9,7 @@
 /* ---- The list ---- */
 
 .cols {
-  grid-template-columns: minmax(180px, 2fr) minmax(130px, 1fr) minmax(150px, 1.1fr) 84px 32px;
+  grid-template-columns: minmax(200px, 2fr) minmax(156px, 1fr) minmax(120px, 0.8fr) 84px 32px;
 }
 .url {
   overflow: hidden;

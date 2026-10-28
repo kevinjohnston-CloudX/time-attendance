@@ -602,10 +602,16 @@ export function WebhooksManager({
                     <span className="min-w-0 truncate" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
                       {eventsSummary(h.events)}
                     </span>
-                    <span className="tabular min-w-0 truncate" style={{ font: "var(--type-body2)", color: h.last ? (h.last.ok ? "var(--text-secondary)" : "var(--text-error)") : "var(--text-tertiary)" }}>
-                      {h.last
-                        ? `${h.last.ok ? "Delivered" : h.last.statusCode ? `Failed (${h.last.statusCode})` : "Failed"}, ${when(new Date(h.last.attemptedAt))}`
-                        : "Never sent"}
+                    {/* The result over its time, as the name sits over the address. */}
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate" style={{ font: "var(--type-body2)", color: h.last ? (h.last.ok ? "var(--text-secondary)" : "var(--text-error)") : "var(--text-tertiary)" }}>
+                        {h.last ? (h.last.ok ? "Delivered" : h.last.statusCode ? `Failed (${h.last.statusCode})` : "Failed") : "Never sent"}
+                      </span>
+                      {h.last && (
+                        <span className="tabular truncate" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                          {when(new Date(h.last.attemptedAt))}
+                        </span>
+                      )}
                     </span>
                     <span>
                       <Badge tone={h.isActive ? "success" : "neutral"} size="sm" dot>
