@@ -272,14 +272,19 @@ export function ApiDocumentation({ baseUrl, initialOpen, stickyTop }: { baseUrl:
 }`;
 
   const peopleReq = `GET ${baseUrl}/api/external/people?status=active&page=1&pageSize=50\nAuthorization: Bearer ta_a1b2c3d4...`;
-  const lookupReq = `GET ${baseUrl}/api/external/people?email=jane.doe@example.com\nAuthorization: Bearer ta_a1b2c3d4...`;
+  const lookupReq = `GET ${baseUrl}/api/external/people?email=jane.doe@bergenlogistics.com\nAuthorization: Bearer ta_a1b2c3d4...`;
   const person = `{
     "id": "clx9k2m4p0001ab12cd34ef56",
     "name": "Jane Doe",
+    "firstName": "Jane",
+    "lastName": "Doe",
     "wmsName": "JANE D",
     "username": "jane.doe",
-    "workEmail": "jane.doe@example.com",
+    "workEmail": "jane.doe@bergenlogistics.com",
     "personalEmail": "janedoe88@gmail.com",
+    "company": "Bergen",
+    "phone": "(201)555-0148",
+    "phone2": null,
     "employeeCode": "100245",
     "badgeId": "100245",
     "barcodes": ["0851064226"],
@@ -290,7 +295,8 @@ export function ApiDocumentation({ baseUrl, initialOpen, stickyTop }: { baseUrl:
     "site": { "id": "clx1s2i3t4e5", "name": "Main Warehouse" },
     "department": { "id": "clx1d2e3p4t5", "name": "Receiving" },
     "agency": null,
-    "supervisor": { "id": "clx7s8u9p0r1", "name": "Sam Lee", "employeeCode": "100012" }
+    "supervisor": { "id": "clx7s8u9p0r1", "name": "Sam Lee", "employeeCode": "100012" },
+    "lastModified": "2026-10-27T14:05:12.000Z"
   }`;
   const peopleRes = `{\n  "people": [\n    ${person.replace(/\n/g, "\n    ")}\n  ],\n  "page": 1,\n  "pageSize": 50,\n  "total": 1\n}`;
   const personReq = `GET ${baseUrl}/api/external/people/clx9k2m4p0001ab12cd34ef56\nAuthorization: Bearer ta_a1b2c3d4...`;
@@ -468,8 +474,14 @@ export function ApiDocumentation({ baseUrl, initialOpen, stickyTop }: { baseUrl:
             {access}
             <p style={{ ...para, marginTop: 10 }}>
               Returns your company&apos;s employees a page at a time, sorted by name. Each one comes with what identifies them: names, username,
-              work and personal email, employee code, badge IDs, site, department, job title, agency and supervisor. Pay, rates, address, phone
-              numbers, date of birth and emergency contacts are never included.
+              work and personal email, company, phone numbers, employee code, badge IDs, site, department, job title, agency and supervisor. Pay,
+              rates, address, date of birth and emergency contacts are never included.
+            </p>
+            <p style={{ ...para, marginTop: 8 }}>
+              <Code>firstName</Code> and <Code>lastName</Code> split the full name at its first space, the same way the time clocks do.{" "}
+              <Code>company</Code> is Bergen or CloudX, read from the work email&apos;s domain, and empty when there is no company email. A company
+              address saved as the personal email is sent as <Code>workEmail</Code>. <Code>status</Code> is <Code>active</Code>,{" "}
+              <Code>on_leave</Code> or <Code>inactive</Code>.
             </p>
             <Label>Query Parameters</Label>
             <Fields
@@ -480,7 +492,12 @@ export function ApiDocumentation({ baseUrl, initialOpen, stickyTop }: { baseUrl:
                 { name: "badge", type: "string", text: "A badge ID or barcode, in either form the time clocks accept, with or without leading zeros." },
                 { name: "employeeCode", type: "string", text: "Exact employee code." },
                 { name: "siteId", type: "string", text: "Only employees at this site (the site id from a response)." },
-                { name: "status", type: "string", text: "active, inactive or all. Defaults to all." },
+                { name: "status", type: "string", text: "active (which includes people on leave), on_leave, inactive or all. Defaults to all." },
+                {
+                  name: "modifiedSince",
+                  type: "datetime",
+                  text: "Only employees whose record changed at or after this time, such as 2026-10-27T00:00:00Z. Renaming a site or department, or deleting someone, does not count, so run a full sync now and then.",
+                },
                 { name: "page", type: "integer", text: "Page number, starting at 1. Defaults to 1." },
                 { name: "pageSize", type: "integer", text: "Employees per page, 1 to 200. Defaults to 50." },
               ]}

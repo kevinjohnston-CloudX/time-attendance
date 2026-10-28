@@ -11,7 +11,7 @@ export type ApiScope = (typeof API_SCOPES)[number];
 export const SCOPE_LABEL: Record<ApiScope, { title: string; line: string }> = {
   "people:read": {
     title: "Employee directory",
-    line: "Names, usernames, both emails, badge IDs, site, department and supervisor. Never pay, address or date of birth.",
+    line: "Names, usernames, both emails, phone numbers, badge IDs, site, department and supervisor. Never pay, address or date of birth.",
   },
 };
 

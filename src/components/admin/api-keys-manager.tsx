@@ -330,7 +330,7 @@ const CONFIRM_COPY: Record<Confirm["kind"], { title: string; tone: "danger" | "w
     confirm: "Allow access",
     pending: "Allowing…",
     body: (n) =>
-      `Anything holding "${n}" will be able to read every employee in this company: names, usernames, work and personal emails, badge IDs, site, department and supervisor. Pay, address and date of birth are never included.`,
+      `Anything holding "${n}" will be able to read every employee in this company: names, usernames, work and personal emails, phone numbers, badge IDs, site, department and supervisor. Pay, address and date of birth are never included.`,
   },
   removeDirectory: {
     title: "Remove directory access?",
