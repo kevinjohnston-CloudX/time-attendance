@@ -85,6 +85,7 @@ export type PolicyRow = {
   forecastMode: string | null;
   forecastMonths: number | null;
   forecastApplyToAvailable: boolean;
+  useFirstLeaveTypeIds?: string[];
   rules: (PolicyRule & { id?: string })[];
   _count?: { siteLinks: number; categoryLinks: number };
 };
@@ -247,6 +248,8 @@ export function LeavePolicyEditor({
   // Blank stays blank until picked: a policy with no forecast mode saves none.
   const [forecastMode, setForecastMode] = useState<string | null>(p ? p.forecastMode : "END_OF_YEAR");
   const [applyForecast, setApplyForecast] = useState(p?.forecastApplyToAvailable ?? false);
+  // Leave types taken from first, in order, before the policy's own.
+  const [useFirst, setUseFirst] = useState<string[]>(p?.useFirstLeaveTypeIds ?? []);
 
   const payCodeShared = shared("payCodeId");
   const carryShared = shared("carryOverToLeaveTypeId");
@@ -284,6 +287,7 @@ export function LeavePolicyEditor({
       title: "Balance",
       areas: [
         { id: "reset", label: "Balance reset", count: reset ? "On" : "Off" },
+        { id: "useFirst", label: "Use other balances first", count: useFirst.length ? "On" : "Off" },
         { id: "borrow", label: "Borrowing", count: borrow ? "On" : "Off" },
         { id: "forecast", label: "Forecast", count: forecast ? "On" : "Off" },
       ],
@@ -310,6 +314,7 @@ export function LeavePolicyEditor({
       forecastMode: (forecastMode || null) as "MONTHS" | "END_OF_YEAR" | null,
       forecastMonths: months ? parseInt(months, 10) : null,
       forecastApplyToAvailable: applyForecast,
+      useFirstLeaveTypeIds: useFirst,
       rateMode,
       serviceMonthBasis: fd.get("serviceMonthBasis") as Basis,
       postingAnchorDate: (fd.get("postingAnchorDate") as string) || null,
@@ -386,6 +391,8 @@ export function LeavePolicyEditor({
   }
 
   const leaveTypeName = (id: string | null) => leaveTypes.find((l) => l.id === id)?.name;
+  /** Leave types that could still be added to the use-first list. */
+  const useFirstChoices = leaveTypes.filter((l) => l.id !== leaveTypeId && !useFirst.includes(l.id)).map((l) => l.id);
 
   return (
     <EditorPage
@@ -697,6 +704,50 @@ export function LeavePolicyEditor({
                 label={`Stop at the most ${leaveTypeName(carryShared) ?? "that leave type"} can hold`}
               />
             </span>
+          </span>
+        </Row>
+      </Section>
+
+      {/* ── Use other balances first ── */}
+      <Section
+        id="useFirst"
+        title="Use other balances first"
+        hint="Takes this leave from other balances first, in order, before its own. With PTO Carry Over first, 5 hours of PTO with 1.5 left in carry over comes off as 1.5 PTO Carry Over and 3.5 PTO."
+        on={useFirst.length > 0}
+        onToggle={(on) => setUseFirst(on ? useFirstChoices.slice(0, 1) : [])}
+        offText="Off. This leave comes only from its own balance."
+      >
+        <Row label="Take from, in order" hint={`Then ${leaveTypeName(leaveTypeId) ?? "this policy's leave type"} for whatever is left.`}>
+          <span className="flex flex-col gap-2.5">
+            {useFirst.map((id, i) => (
+              <span key={i} className="flex flex-wrap items-center gap-2" style={words}>
+                <span className="tabular" style={{ minWidth: 16 }}>{i + 1}.</span>
+                <Select
+                  value={id}
+                  onChange={(e) => setUseFirst(useFirst.map((x, j) => (j === i ? e.target.value : x)))}
+                  aria-label={`Leave type to use first, number ${i + 1}`}
+                  style={{ width: 240 }}
+                >
+                  {leaveTypes
+                    .filter((l) => l.id === id || (l.id !== leaveTypeId && !useFirst.includes(l.id)))
+                    .map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.name}
+                      </option>
+                    ))}
+                </Select>
+                <Button hierarchy="tertiary" size="sm" iconOnly aria-label={`Remove ${leaveTypeName(id) ?? "this leave type"}`} onClick={() => setUseFirst(useFirst.filter((_, j) => j !== i))}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </span>
+            ))}
+            {useFirstChoices.length > 0 && (
+              <span>
+                <Button hierarchy="secondary" size="sm" leadingIcon={<Plus className="h-4 w-4" />} onClick={() => setUseFirst([...useFirst, useFirstChoices[0]])}>
+                  Add a leave type
+                </Button>
+              </span>
+            )}
           </span>
         </Row>
       </Section>
