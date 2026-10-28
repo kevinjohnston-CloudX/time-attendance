@@ -210,7 +210,7 @@ export const draftPayrollFile = withRBAC(
     const missing = missingAdpCodes(summary);
     if (missing.length) throw new Error(missing.join(" "));
 
-    return { csv, filename: `DRAFT_EPI${parsed.codes.coCode}01_${parsed.from.replace(/-/g, "")}_${parsed.to.replace(/-/g, "")}.csv` };
+    return { csv, filename: `DRAFT_EPI${parsed.codes.coCode}01.csv` };
   },
 );
 
@@ -246,7 +246,9 @@ export const processPayrollRun = withRBAC(
     const leftOpen = leftOut.filter((m) => toLock.some((p) => p.id === m.payPeriodId)).length;
 
     const { csv, summary } = await buildAdpEpi({ tenantId, payPeriodIds: periodIds, filters, codes: parsed.codes, mode: "final" });
-    const filename = `EPI${parsed.codes.coCode}01_${parsed.from.replace(/-/g, "")}_${parsed.to.replace(/-/g, "")}.csv`;
+    // Named as ADP takes it and NovaTime wrote it: EPI, the company code, the
+    // batch number (EPID0F01.csv). The dates are in the audit log entry.
+    const filename = `EPI${parsed.codes.coCode}01.csv`;
 
     for (const p of periods.filter((pp) => inRun.has(pp.id))) {
       await writeAuditLog({
