@@ -343,7 +343,8 @@ export async function buildAdpEpi(opts: {
     }
   }
 
-  const csv = [HEADERS, ...rows].map((r) => r.map(esc).join(",")).join("\r\n");
+  // Every line ends in CRLF, the last one too, as NovaTime's file does.
+  const csv = [HEADERS, ...rows].map((r) => r.map(esc).join(",") + "\r\n").join("");
 
   return {
     csv,
