@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { emailHolders } from "@/lib/login-email";
 import { withRBAC } from "@/lib/rbac/guard";
+import { activeChangeEvent, queueEmployeeEvent, sendSoon } from "@/lib/webhooks/employee-events";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { AdpClient, getAdpConfig } from "@/lib/integrations/adp/client";
 import { PAY_BUCKET_TO_ADP_CODE } from "@/lib/integrations/adp/types";
@@ -172,6 +173,8 @@ export const syncAdpEmployees = withRBAC(
     const client = new AdpClient(config);
     const adpWorkers = await client.getAllWorkers();
 
+    // Terminations and rehires this sync made, sent to the company's webhooks at the end.
+    const webhookIds: string[] = [];
     const result: SyncResult = {
       created: 0,
       updated: 0,
@@ -245,6 +248,9 @@ export const syncAdpEmployees = withRBAC(
                   ]
                 : []),
             ]);
+
+            const activeChange = activeChangeEvent(existing.isActive, typeof updates.isActive === "boolean" ? updates.isActive : existing.isActive);
+            if (activeChange) webhookIds.push(...(await queueEmployeeEvent(tenantId, existing.id, activeChange)));
 
             if (!mapped.isActive && existing.isActive) {
               result.deactivated++;
@@ -338,6 +344,7 @@ export const syncAdpEmployees = withRBAC(
       },
     });
 
+    sendSoon(webhookIds);
     revalidatePath("/admin/employees");
     return result;
   }

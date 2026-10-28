@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { Braces, Check, ChevronDown, Copy, Lock } from "lucide-react";
+import { Braces, Check, ChevronDown, Copy, Lock, Webhook } from "lucide-react";
 
 /**
  * The external API reference, from the Integrations handoff: an "On this
@@ -17,7 +17,7 @@ import { Braces, Check, ChevronDown, Copy, Lock } from "lucide-react";
  * the server so the examples a vendor copies point at the right place.
  */
 
-export type DocSection = "auth" | "lt" | "pto" | "people" | "person";
+export type DocSection = "auth" | "lt" | "pto" | "people" | "person" | "webhooks";
 
 const MONO = "var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)";
 const PANEL: CSSProperties = { background: "var(--surface-card)", borderRadius: 18, boxShadow: "var(--ta-shell-shadow)" };
@@ -206,6 +206,7 @@ const TOC: { id: DocSection; method: "" | "GET" | "POST"; label: string }[] = [
   { id: "pto", method: "POST", label: "Submit a Leave Request" },
   { id: "people", method: "GET", label: "List Employees" },
   { id: "person", method: "GET", label: "Get an Employee" },
+  { id: "webhooks", method: "", label: "Webhooks" },
 ];
 
 export function ApiDocumentation({ baseUrl, initialOpen, stickyTop }: { baseUrl: string; initialOpen?: DocSection; stickyTop: number }) {
@@ -215,6 +216,7 @@ export function ApiDocumentation({ baseUrl, initialOpen, stickyTop }: { baseUrl:
     pto: initialOpen === "pto",
     people: initialOpen === "people",
     person: initialOpen === "person",
+    webhooks: initialOpen === "webhooks",
   });
   const toggle = (id: DocSection) => setOpen((o) => ({ ...o, [id]: !o[id] }));
   // Jumps aim below the bar at its full height: a jump near the top of the
@@ -301,6 +303,17 @@ export function ApiDocumentation({ baseUrl, initialOpen, stickyTop }: { baseUrl:
   const peopleRes = `{\n  "people": [\n    ${person.replace(/\n/g, "\n    ")}\n  ],\n  "page": 1,\n  "pageSize": 50,\n  "total": 1,\n  "nextPage": null\n}`;
   const personReq = `GET ${baseUrl}/api/external/people/clx9k2m4p0001ab12cd34ef56\nAuthorization: Bearer ta_a1b2c3d4...`;
   const personRes = `{\n  "person": ${person.replace(/\n  /g, "\n")}\n}`;
+  const hookBody = `{\n  "id": "cmw4h8k2v0003qz9t1x7c5b2d",\n  "event": "employee.terminated",\n  "occurredAt": "2026-10-28T19:42:07.512Z",\n  "data": {\n    "person": ${person
+    .replace('"status": "active"', '"status": "inactive"')
+    .replace('"terminatedAt": null', '"terminatedAt": "2026-10-28"')
+    .replace(/\n/g, "\n    ")}\n  }\n}`;
+  const hookVerify = `import crypto from "node:crypto";
+
+// rawBody: the request body exactly as received, before any JSON parsing.
+const expected = "sha256=" + crypto.createHmac("sha256", process.env.CLOUDTIME_WEBHOOK_SECRET).update(rawBody).digest("hex");
+const given = request.headers["x-webhook-signature"] ?? "";
+const valid = given.length === expected.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(expected));
+if (!valid) return respond(401);`;
   const access = (
     <div className="mb-1 px-3 py-2" style={{ borderRadius: 10, background: "var(--surface-warning)", font: "var(--type-body2)", color: "var(--text-warning)" }}>
       Only keys with <b style={{ fontWeight: 600 }}>directory access</b> can use this. Allow it from the key&apos;s menu on the API Keys tab. Other keys
@@ -364,7 +377,7 @@ export function ApiDocumentation({ baseUrl, initialOpen, stickyTop }: { baseUrl:
           <span className="flex min-w-0 flex-col gap-0.5">
             <span style={{ font: "var(--weight-semibold) 15px/20px var(--font-sans)", color: "var(--text-primary)" }}>External REST API</span>
             <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-              Authentication, endpoints and example requests for the keys on the API Keys tab
+              Authentication, endpoints, webhooks and example requests for the keys on the API Keys tab
             </span>
           </span>
         </div>
@@ -535,6 +548,50 @@ export function ApiDocumentation({ baseUrl, initialOpen, stickyTop }: { baseUrl:
             <CodeBlock code={personRes} />
             <Label>Error Responses</Label>
             {peopleErrors}
+          </Section>
+          <Section
+            id="webhooks"
+            offset={reach}
+            open={open.webhooks}
+            onToggle={() => toggle("webhooks")}
+            title="Webhooks"
+            badge={
+              <span className="grid h-[22px] w-11 flex-none place-items-center" style={{ borderRadius: 6, background: "var(--ta-well)", color: "var(--icon-secondary)" }}>
+                <Webhook className="h-[15px] w-[15px]" aria-hidden />
+              </span>
+            }
+          >
+            <p style={para}>
+              CloudTime sends a <Code>POST</Code> to each webhook on the <b style={{ fontWeight: 600, color: "var(--text-primary)" }}>Webhooks</b> tab
+              the moment someone is terminated or rehired, from the employee screen or the ADP sync. The body is JSON and has the same shape for
+              every event; <Code>data.person</Code> is the employee as Get an Employee returns them, at that moment.
+            </p>
+            <Label>Events</Label>
+            <Fields
+              rows={[
+                { name: "employee.terminated", text: "Someone was made inactive. Their status is inactive and terminatedAt holds the date." },
+                { name: "employee.reactivated", text: "Someone inactive was made active again, a rehire." },
+                { name: "webhook.test", text: "Sent only by Send test. Nothing happened to anyone." },
+              ]}
+            />
+            <Label>Headers</Label>
+            <Fields
+              rows={[
+                { name: "X-Webhook-Event", type: "string", text: "The event, as in the body." },
+                { name: "X-Webhook-Id", type: "string", text: "The message's id, the same on every try. Use it to skip a message you already handled." },
+                { name: "X-Webhook-Attempt", type: "integer", text: "Which try this is, from 1 to 6." },
+                { name: "X-Webhook-Signature", type: "string", text: "sha256= and an HMAC SHA256 of the raw body, made with the webhook's secret." },
+              ]}
+            />
+            <Label>Example Body</Label>
+            <CodeBlock code={hookBody} />
+            <Label>Checking the Signature</Label>
+            <CodeBlock lang="js" code={hookVerify} />
+            <p style={{ margin: "8px 0 0", font: "var(--type-body2)", color: "var(--text-tertiary)", textWrap: "pretty" }}>
+              Answer with any <Code>2xx</Code> within 10 seconds. With no answer, a timeout, or a <Code>5xx</Code>, <Code>408</Code> or{" "}
+              <Code>429</Code>, CloudTime tries again 1, 2, 3, 4 and 5 minutes later, 6 tries in all. Any other <Code>4xx</Code> or a redirect is
+              not tried again. A paused webhook is skipped, and nothing is kept for it to send later.
+            </p>
           </Section>
         </div>
       </section>

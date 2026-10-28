@@ -235,7 +235,17 @@ export function IntegrationsClient({
               <p style={{ margin: "12px 0 0", font: "var(--type-body2)", color: "var(--text-secondary)", textWrap: "pretty" }}>
                 The signature is <code style={{ fontFamily: MONO, fontSize: 12 }}>sha256=</code> and an HMAC SHA256 of the raw body, made with the
                 webhook&apos;s secret. The receiver should refuse anything that doesn&apos;t match, and answer with any 2xx within 10 seconds.
+                Without one, CloudTime tries again over the next 15 minutes, 6 tries in all.
               </p>
+
+              <Link
+                href="/admin/api-keys?tab=api-docs&open=webhooks"
+                className="ta-hoverable mt-3 flex h-[34px] items-center justify-center gap-1.5 whitespace-nowrap"
+                style={{ borderRadius: 10, background: "var(--ta-well)", font: "var(--weight-medium) 13px/1 var(--font-sans)", color: "var(--text-accent)", textDecoration: "none" }}
+              >
+                Read the webhook documentation
+                <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+              </Link>
             </section>
           </aside>
         </div>

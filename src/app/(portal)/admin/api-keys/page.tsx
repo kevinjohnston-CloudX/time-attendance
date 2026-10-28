@@ -27,7 +27,7 @@ export default async function ApiKeysPage({
 
   const sp = (await searchParams) ?? {};
   const activeTab: IntegrationsTab = sp.tab === "api-docs" ? "api-docs" : sp.tab === "webhooks" ? "webhooks" : "api-keys";
-  const openSection = (["auth", "lt", "pto", "people", "person"] as const satisfies readonly DocSection[]).find((s) => s === sp.open);
+  const openSection = (["auth", "lt", "pto", "people", "person", "webhooks"] as const satisfies readonly DocSection[]).find((s) => s === sp.open);
 
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "your-domain.com";

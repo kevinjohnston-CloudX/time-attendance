@@ -18,6 +18,7 @@ import { writeAuditLog } from "@/lib/audit/logger";
 import { ENTITY_TYPES, actionsMatching, isGateAlertSwitch } from "@/lib/audit/labels";
 import { startOfDayInTz } from "@/lib/utils/date";
 import { encryptPiiFields, decryptPiiFields } from "@/lib/crypto/pii";
+import { activeChangeEvent, queueEmployeeEvent, sendSoon } from "@/lib/webhooks/employee-events";
 import { currentIdentity } from "@/lib/rbac/current";
 import { employeeRank, forgetIdentity, type LiveIdentity } from "@/lib/rbac/identity";
 import { ROLE_RANK, isValidRole, givesLiveAttendanceRoles, editsPeers } from "@/lib/rbac/roles";
@@ -988,6 +989,10 @@ export const updateEmployee = withRBAC(
 
     // A role or status change reaches their next click, not the next cache refresh.
     forgetIdentity(current.userId);
+    // Tell the company's webhooks when this save terminated or rehired someone.
+    const activeChange = activeChangeEvent(current.isActive, willBeActive);
+    if (activeChange) sendSoon(await queueEmployeeEvent(tenantId, employeeId, activeChange));
+
     revalidatePath("/admin/employees");
     revalidatePath(`/admin/employees/${employeeId}`);
     return { employeeId };
