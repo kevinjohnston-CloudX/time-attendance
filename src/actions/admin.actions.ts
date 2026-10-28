@@ -12,6 +12,7 @@ import { publicError, withRBAC } from "@/lib/rbac/guard";
 import { zodMessage } from "@/lib/zod-message";
 import { photoUrls } from "@/lib/presence/photos";
 import { badgeWhere } from "@/lib/utils/badge-lookup";
+import { asksForClientBadge, isClientBadge, issueClientBadge } from "@/lib/utils/client-badge";
 import { looksLikeBadge } from "@/lib/presence/people-search.service";
 import { MISSING_OPTIONS, PAY_OPTIONS, PERIOD_OPTIONS, PUNCH_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS, pick } from "@/components/admin/employees-list-options";
 import { writeAuditLog } from "@/lib/audit/logger";
@@ -470,11 +471,17 @@ export const createEmployee = withRBAC(
       roleName = cr?.name ?? null;
     }
 
+    // "CL" as the Badge ID asks for the next client badge, issued inside the
+    // transaction below (client-badge.ts). "CL" as the employee code too means
+    // the code is that badge.
+    const issuing = asksForClientBadge(parsed.wmsId);
+    const ownCode = asksForClientBadge(parsed.employeeCode) ? undefined : parsed.employeeCode;
+
     // A Badge ID or login email already on file is said in words, with who has
     // it: the database refusal reached the screen only as "Something went
     // wrong". Mostly a rehire whose old record is inactive (Fidella Rios,
     // 639608, from the NovaTime import), who should be made active instead.
-    const badge = parsed.employeeCode || parsed.wmsId;
+    const badge = ownCode || (issuing ? undefined : parsed.wmsId);
     if (badge) {
       const taken = await db.employee.findFirst({
         where: { tenantId, OR: [{ employeeCode: badge }, { wmsId: badge }] },
@@ -493,9 +500,12 @@ export const createEmployee = withRBAC(
     // belong to anyone else (in either of their two, ignoring capitals).
     const personalEmail = cleanEmail(parsed.email, "personal");
     const workEmail = cleanEmail(parsed.workEmail, "work");
-    await assertEmailsFree(personalEmail, workEmail, null, tenantId);
+    // A client badge signs nobody in, so a client may have neither.
+    const client = issuing || isClientBadge(parsed.wmsId);
+    if (personalEmail || workEmail || !client) await assertEmailsFree(personalEmail, workEmail, null, tenantId);
 
     const employee = await db.$transaction(async (tx) => {
+      const wmsId = issuing ? await issueClientBadge(tx) : parsed.wmsId ?? null;
       const user = await tx.user.create({
         data: {
           name: parsed.name,
@@ -510,7 +520,7 @@ export const createEmployee = withRBAC(
         address1: parsed.address1, address2: parsed.address2, city: parsed.city, state: parsed.state, country: parsed.country, zipCode: parsed.zipCode,
       });
 
-      const employeeCode = parsed.employeeCode || parsed.wmsId || `EMP-${Date.now()}`;
+      const employeeCode = ownCode || wmsId || `EMP-${Date.now()}`;
 
       return tx.employee.create({
         data: {
@@ -526,7 +536,7 @@ export const createEmployee = withRBAC(
           ruleSetId: parsed.ruleSetId,
           hireDate: calendarDay(parsed.hireDate),
           supervisorId: parsed.supervisorId ?? null,
-          wmsId: parsed.wmsId ?? null,
+          wmsId,
           payType: parsed.payType ?? null,
           payRate: parsed.payRate ?? null,
           ...(parsed.payRate
@@ -551,7 +561,13 @@ export const createEmployee = withRBAC(
       entityType: "EMPLOYEE",
       entityId: employee.id,
       action: "EMPLOYEE_CREATED",
-      changes: { after: { employeeCode: employee.employeeCode, role: roleName ?? resolvedRole } },
+      changes: {
+        after: {
+          employeeCode: employee.employeeCode,
+          role: roleName ?? resolvedRole,
+          ...(issuing && { clientBadge: employee.wmsId }),
+        },
+      },
     });
 
     revalidatePath("/admin/employees");
@@ -640,7 +656,13 @@ export const updateEmployee = withRBAC(
       }
     }
     if (roleChanges) await assertAssignable(me, tenantId, role, customRoleId);
-    if (personalChanged || workChanged) {
+    // "CL" as the Badge ID asks for the next client badge, issued in the
+    // transaction below (client-badge.ts). A client badge signs nobody in, so
+    // a client may clear both emails.
+    const issuing = asksForClientBadge(wmsId);
+    const client = issuing || isClientBadge(wmsId === undefined ? current.wmsId : wmsId);
+    let issuedBadge: string | null = null;
+    if ((personalChanged || workChanged) && (nextPersonal || nextWork || !client)) {
       await assertEmailsFree(nextPersonal, nextWork, current.userId, tenantId, [
         personalChanged ? nextPersonal : null,
         workChanged ? nextWork : null,
@@ -664,6 +686,7 @@ export const updateEmployee = withRBAC(
     }
 
     await db.$transaction(async (tx) => {
+      if (issuing) issuedBadge = await issueClientBadge(tx);
       if (name !== undefined || personalChanged || workChanged) {
         await tx.user.update({
           where: { id: current.userId },
@@ -695,7 +718,7 @@ export const updateEmployee = withRBAC(
           ...(isActive !== undefined && { isActive }),
           ...(onLeave !== undefined && { onLeave }),
           ...(webPunchEnabled !== undefined && { webPunchEnabled }),
-          ...(wmsId !== undefined && { wmsId }),
+          ...(wmsId !== undefined && { wmsId: issuedBadge ?? wmsId }),
           // A barcode set by hand is marked as an override so the Oracle sync
           // leaves it alone — otherwise a deliberate correction would be undone
           // on the next run and nobody would know why the badge stopped working.
@@ -791,7 +814,7 @@ export const updateEmployee = withRBAC(
     const punchLabel = (on: boolean) => (on ? "Allowed" : "Time clock only");
     if (webPunchEnabled !== undefined) diff("Punching from the web", punchLabel(current.webPunchEnabled), punchLabel(webPunchEnabled));
     if (jobTitle !== undefined) diff("Job Title", current.jobTitle, jobTitle);
-    if (wmsId !== undefined) diff("Badge ID (WMS)", current.wmsId, wmsId);
+    if (wmsId !== undefined) diff("Badge ID (WMS)", current.wmsId, issuedBadge ?? wmsId);
     if (barcode !== undefined) diff("Badge barcode", current.barcode, barcode);
     if (adpWorkerId !== undefined) diff("ADP Worker ID", current.adpWorkerId, adpWorkerId);
     if (terminationReason !== undefined) diff("Termination Reason", current.terminationReason, terminationReason);
@@ -2236,7 +2259,8 @@ export const bulkCreateEmployees = withRBAC(
               ruleSetId: r.ruleSetId,
               hireDate: calendarDay(r.hireDate),
               supervisorId: null,
-              wmsId: r.wmsId ?? null,
+              // "CL" asks for the next client badge (client-badge.ts).
+              wmsId: asksForClientBadge(r.wmsId) ? await issueClientBadge(tx) : r.wmsId ?? null,
               payType: r.payType ?? null,
               payRate: r.payRate ?? null,
               ...(r.payRate

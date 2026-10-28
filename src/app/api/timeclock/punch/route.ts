@@ -13,6 +13,7 @@ import { findEmployeeByBadge } from "@/lib/utils/badge-lookup";
 import { tabletTimeZone } from "@/lib/utils/tablet-time-zone";
 import type { PunchType, PunchState } from "@prisma/client";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { CLIENT_TIME_CLOCK_REJECTION, isClientBadge } from "@/lib/utils/client-badge";
 
 function unauthorized() {
   return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
@@ -203,6 +204,16 @@ export async function POST(req: NextRequest) {
       { success: false, error: "Employee is inactive" },
       { status: 400 }
     );
+  }
+
+  // A client's badge (client-badge.ts) is for the gate only: a visitor keeps
+  // no timecard, so the scan is refused before one could be made. A 200, for
+  // the reason 5b gives: a refusal waiting cannot fix must never be a 4xx.
+  // Builds 159 to 166 read success:false as a refusal, show the message and
+  // drop the held Oracle write.
+  if (isClientBadge(employee.wmsId)) {
+    await settle("PUNCH_REJECTED", { rejectionReason: CLIENT_TIME_CLOCK_REJECTION });
+    return NextResponse.json({ success: false, punchId: null, error: CLIENT_TIME_CLOCK_REJECTION });
   }
 
   // 5b. Too soon after the last punch.

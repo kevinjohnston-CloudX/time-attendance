@@ -6,6 +6,7 @@ import { recordGateRefusal } from "@/lib/presence/gate-refusals.service";
 import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { employmentEnded, madeActiveAt } from "@/lib/presence/employment";
+import { isClientBadge } from "@/lib/utils/client-badge";
 
 /**
  * May this badge scan right now, and who is it?
@@ -177,17 +178,24 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     (await madeActiveAt([employee])).get(employee.id) ?? null,
   );
 
+  // A client's badge (client-badge.ts) needs no schedule: a visitor has no
+  // shift in Oracle to have one from. Termination, presence and the photo are
+  // decided for them as for anybody.
+  const client = isClientBadge(employee.wmsId);
+
   // The legacy rule, restated: a shift today, or already inside. Order matters
   // only for the reason string — a scheduled person who is also inside is
   // scheduled, not an exception.
-  const scheduled = scheduleDay?.isWorkday === true || present;
-  const reason = scheduleDay?.isWorkday
-    ? "WORKDAY"
-    : present
-      ? "PRESENT"
-      : scheduleDay
-        ? "NOT_A_WORKDAY"
-        : "NO_SCHEDULE";
+  const scheduled = client || scheduleDay?.isWorkday === true || present;
+  const reason = client
+    ? "CLIENT"
+    : scheduleDay?.isWorkday
+      ? "WORKDAY"
+      : present
+        ? "PRESENT"
+        : scheduleDay
+          ? "NOT_A_WORKDAY"
+          : "NO_SCHEDULE";
 
   // Turned away at the door: noted for Live Attendance once the tablet has
   // its answer. Only a person CloudTime knows and still employs, since an
@@ -244,8 +252,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     department: employee.department?.name ?? null,
     terminated,
     scheduled,
-    /// WORKDAY | PRESENT | NOT_A_WORKDAY | NO_SCHEDULE — why `scheduled` is
-    /// what it is, so a kiosk can say something more useful than "no".
+    /// WORKDAY | PRESENT | NOT_A_WORKDAY | NO_SCHEDULE | CLIENT — why
+    /// `scheduled` is what it is, so a kiosk can say something more useful
+    /// than "no". Builds up to 166 only log it.
     reason,
     shift: scheduleDay?.startTime
       ? { startTime: scheduleDay.startTime, endTime: scheduleDay.endTime }
