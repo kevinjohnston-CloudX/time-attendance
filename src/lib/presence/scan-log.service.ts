@@ -3,6 +3,12 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
 import { badgeWhere } from "@/lib/utils/badge-lookup";
+import {
+  CLIENT_BADGE_PREFIX,
+  CLIENT_DEPARTMENT_SHOWN,
+  VISITOR_DEPARTMENT_ID,
+  isClientBadge,
+} from "@/lib/utils/client-badge";
 import { addDays, clampDay } from "./days";
 import { localDateString } from "./on-site.service";
 import { photoUrls } from "./photos";
@@ -98,9 +104,18 @@ export async function getScanLog(
         ]
       : []),
   ];
+  // Visitors are filed under VISITOR_DEPARTMENT_ID on these pages, whatever
+  // department their record names, so the two filters must agree on that.
+  // (NOT alone would also drop everybody with no Badge ID: NULL is not "not CL".)
+  const visitors: Prisma.EmployeeWhereInput = { wmsId: { startsWith: CLIENT_BADGE_PREFIX } };
+  const notVisitors: Prisma.EmployeeWhereInput = { OR: [{ wmsId: null }, { NOT: visitors }] };
   const employee: Prisma.EmployeeWhereInput = {
     tenantId,
-    ...(input.departmentId ? { departmentId: input.departmentId } : {}),
+    ...(input.departmentId === VISITOR_DEPARTMENT_ID
+      ? visitors
+      : input.departmentId
+        ? { departmentId: input.departmentId, AND: [notVisitors] }
+        : {}),
     ...(input.shiftId ? { shiftId: input.shiftId } : {}),
     ...(who.length ? { OR: who } : {}),
   };
@@ -261,7 +276,9 @@ export async function getScanLog(
               id: s.employee.id,
               name: shownName(s.employee),
               employeeCode: s.employee.employeeCode,
-              department: s.employee.department?.name ?? null,
+              department: isClientBadge(s.employee.wmsId)
+                ? CLIENT_DEPARTMENT_SHOWN
+                : s.employee.department?.name ?? null,
               jobTitle: s.employee.jobTitle?.trim() || null,
               homeSite: s.employee.site && s.employee.site.id !== siteId ? s.employee.site.name : null,
               photoUrl: photos.get(s.employee.id) ?? null,

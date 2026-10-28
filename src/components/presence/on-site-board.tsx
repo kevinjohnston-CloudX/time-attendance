@@ -137,10 +137,11 @@ type View = "photos" | "compact" | "list";
 type Tab = "movements" | "people" | "log";
 
 const ALL_STATUSES = [...INSIDE_STATUSES, ...AWAY_STATUSES];
-/** The inside statuses that get a headcount card. Salaried people on site are
- *  counted in the building total and listed as a chip, since they need no action. */
-const CARD_STATUSES = INSIDE_STATUSES.filter((s) => s !== "ON_SITE");
-const CHIP_STATUSES: PresenceStatus[] = ["ON_SITE", ...AWAY_STATUSES];
+/** The inside statuses that get a headcount card. Salaried people and visitors
+ *  on site are counted in the building total and listed as a chip, since they
+ *  need no action. */
+const CARD_STATUSES = INSIDE_STATUSES.filter((s) => s !== "ON_SITE" && s !== "VISITOR");
+const CHIP_STATUSES: PresenceStatus[] = ["ON_SITE", "VISITOR", ...AWAY_STATUSES];
 
 /** Everyone is the default; "inside" is the building total, picked from its card. */
 function parseStatus(raw: string | null): StatusFilter {
@@ -2320,6 +2321,7 @@ function EmptyBoard({
     ON_MEAL: ["Nobody is on a break", "Everyone on the clock is working."],
     OFF_CLOCK: ["Everyone inside is clocked in", "Everyone who came in through the security gate is on the clock or has left."],
     ON_SITE: ["No office staff inside", "No one from the office has come through the gate right now."],
+    VISITOR: ["No visitors inside", "No one on a visitor badge has come through the gate right now."],
     NOT_ARRIVED: ["Everyone scheduled has arrived", "No one scheduled for today is still missing."],
     LEFT: ["Nobody has left yet", "No one who was here today has gone home."],
     ELSEWHERE: ["Nobody is at another building", "No one seen here today is on the clock at another building right now."],

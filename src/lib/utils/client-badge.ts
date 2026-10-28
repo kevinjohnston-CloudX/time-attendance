@@ -28,8 +28,8 @@ import type { Prisma } from "@prisma/client";
  *
  * <p><b>What a client badge changes.</b> The gate admits it without a
  * schedule (eligibility route), a time clock refuses it (punch route), the
- * tablets show it as a Visitor whatever its department, and holding one needs
- * no sign in email. Nothing else.
+ * tablets and the On Site pages show it as a Visitor whatever its department,
+ * and holding one needs no sign in email. Nothing else.
  */
 export const CLIENT_BADGE_PREFIX = "CL";
 
@@ -46,13 +46,20 @@ const CLIENT_BADGE = new RegExp(`^${CLIENT_BADGE_PREFIX}(\\d+)$`);
 export const CLIENT_TIME_CLOCK_REJECTION = "Visitors scan at security only, not at the time clock";
 
 /**
- * What the tablets show as a client's department. The tablets print the
- * department beside the name on every result screen, and the one a client is
- * filed under in CloudTime is whatever HR picked (on 2026-10-28 the first one
- * read "Account Management" at the gate), which says the wrong thing about who
- * is walking in. CloudTime itself keeps the department as filed.
+ * What the tablets and the On Site pages show as a client's department. Both
+ * print the department beside the name, and the one a client is filed under is
+ * whatever HR picked (on 2026-10-28 the first one read "Account Management" at
+ * the gate), which says the wrong thing about who is walking in. The employee
+ * record keeps the department as filed.
  */
-export const CLIENT_DEPARTMENT_ON_TABLETS = "Visitor";
+export const CLIENT_DEPARTMENT_SHOWN = "Visitor";
+
+/**
+ * The department id the On Site pages file visitors under, so they group,
+ * filter and export together rather than inside whatever department their
+ * record names. Not a real department: no generated id looks like it.
+ */
+export const VISITOR_DEPARTMENT_ID = "visitors";
 
 /** A badge CloudTime issued to a client. */
 export function isClientBadge(code: string | null | undefined): boolean {

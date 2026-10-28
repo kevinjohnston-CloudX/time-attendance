@@ -9,6 +9,7 @@ import { MAX_PICKED } from "./search-limits";
 import { scansHere, siteScope } from "./site-scope";
 import { snapToLocalTime } from "@/lib/utils/date";
 import { badgeWhere } from "@/lib/utils/badge-lookup";
+import { CLIENT_DEPARTMENT_SHOWN, isClientBadge } from "@/lib/utils/client-badge";
 import { NOT_SCREEN_ACCOUNT } from "./screen-accounts";
 
 /**
@@ -114,7 +115,7 @@ async function shape(tenantId: string, rows: Row[], withPhotos: boolean, typed?:
     id: r.id,
     name: shownNameOrNull(r) ?? r.employeeCode,
     employeeCode: r.employeeCode,
-    department: r.department?.name ?? null,
+    department: isClientBadge(r.wmsId) ? CLIENT_DEPARTMENT_SHOWN : r.department?.name ?? null,
     inactive: ended.has(r.id),
     photoUrl: photos.get(r.id) ?? null,
     badge: low && !nameOrCodeMatches(r, low) ? typed!.trim() : null,

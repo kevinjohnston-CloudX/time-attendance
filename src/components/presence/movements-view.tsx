@@ -132,7 +132,7 @@ export function statusOfDay(v: PersonDayView, isToday: boolean, hasGate: boolean
   if (clock !== "OUT" && away) return "ELSEWHERE";
   if (clock === "WORK") return hasGate && !inside ? "NO_GATE_SCAN" : "WORKING";
   if (clock === "MEAL" || clock === "BREAK") return "ON_MEAL";
-  if (inside) return v.person.salaried ? "ON_SITE" : "OFF_CLOCK";
+  if (inside) return v.person.visitor ? "VISITOR" : v.person.salaried ? "ON_SITE" : "OFF_CLOCK";
   if (v.scanCount > 0) return "LEFT";
   if (v.person.onLeave) return "ON_LEAVE";
   if (v.schedule) return "NOT_ARRIVED";
@@ -358,7 +358,7 @@ function PersonRow({
       <span data-tone={late ? "warning" : undefined}>{time(lanes.clockIn)}</span>
     ) : lanes.clock.length > 0 ? (
       <span className={styles.mvQuiet}>Since yesterday</span>
-    ) : seen && !p.salaried ? (
+    ) : seen && !p.salaried && !p.visitor ? (
       <span className={styles.mvQuiet}>Not clocked in</span>
     ) : null;
   const clockedOut =
@@ -524,7 +524,9 @@ function PersonRow({
               in, and a gap for anyone hourly; neither reads as "0 min".
               With a gate, the time inside sits under it. */}
           {seen && t.workMin === 0 ? (
-            <span className={styles.mvQuiet}>{v.person.salaried ? "Office" : hasGate ? "None" : "Not clocked in"}</span>
+            <span className={styles.mvQuiet}>
+              {v.person.visitor ? "Visitor" : v.person.salaried ? "Office" : hasGate ? "None" : "Not clocked in"}
+            </span>
           ) : (
             <span className={styles.mvFactValue}>{seen ? fmtDuration(t.workMin) : ""}</span>
           )}
@@ -706,7 +708,18 @@ function Ribbon({
 
 /* ── A person's day, as a story ─────────────────────────────────────────── */
 
-type StoryState = "WORKING" | "MEAL" | "BREAK" | "INSIDE_OFF" | "ON_SITE" | "OUT_WORKING" | "OUT_MEAL" | "AWAY" | "MOVING" | "OUTSIDE";
+type StoryState =
+  | "WORKING"
+  | "MEAL"
+  | "BREAK"
+  | "INSIDE_OFF"
+  | "ON_SITE"
+  | "VISITOR"
+  | "OUT_WORKING"
+  | "OUT_MEAL"
+  | "AWAY"
+  | "MOVING"
+  | "OUTSIDE";
 
 const STATE_LABEL: Record<StoryState, string> = {
   WORKING: "Working",
@@ -714,6 +727,7 @@ const STATE_LABEL: Record<StoryState, string> = {
   BREAK: "On break",
   INSIDE_OFF: "In building, out time clock",
   ON_SITE: "On site",
+  VISITOR: "In building, visitor",
   OUT_WORKING: "In time clock, out building",
   OUT_MEAL: "On a break, outside",
   AWAY: "At another building",
@@ -755,7 +769,7 @@ function stateAt(v: PersonDayView, t: number, hasGate: boolean): StoryState | nu
     if (clock === "MEAL") return "MEAL";
     if (clock === "BREAK") return "BREAK";
     if (!hasGate) return null;
-    return v.person.salaried ? "ON_SITE" : "INSIDE_OFF";
+    return v.person.visitor ? "VISITOR" : v.person.salaried ? "ON_SITE" : "INSIDE_OFF";
   }
   // On the clock inside another building: the shift carried on there.
   if (clock !== "OUT" && v.lanes.away.some((g) => g.start <= t && t < g.end)) return "AWAY";
@@ -881,7 +895,7 @@ function DayStory({
     { label: "Working", minutes: t.workMin },
     ...(hasGate ? [{ label: "Inside the building", minutes: t.insideMin }] : []),
     { label: "Meals and breaks", minutes: t.mealMin + t.breakMin },
-    ...(hasGate && !v.person.salaried
+    ...(hasGate && !v.person.salaried && !v.person.visitor
       ? [{ label: "In building, out time clock", minutes: t.insideOffClockMin, worth: t.insideOffClockMin >= GAP_MIN }]
       : []),
     ...(hasGate ? [{ label: "In time clock, out building", minutes: t.workOutsideMin, worth: t.workOutsideMin >= GAP_MIN }] : []),
