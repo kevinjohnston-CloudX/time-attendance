@@ -90,6 +90,7 @@ import { isPhone, usePhoneLayout } from "@/lib/phone";
 import { usePhoneBack } from "@/components/layout/phone-back";
 import { shiftMeal } from "@/lib/shift-meal";
 import { roundedHoursNote } from "@/lib/utils/hours-entry";
+import { Overlay } from "@/components/ui/overlay";
 
 /**
  * The Timecards workspace, as the portal design lays it out.
@@ -732,12 +733,9 @@ function InlinePunchEdit({
  */
 function inPlaceOrSheet(panel: React.ReactNode, scrimClass: string) {
   if (!isPhone()) return panel;
-  return createPortal(
-    <div className={`ta-sheet-scrim fixed inset-0 flex ${scrimClass}`} style={{ background: "var(--wms-overlay-modal)" }}>
+  return <Overlay className={`ta-sheet-scrim flex ${scrimClass}`} style={{ background: "var(--wms-overlay-modal)" }}>
       {panel}
-    </div>,
-    document.body
-  );
+    </Overlay>;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -4240,8 +4238,8 @@ export function TimecardViewer({
       </div>
 
       {leaveTo && (
-        <div
-          className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
+        <Overlay
+          className="ta-sheet-scrim z-50 flex items-center justify-center p-4"
           style={{ background: "rgba(0,0,0,0.5)" }}
           onClick={(e) => e.target === e.currentTarget && setLeaveTo(null)}
           onKeyDown={(e) => e.key === "Escape" && setLeaveTo(null)}
@@ -4274,13 +4272,13 @@ export function TimecardViewer({
               </Button>
             </div>
           </div>
-        </div>
+        </Overlay>
       )}
 
       {/* Notes Modal */}
       {noteDay && timecard && (
-        <div
-          className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+        <Overlay
+          className="ta-sheet-scrim z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
           onClick={() => { setNoteDay(null); setNoteText(""); }}
         >
           <div
@@ -4396,13 +4394,13 @@ export function TimecardViewer({
               </div>
             )}
           </div>
-        </div>
+        </Overlay>
       )}
 
       {/* Add Entry Modal */}
       {showAddEntryModal && canEdit && (
-        <div
-          className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+        <Overlay
+          className="ta-sheet-scrim z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
           onClick={() => { setShowAddEntryModal(false); setNewEntryError(null); }}
         >
           <div
@@ -4602,7 +4600,7 @@ export function TimecardViewer({
               </div>
             </form>
           </div>
-        </div>
+        </Overlay>
       )}
     </div>
   );

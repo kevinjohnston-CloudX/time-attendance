@@ -11,10 +11,10 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { createPortal } from "react-dom";
 import { SlidersHorizontal, X } from "lucide-react";
 import { usePhoneLayout } from "@/lib/phone";
 import { Button } from "./button";
+import { Overlay } from "./overlay";
 
 /**
  * The white tools bar from the Live Attendance handoff, for every list screen
@@ -140,9 +140,8 @@ function PhoneToolsBar({ lead, search, children, end, className }: ToolsBarProps
       </div>
       {hasEnd && <span className="ta-tools-under">{end}</span>}
       {open &&
-        createPortal(
-          <div
-            className="ta-sheet-scrim fixed inset-0 z-[60] flex"
+        <Overlay
+            className="ta-sheet-scrim z-[60] flex"
             style={{ background: "var(--wms-overlay-modal)" }}
             onClick={(e) => e.target === e.currentTarget && setOpen(false)}
           >
@@ -161,9 +160,7 @@ function PhoneToolsBar({ lead, search, children, end, className }: ToolsBarProps
                 </Button>
               </div>
             </div>
-          </div>,
-          document.body,
-        )}
+          </Overlay>}
     </>
   );
 }

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { useRouter } from "@/components/layout/navigation-progress";
 import { Keyboard } from "lucide-react";
 import { collapseStore, navModeStore, useNavMode } from "./nav-mode";
+import { Overlay } from "@/components/ui/overlay";
 
 /**
  * The shortcuts button in the top bar, the list behind it, and the keys
@@ -175,7 +176,7 @@ export function ShortcutsDialog({
   onClose: () => void;
 }) {
   return (
-    <div
+    <Overlay
       role="dialog"
       aria-modal="true"
       aria-label="Keyboard shortcuts"
@@ -186,7 +187,7 @@ export function ShortcutsDialog({
           onClose();
         }
       }}
-      className="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[12vh]"
+      className="z-50 flex items-start justify-center px-4 pt-[12vh]"
       style={{ background: "var(--wms-overlay-modal)" }}
     >
       <div
@@ -249,6 +250,6 @@ export function ShortcutsDialog({
           Shortcuts are off while you are typing in a field.
         </p>
       </div>
-    </div>
+    </Overlay>
   );
 }

@@ -9,6 +9,7 @@ import { SCOPE_LABEL } from "@/lib/api/scopes";
 import { Badge, Banner, Button, ConfirmDialog, Input, Toast, useToast } from "@/components/ui";
 import { CopyButton } from "@/components/admin/api-documentation";
 import styles from "./integrations.module.css";
+import { Overlay } from "@/components/ui/overlay";
 
 /**
  * The API Keys panel from the Integrations handoff: the key list with a menu
@@ -68,6 +69,7 @@ function RowMenu({
   const item = "ta-hoverable flex h-8 w-full items-center whitespace-nowrap px-2.5 text-left";
   return (
     <span className="relative flex justify-end">
+      {/* eslint-disable-next-line no-restricted-syntax -- a transparent click catcher for the dropdown beside it; it has to stay in the dropdown's layer, under the menu */}
       {open && <span className="fixed inset-0 z-40" onClick={() => setOpen(false)} />}
       <button
         type="button"
@@ -166,7 +168,7 @@ function NewKeyDialog({ onClose, onCreated }: { onClose: () => void; onCreated: 
   };
 
   return (
-    <div className="ta-sheet-scrim fixed inset-0 z-[58] flex items-start justify-center px-4 pb-4 pt-[18vh]">
+    <Overlay className="ta-sheet-scrim z-[58] flex items-start justify-center px-4 pb-4 pt-[18vh]">
       <div className="absolute inset-0" style={{ background: "var(--wms-overlay-modal)" }} onClick={() => !pending && onClose()} />
       <form
         ref={ref}
@@ -228,7 +230,7 @@ function NewKeyDialog({ onClose, onCreated }: { onClose: () => void; onCreated: 
           </Button>
         </div>
       </form>
-    </div>
+    </Overlay>
   );
 }
 
@@ -263,7 +265,7 @@ function RevealDialog({ name, fullKey, onClose }: { name: string; fullKey: strin
     ref.current?.querySelector<HTMLElement>("[data-done]")?.focus();
   }, []);
   return (
-    <div className="ta-sheet-scrim fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: "var(--wms-overlay-modal)" }}>
+    <Overlay className="ta-sheet-scrim z-[60] flex items-center justify-center p-4" style={{ background: "var(--wms-overlay-modal)" }}>
       <div
         ref={ref}
         role="dialog"
@@ -305,7 +307,7 @@ function RevealDialog({ name, fullKey, onClose }: { name: string; fullKey: strin
           </Button>
         </div>
       </div>
-    </div>
+    </Overlay>
   );
 }
 

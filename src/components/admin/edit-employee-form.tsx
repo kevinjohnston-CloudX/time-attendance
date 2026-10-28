@@ -48,6 +48,7 @@ import styles from "./employee-record.module.css";
 import { PayRatesTable } from "./pay-rates-table";
 import type { PayRateRow } from "@/actions/pay-rate.actions";
 import { TIME_ZONE_OPTIONS, timeZoneLabel } from "@/lib/utils/person-time-zone";
+import { Overlay } from "@/components/ui/overlay";
 
 /**
  * The employee record. It opens to read: every section shows its values as
@@ -1618,8 +1619,8 @@ export function EditEmployeeForm({
 
       {/* ── Temp password modal ───────────────────────────────────────────── */}
       {showPasswordModal && (
-        <div
-          className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        <Overlay
+          className="ta-sheet-scrim z-50 flex items-center justify-center bg-black/50 p-4"
           onClick={(e) => { if (e.target === e.currentTarget) setShowPasswordModal(false); }}
         >
           <div className="ta-modal ta-sheet w-full max-w-sm rounded-xl p-6" style={{ "--ta-sheet-pad": "24px" } as React.CSSProperties}>
@@ -1670,7 +1671,7 @@ export function EditEmployeeForm({
               </div>
             </form>
           </div>
-        </div>
+        </Overlay>
       )}
     </>
   );

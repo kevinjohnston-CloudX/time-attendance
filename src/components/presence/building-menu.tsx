@@ -7,6 +7,7 @@ import type { BuildingTablets } from "@/lib/presence/tablets.service";
 import { countHealth } from "./tablet-health";
 import styles from "./building-windows.module.css";
 import { usePhoneLayout } from "@/lib/phone";
+import { Overlay } from "@/components/ui/overlay";
 
 /**
  * The building button on Live Attendance, and the menu it opens: which
@@ -208,8 +209,8 @@ export function BuildingMenu({
 function inSheet(phone: boolean, menu: ReactNode) {
   if (!phone) return menu;
   return (
-    <div className="ta-sheet-scrim fixed inset-0 z-[60] flex" style={{ background: "var(--wms-overlay-modal)" }}>
+    <Overlay className="ta-sheet-scrim z-[60] flex" style={{ background: "var(--wms-overlay-modal)" }}>
       {menu}
-    </div>
+    </Overlay>
   );
 }

@@ -161,6 +161,7 @@ export function PunchHistoryDatePicker({
       {open &&
         inPlaceOrOnTop(
           <>
+            {/* eslint-disable-next-line no-restricted-syntax -- a transparent click catcher for the dropdown beside it; it has to stay in the dropdown's layer, under the menu */}
             <div className={`fixed inset-0 z-30 ${styles.catcher}`} onClick={() => onOpenChange(false)} aria-hidden="true" />
             <div
               role="dialog"

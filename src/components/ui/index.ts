@@ -25,3 +25,4 @@ export { Toast, useToast } from "./toast";
 export { StatCard, type StatTone } from "./stat";
 export { Banner, type BannerTone } from "./banner";
 export { ConfirmDialog } from "./confirm-dialog";
+export { Overlay } from "./overlay";

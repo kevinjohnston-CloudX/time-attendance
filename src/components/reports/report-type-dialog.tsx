@@ -9,6 +9,7 @@ import { STANDARD_FOLDERS, type StandardReport } from "@/lib/reports/standard-re
 import { describePrint } from "@/lib/reports/grouping";
 import type { DataSourceId } from "@/lib/validators/report.schema";
 import phone from "./reports-phone.module.css";
+import { Overlay } from "@/components/ui/overlay";
 
 export interface ReportTypeOption {
   id: DataSourceId;
@@ -134,8 +135,8 @@ export function ReportTypeDialog({
   }
 
   return (
-    <div
-      className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
+    <Overlay
+      className="ta-sheet-scrim z-50 flex items-center justify-center p-4"
       style={{ background: "var(--wms-overlay-modal)" }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
@@ -268,7 +269,7 @@ export function ReportTypeDialog({
           )}
         </footer>
       </div>
-    </div>
+    </Overlay>
   );
 }
 

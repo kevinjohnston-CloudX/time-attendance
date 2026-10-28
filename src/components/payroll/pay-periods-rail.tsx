@@ -300,6 +300,7 @@ export function PayPeriodsRail({
             {picker &&
               inPlaceOrOnTop(
                 <>
+                  {/* eslint-disable-next-line no-restricted-syntax -- a transparent click catcher for the dropdown beside it; it has to stay in the dropdown's layer, under the menu */}
                   <span className={`fixed inset-0 z-40 ${ppStyles.monthCatcher}`} onClick={() => setPicker(false)} />
                   <div
                     role="dialog"

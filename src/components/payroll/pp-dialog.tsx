@@ -3,6 +3,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui";
+import { Overlay } from "@/components/ui/overlay";
 
 /**
  * The Pay Periods handoff's form window (Export to ADP, Reopen): an icon
@@ -53,7 +54,7 @@ export function PpDialog({
   }, []);
 
   return (
-    <div className="ta-sheet-scrim fixed inset-0 z-[58] flex items-start justify-center px-4 pb-4 pt-[14vh]">
+    <Overlay className="ta-sheet-scrim z-[58] flex items-start justify-center px-4 pb-4 pt-[14vh]">
       <div className="absolute inset-0" style={{ background: "var(--wms-overlay-modal)" }} onClick={() => !pending && onClose()} />
       <section
         ref={ref}
@@ -90,6 +91,6 @@ export function PpDialog({
           {footer}
         </div>
       </section>
-    </div>
+    </Overlay>
   );
 }

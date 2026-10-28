@@ -196,6 +196,27 @@ import { fieldCls, primaryBtnCls, secondaryBtnCls } from "@/components/ui/form-c
 Same tokens, same focus ring, no several-hundred-line diff on the screens that
 compute overtime.
 
+### Pop ups draw through `<Overlay>`
+
+Every pop up, dialog, drawer or sheet sits on `<Overlay>` from
+`@/components/ui`, which draws its backdrop at the end of `<body>`:
+
+```tsx
+<Overlay className="ta-sheet-scrim z-50 flex items-center justify-center p-4"
+  style={{ background: "var(--wms-overlay-modal)" }}
+  onClick={(e) => e.target === e.currentTarget && onClose()}>
+  ...the window...
+</Overlay>
+```
+
+A backdrop written as a plain `fixed inset-0` div stays in whatever layer its
+button lives in. Inside a page's pinned bar (z-20) that layer sits under the
+top bar (z-30) whatever z-index the pop up asks for, so the top bar showed
+through the dimmed page on every pop up opened from a page header. Lint now
+refuses `fixed inset-0` outside `Overlay`. The one exception is a transparent
+click catcher behind a dropdown, which has to stay in the dropdown's layer:
+disable the rule on that line and say why.
+
 ## Fonts — read this before touching them
 
 `typography.css` declares `--font-sans: var(--wms-font-sans)` and is imported

@@ -40,6 +40,7 @@ import { LEAVE_STATUS_LABEL, type LeaveRequestStatusValue } from "@/lib/state-ma
 import { getTeamMembersForLeave, createLeaveRequestForEmployee } from "@/actions/leave.actions";
 import { LeaveDayPicker, type DaySelection, type ShiftInfo } from "@/components/leave/leave-day-picker";
 import { shiftMeal } from "@/lib/shift-meal";
+import { Overlay } from "@/components/ui/overlay";
 
 /**
  * Team Leave, as the portal design lays it out: the list screen's header,
@@ -1307,7 +1308,7 @@ export function LeaveTabs({
       <Toast message={toast} />
 
       {showSubmitModal && (
-        <div className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <Overlay className="ta-sheet-scrim z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="ta-sheet ta-modal max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl">
             <div
               className="sticky top-0 z-10 flex items-center justify-between gap-3 px-6 py-4"
@@ -1409,7 +1410,7 @@ export function LeaveTabs({
               </form>
             )}
           </div>
-        </div>
+        </Overlay>
       )}
 
       {/* Hover tooltip */}

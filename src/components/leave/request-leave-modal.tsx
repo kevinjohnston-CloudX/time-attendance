@@ -6,6 +6,7 @@ import { Plus, X } from "lucide-react";
 import { RequestLeaveForm } from "./request-leave-form";
 import type { ShiftInfo } from "./leave-day-picker";
 import { Button } from "@/components/ui";
+import { Overlay } from "@/components/ui/overlay";
 
 interface Props {
   leaveTypes: { id: string; name: string }[];
@@ -36,8 +37,8 @@ export function RequestLeaveModal({ leaveTypes, shift }: Props) {
       </Button>
 
       {open && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        <Overlay
+          className="z-50 flex items-center justify-center p-4"
           onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
         >
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
@@ -62,7 +63,7 @@ export function RequestLeaveModal({ leaveTypes, shift }: Props) {
               onSuccess={handleSuccess}
             />
           </div>
-        </div>
+        </Overlay>
       )}
     </>
   );

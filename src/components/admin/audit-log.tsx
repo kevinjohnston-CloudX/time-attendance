@@ -11,6 +11,7 @@ import { useCondensingBar } from "@/components/layout/use-condensing-bar";
 import { ENTITY_LABEL, ENTITY_TYPES, actionLabel, isGateAlertSwitch } from "@/lib/audit/labels";
 import { parseUtcDate } from "@/lib/utils/date";
 import phone from "./audit.module.css";
+import { Overlay } from "@/components/ui/overlay";
 
 /**
  * The Audit Log, from the Audit Log handoff: search and three filters in one
@@ -593,8 +594,8 @@ function EntryPanel({
   ];
 
   return (
-    <>
-      <div aria-hidden className="fixed inset-0 z-50" style={{ background: "var(--ta-scrim)" }} onClick={onClose} />
+    <Overlay className="z-50">
+      <div aria-hidden className="absolute inset-0" style={{ background: "var(--ta-scrim)" }} onClick={onClose} />
       <aside
         role="dialog"
         aria-modal="true"
@@ -715,7 +716,7 @@ function EntryPanel({
           </Button>
         </div>
       </aside>
-    </>
+    </Overlay>
   );
 }
 

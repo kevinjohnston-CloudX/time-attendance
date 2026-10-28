@@ -6,6 +6,7 @@ import { bulkCreateEmployees } from "@/actions/admin.actions";
 import { Upload, Download, FileSpreadsheet, X } from "lucide-react";
 import type { CsvEmployeeRow } from "@/lib/validators/admin.schema";
 import { Button } from "@/components/ui";
+import { Overlay } from "@/components/ui/overlay";
 
 interface Props {
   sites: string[];
@@ -209,8 +210,8 @@ export function CsvUploadForm({ sites, departments, ruleSets }: Props) {
       </Button>
 
       {open && (
-        <div
-          className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
+        <Overlay
+          className="ta-sheet-scrim z-50 flex items-center justify-center p-4"
           onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}
         >
           {/* Backdrop */}
@@ -321,7 +322,7 @@ export function CsvUploadForm({ sites, departments, ruleSets }: Props) {
               </div>
             )}
           </div>
-        </div>
+        </Overlay>
       )}
     </>
   );

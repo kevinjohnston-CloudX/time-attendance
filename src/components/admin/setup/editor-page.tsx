@@ -6,6 +6,7 @@ import { Banner, Button, Checkbox, Input, Switch } from "@/components/ui";
 import { SetupShell } from "./setup-shell";
 import { NotCalculated } from "./setup-ui";
 import phone from "./setup-phone.module.css";
+import { Overlay } from "@/components/ui/overlay";
 
 /**
  * The frame every Rules Setup editor page shares: the rule set, the shift,
@@ -189,8 +190,8 @@ function useLeaveGuard(dirty: boolean, noun: string) {
   }, []);
 
   return pending ? (
-    <div
-      className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
+    <Overlay
+      className="ta-sheet-scrim z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(3, 7, 18, 0.5)" }}
       onClick={(e) => e.target === e.currentTarget && setPending(null)}
     >
@@ -224,7 +225,7 @@ function useLeaveGuard(dirty: boolean, noun: string) {
           </Button>
         </div>
       </div>
-    </div>
+    </Overlay>
   ) : null;
 }
 

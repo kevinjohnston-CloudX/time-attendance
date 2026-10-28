@@ -7,6 +7,7 @@ import { getTimecardRefusedScans, recoverTimecardRefusedScans } from "@/actions/
 import type { RefusedScan } from "@/lib/services/refused-scans.service";
 import styles from "./refused-scans.module.css";
 import { codeOf } from "@/lib/action-errors";
+import { Overlay } from "@/components/ui/overlay";
 
 /**
  * On a timecard: the time clock scans that were refused because this person
@@ -169,8 +170,8 @@ function ReviewDialog({
   }
 
   return (
-    <div
-      className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
+    <Overlay
+      className="ta-sheet-scrim z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.4)" }}
       onClick={(e) => {
         if (e.target === e.currentTarget) close();
@@ -272,6 +273,6 @@ function ReviewDialog({
           </div>
         </footer>
       </div>
-    </div>
+    </Overlay>
   );
 }

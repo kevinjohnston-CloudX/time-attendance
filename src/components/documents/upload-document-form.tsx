@@ -6,6 +6,7 @@ import { Upload, X, Search } from "lucide-react";
 import { uploadDocument } from "@/actions/document.actions";
 import { Banner, Button, Input } from "@/components/ui";
 import styles from "./documents.module.css";
+import { Overlay } from "@/components/ui/overlay";
 
 interface Employee {
   id: string;
@@ -139,10 +140,11 @@ export function UploadDocumentForm({ employees }: Props) {
       </Button>
 
       {open && (
-        <div className="ta-sheet-scrim fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 sm:items-center">
+        <Overlay className="ta-sheet-scrim z-50 flex items-start justify-center overflow-y-auto p-4 sm:items-center">
           <div
             aria-hidden="true"
             onClick={closeModal}
+            // eslint-disable-next-line no-restricted-syntax -- the dimmed layer inside this window's Overlay; fixed so it stays put while the window scrolls
             className="fixed inset-0"
             // The design system's own scrim, not a hand-mixed one: a modal
             // that dims the page a different amount from every other modal is
@@ -267,7 +269,7 @@ export function UploadDocumentForm({ employees }: Props) {
               </div>
             </form>
           </div>
-        </div>
+        </Overlay>
       )}
     </>
   );

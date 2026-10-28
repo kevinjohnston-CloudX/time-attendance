@@ -23,6 +23,7 @@ import {
   THead,
   TR,
 } from "@/components/ui";
+import { Overlay } from "@/components/ui/overlay";
 
 /**
  * The role editor, as the portal design's document template lays it out:
@@ -398,7 +399,7 @@ export function RoleEditor({
     // The scrim stays a literal black wash in both themes: it is the absence
     // of the page rather than a surface, and a token that lightened in dark
     // mode would stop the dialog reading as modal.
-    <div className="ta-sheet-scrim fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-[5vh]">
+    <Overlay className="ta-sheet-scrim z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-[5vh]">
       <div className={`${phone.editorSheet} ta-sheet ta-modal w-full max-w-4xl rounded-xl`}>
         <header
           className={`${phone.editorHead} flex items-center justify-between gap-3 px-6 py-4`}
@@ -811,6 +812,6 @@ export function RoleEditor({
           </span>
         </ConfirmDialog>
       )}
-    </div>
+    </Overlay>
   );
 }

@@ -4,6 +4,7 @@ import { useRouter } from "@/components/layout/navigation-progress";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./command-palette.module.css";
 import { CornerDownLeft, Search } from "lucide-react";
+import { Overlay } from "@/components/ui/overlay";
 
 /**
  * Jump to any page with ⌘K.
@@ -148,12 +149,12 @@ export function CommandPalette({ destinations }: { destinations: Destination[] }
   }
 
   return (
-    <div
+    <Overlay
       role="dialog"
       aria-modal="true"
       aria-label="Search pages"
       onMouseDown={close}
-      className={`fixed inset-0 z-50 flex items-start justify-center px-4 pt-[12vh] ${styles.scrim}`}
+      className={`z-50 flex items-start justify-center px-4 pt-[12vh] ${styles.scrim}`}
       style={{ background: "var(--wms-overlay-modal)" }}
     >
       <div
@@ -234,6 +235,6 @@ export function CommandPalette({ destinations }: { destinations: Destination[] }
           )}
         </div>
       </div>
-    </div>
+    </Overlay>
   );
 }

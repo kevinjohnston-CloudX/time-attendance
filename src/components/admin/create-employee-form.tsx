@@ -7,6 +7,7 @@ import type { CopyFromEmployee } from "@/lib/employee-copy";
 import type { Site, Department, RuleSet } from "@prisma/client";
 import { Banner, Button, Input, SegmentedControl, Select } from "@/components/ui";
 import { Plus, X } from "lucide-react";
+import { Overlay } from "@/components/ui/overlay";
 
 /**
  * "Add Employee" — the design's primary action on the employee list.
@@ -263,8 +264,8 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
       </Button>
 
       {open && (
-        <div
-          className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        <Overlay
+          className="ta-sheet-scrim z-50 flex items-center justify-center bg-black/50 p-4"
           onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
         >
           <div className="ta-modal ta-sheet flex max-h-[90vh] w-full max-w-2xl flex-col rounded-xl">
@@ -518,7 +519,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
               </div>
             </form>
           </div>
-        </div>
+        </Overlay>
       )}
     </>
   );

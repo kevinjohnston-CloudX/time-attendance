@@ -5,6 +5,7 @@ import { getRoleById } from "@/actions/role.actions";
 import { RoleEditor } from "@/components/admin/role-editor";
 import { RESOURCES, ACTIONS, SCOPES } from "@/lib/validators/role.schema";
 import { Shield, Lock, Plus, Pencil, X } from "lucide-react";
+import { Overlay } from "@/components/ui/overlay";
 
 type RoleSummary = {
   id: string;
@@ -77,7 +78,7 @@ function PermissionModal({ role, onClose }: { role: BuiltinRoleSummary; onClose:
   const permSet = new Set(role.permissions.map((p) => permKey(p.resource, p.action, p.scope)));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-[5vh]">
+    <Overlay className="z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-[5vh]">
       <div className="w-full max-w-4xl rounded-xl ta-modal">
 
         {/* Header */}
@@ -200,7 +201,7 @@ function PermissionModal({ role, onClose }: { role: BuiltinRoleSummary; onClose:
           </button>
         </div>
       </div>
-    </div>
+    </Overlay>
   );
 }
 

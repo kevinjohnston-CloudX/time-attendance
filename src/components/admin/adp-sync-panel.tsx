@@ -8,6 +8,7 @@ import { parseUtcDate } from "@/lib/utils/date";
 import { Badge, Banner, Button, Card, LinkButton, PageHeader, Select, Table, THead, TBody, TR, TH, TD } from "@/components/ui";
 import styles from "./adp-sync.module.css";
 import { codeOf } from "@/lib/action-errors";
+import { Overlay } from "@/components/ui/overlay";
 
 /**
  * ADP Sync: both directions of the ADP link on one page, in the Dashboard's
@@ -568,8 +569,8 @@ export function AdpSyncPanel({ status, sites, departments, ruleSets }: Props) {
       )}
 
       {confirming && (
-        <div
-          className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
+        <Overlay
+          className="ta-sheet-scrim z-50 flex items-center justify-center p-4"
           style={{ background: "var(--wms-overlay-modal)" }}
           onClick={(e) => e.target === e.currentTarget && setConfirming(false)}
         >
@@ -596,7 +597,7 @@ export function AdpSyncPanel({ status, sites, departments, ruleSets }: Props) {
               </Button>
             </div>
           </div>
-        </div>
+        </Overlay>
       )}
     </div>
   );

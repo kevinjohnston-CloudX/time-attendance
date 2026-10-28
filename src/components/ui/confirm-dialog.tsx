@@ -3,6 +3,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { Info, OctagonAlert, TriangleAlert, X } from "lucide-react";
 import { Button } from "./button";
+import { Overlay } from "./overlay";
 
 /**
  * The design system's ConfirmDialog: a small centred card with the icon, a
@@ -65,8 +66,8 @@ export function ConfirmDialog({
   const Icon = tone === "danger" ? OctagonAlert : tone === "warning" ? TriangleAlert : Info;
 
   return (
-    <div
-      className="ta-sheet-scrim fixed inset-0 z-[60] flex items-center justify-center p-6"
+    <Overlay
+      className="ta-sheet-scrim z-[60] flex items-center justify-center p-6"
       style={{ background: "var(--wms-overlay-modal)" }}
       onClick={(e) => e.target === e.currentTarget && !pending && onCancel()}
     >
@@ -125,6 +126,6 @@ export function ConfirmDialog({
           </Button>
         </div>
       </div>
-    </div>
+    </Overlay>
   );
 }

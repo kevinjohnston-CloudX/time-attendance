@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode, type Selec
 import { X } from "lucide-react";
 import { Badge, Banner, Button, Checkbox, SearchInput, SegmentedControl, Select, statusTone } from "@/components/ui";
 import phone from "./setup-phone.module.css";
+import { Overlay } from "@/components/ui/overlay";
 
 /**
  * The parts every Company Setup area is built from, so the eight of them read
@@ -373,8 +374,8 @@ export function SetupDialog({
   }, []);
 
   return (
-    <div
-      className="ta-sheet-scrim fixed inset-0 z-50 flex items-center justify-center p-4"
+    <Overlay
+      className="ta-sheet-scrim z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(3, 7, 18, 0.5)" }}
       onClick={(e) => e.target === e.currentTarget && !pending && onClose()}
     >
@@ -437,7 +438,7 @@ export function SetupDialog({
           </footer>
         </form>
       </div>
-    </div>
+    </Overlay>
   );
 }
 

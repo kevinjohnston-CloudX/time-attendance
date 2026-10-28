@@ -69,6 +69,7 @@ export function PayPeriodDownload({ payPeriodId, label }: Props) {
       {/* A transparent catcher rather than an outside-click listener: the
           trigger sits inside the page header, and a document-level mousedown
           handler would close the menu on the same click that opened it. */}
+      {/* eslint-disable-next-line no-restricted-syntax -- a transparent click catcher for the dropdown beside it; it has to stay in the dropdown's layer, under the menu */}
       {open && <div className={`fixed inset-0 z-40 ${styles.catcher}`} onClick={() => setOpen(false)} />}
 
       <div className="relative" ref={ref}>

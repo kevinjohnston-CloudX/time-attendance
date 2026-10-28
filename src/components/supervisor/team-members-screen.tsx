@@ -2,7 +2,6 @@
 
 import { format, parseISO } from "date-fns";
 import { useEffect, useState, useTransition } from "react";
-import { createPortal } from "react-dom";
 import { ChevronRight, Users, X } from "lucide-react";
 import { useRouter } from "@/components/layout/navigation-progress";
 import { useSearchBox } from "@/hooks/use-search-box";
@@ -26,6 +25,7 @@ import {
 import type { TeamMembersData } from "@/lib/team-members/team-members-data";
 import { usePhoneLayout } from "@/lib/phone";
 import styles from "./team-members.module.css";
+import { Overlay } from "@/components/ui/overlay";
 
 const STATUS_TONE: Record<string, BadgeTone> = { Active: "success", "On leave": "warning", Inactive: "neutral" };
 
@@ -186,9 +186,8 @@ function MemberSheet({ member: m, canViewTimecards, onClose }: { member: Member;
     ["Shift", m.shift ?? "None"],
     ["Hire date", format(parseISO(m.hireDate), "MMM d, yyyy")],
   ];
-  return createPortal(
-    <div
-      className="ta-sheet-scrim fixed inset-0 z-[60] flex"
+  return <Overlay
+      className="ta-sheet-scrim z-[60] flex"
       style={{ background: "var(--wms-overlay-modal)" }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
@@ -215,7 +214,5 @@ function MemberSheet({ member: m, canViewTimecards, onClose }: { member: Member;
           </div>
         )}
       </div>
-    </div>,
-    document.body,
-  );
+    </Overlay>;
 }
