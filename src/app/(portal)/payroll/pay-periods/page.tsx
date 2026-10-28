@@ -99,6 +99,7 @@ export default async function PayPeriodsPage({
       groupName: pp.ruleSet?.name ?? COMPANY_NAME,
       freqLabel: FREQ_LABEL[freqOf(pp)],
       total: pp._count.timesheets,
+      locked: pp.lockedCount,
     };
   });
 

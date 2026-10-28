@@ -38,6 +38,8 @@ export type RailPeriod = {
   groupName: string;
   freqLabel: string | null;
   total: number;
+  /** How many of those timesheets are locked. */
+  locked: number;
 };
 
 export type RailScope = "all" | "current" | "ytd";
@@ -49,6 +51,15 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 const MONTHS_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const PANEL: CSSProperties = { background: "var(--surface-card)", borderRadius: 18, boxShadow: "var(--ta-shell-shadow)" };
 const n = (v: number) => v.toLocaleString("en-US");
+
+/** How far the period's close has got, as the row's second line. */
+function lockProgress(p: RailPeriod): string {
+  if (p.total === 0) return "No timesheets";
+  const noun = p.total === 1 ? "timesheet" : "timesheets";
+  if (p.locked === 0) return `${n(p.total)} ${noun}`;
+  if (p.locked >= p.total) return `${n(p.total)} ${noun}, all locked`;
+  return `${n(p.locked)} of ${n(p.total)} ${noun} locked`;
+}
 
 function monthKeysOf(p: RailPeriod): string[] {
   const keys: string[] = [];
@@ -431,7 +442,7 @@ export function PayPeriodsRail({
                   </span>
                   <span className="flex items-center gap-2.5">
                     <span className="tabular flex-1 whitespace-nowrap" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
-                      {p.total === 0 ? "No timesheets" : `${n(p.total)} ${p.total === 1 ? "timesheet" : "timesheets"}`}
+                      {lockProgress(p)}
                     </span>
                     {/* Which row is today's, once the list holds more than today's. */}
                     {scope !== "current" && isCurrent(p) && (

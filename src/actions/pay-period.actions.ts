@@ -34,24 +34,32 @@ export const getPayPeriods = withRBAC("PAY_PERIOD_MANAGE", async ({ tenantId }, 
 });
 
 /**
- * The same periods for the Pay Periods rail, which shows only how many
- * timesheets each one holds: counted in the database rather than loading
- * every timesheet the company has ever had to take its length. Classic still
- * reads {@link getPayPeriods}, which it needs for its locked counts.
+ * The same periods for the Pay Periods rail, which shows how many timesheets
+ * each one holds and how many of them are locked: both counted in the database
+ * rather than loading every timesheet the company has ever had.
  */
 export const getPayPeriodRail = withRBAC("PAY_PERIOD_MANAGE", async ({ tenantId }, _input: void) => {
   // With no company, tenantId undefined would match every company's periods.
   if (!tenantId) throw new Error("Tenant context required");
-  return db.payPeriod.findMany({
-    where: { tenantId },
-    orderBy: { startDate: "desc" },
-    include: {
-      _count: { select: { timesheets: true } },
-      ruleSet: {
-        select: { id: true, name: true, payFrequency: true },
+  const [periods, locked] = await Promise.all([
+    db.payPeriod.findMany({
+      where: { tenantId },
+      orderBy: { startDate: "desc" },
+      include: {
+        _count: { select: { timesheets: true } },
+        ruleSet: {
+          select: { id: true, name: true, payFrequency: true },
+        },
       },
-    },
-  });
+    }),
+    db.timesheet.groupBy({
+      by: ["payPeriodId"],
+      where: { status: "LOCKED", payPeriod: { tenantId } },
+      _count: { _all: true },
+    }),
+  ]);
+  const lockedBy = new Map(locked.map((l) => [l.payPeriodId, l._count._all]));
+  return periods.map((pp) => ({ ...pp, lockedCount: lockedBy.get(pp.id) ?? 0 }));
 });
 
 export const getPayPeriodDetail = withRBAC(
