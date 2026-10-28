@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, type ReactNode } from "react";
 import { mailAddress } from "@/lib/email-address";
+import { format } from "date-fns";
+import { parseUtcDate } from "@/lib/utils/date";
 import Link from "next/link";
 import { useRouter } from "@/components/layout/navigation-progress";
 import { useCondensingBar } from "@/components/layout/use-condensing-bar";
@@ -59,6 +61,7 @@ interface Employee {
   site: { name: string };
   department: { name: string };
   customRole: { id: string; name: string } | null;
+  hireDate: Date | string | null;
   /** A signed link to the time clock tablet's photo, or null for initials. */
   photo: string | null;
 }
@@ -347,7 +350,12 @@ export function EmployeesTable({
                           <span className={styles.muted}>No shift</span>
                         )}
                       </span>
-                      <span className={`${styles.secondary} ${styles.optional}`} title={role}>{role}</span>
+                      <span className={`${styles.cell} ${styles.optional}`}>
+                        <span className={styles.secondary} title={role}>{role}</span>
+                        {emp.hireDate && (
+                          <span className={`${styles.sub} tabular`}>Hired {format(parseUtcDate(emp.hireDate), "MMM d, yyyy")}</span>
+                        )}
+                      </span>
                       <span className={styles.status} data-tone={tone}>
                         <span className={styles.dot} aria-hidden="true" />
                         {tone === "inactive" ? "Inactive" : tone === "leave" ? "On leave" : "Active"}
