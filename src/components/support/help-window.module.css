@@ -138,7 +138,7 @@
 
 .panes {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-columns: minmax(0, 1fr) 312px;
   gap: 12px;
   align-items: stretch;
 }
@@ -471,12 +471,11 @@
   color: var(--text-accent);
 }
 
+/* Wraps rather than cutting off: a description is only useful whole. */
 .choiceBody {
-  overflow: hidden;
   font: var(--type-body2);
   color: var(--text-secondary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-wrap: pretty;
 }
 
 .railNote {
@@ -503,6 +502,8 @@
 }
 
 .whoMark {
+  position: relative;
+  overflow: hidden;
   display: grid;
   flex: none;
   width: 32px;
@@ -513,6 +514,15 @@
   box-shadow: inset 0 0 0 1px var(--ta-well-ring);
   font: var(--weight-semibold) 12px/1 var(--font-sans);
   color: var(--text-secondary);
+}
+
+/* The time clock photo over the initials; the initials show when there is none. */
+.whoMark img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .whoText {

@@ -304,10 +304,11 @@ export default async function PortalLayout({
               reachableHrefs={destinations.map((d) => d.href)}
               waiting={waiting}
               helpOffered={!liveAttendanceOnly}
+              userPhoto={userPhoto}
             />
           </div>
           {/* Phones: this bar instead of the one above. */}
-          <PhoneTopBar waiting={waiting} helpOffered={!liveAttendanceOnly} />
+          <PhoneTopBar waiting={waiting} helpOffered={!liveAttendanceOnly} userPhoto={userPhoto} />
           <main className="ta-page-scroll min-h-0 flex-1 overflow-y-auto">
             <PageScrollReveal />
             <InactiveRouteGuard isInactive={!isEmployeeActive} />

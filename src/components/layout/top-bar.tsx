@@ -34,11 +34,14 @@ export function TopBar({
   reachableHrefs,
   waiting,
   helpOffered = true,
+  userPhoto = null,
 }: {
   reachableHrefs: string[];
   waiting: WaitingItem[];
   /** Whether to draw Help & feedback; a wall screen (live attendance only) doesn't. */
   helpOffered?: boolean;
+  /** The signed in person's time clock photo, for Help & feedback's sender. */
+  userPhoto?: string | null;
 }) {
   const pathname = usePathname();
   const navMode = useNavMode();
@@ -163,7 +166,7 @@ export function TopBar({
         style={{ background: "var(--surface-card)", boxShadow: "var(--ta-pill-shadow)" }}
       >
         <ThemeToggle />
-        {helpOffered && <HelpButton variant="pill" />}
+        {helpOffered && <HelpButton variant="pill" photo={userPhoto} />}
         <KeyboardShortcuts reachableHrefs={reachableHrefs} />
         <NotificationBell items={waiting} />
       </div>

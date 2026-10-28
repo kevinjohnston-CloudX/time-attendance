@@ -32,6 +32,7 @@ import { locate } from "@/components/layout/nav-model";
 import { useBreadcrumbLeafFor } from "@/components/layout/breadcrumb-leaf";
 import { getSupportRequestContext, sendSupportRequest } from "@/actions/support.actions";
 import { SUPPORT_LIMITS, supportRequestSchema } from "@/lib/validators/support.schema";
+import { Face } from "@/components/presence/face";
 import styles from "./help-window.module.css";
 
 /**
@@ -54,14 +55,44 @@ type Impact = "idea" | "workable" | "blocking";
 
 const TYPES: { value: RequestType; title: string; body: string; icon: LucideIcon }[] = [
   { value: "system_issue", title: "System issue", body: "Error or unexpected behavior", icon: Bug },
-  { value: "suggestion", title: "Suggestion", body: "Feature request or improvement", icon: Lightbulb },
+  { value: "suggestion", title: "Suggestion", body: "New feature or improvement", icon: Lightbulb },
   { value: "question", title: "Question", body: "Help using CloudTime", icon: HelpCircle },
 ];
 
+/**
+ * Signal bars for an impact level: as many filled as the level is high, the
+ * rest a faint outline, coloured by how urgent the level is.
+ */
+function ImpactBars({ level, color }: { level: 1 | 2 | 3; color: string }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" className="flex-none">
+      {[0, 1, 2].map((i) => (
+        <rect
+          key={i}
+          x={1 + i * 4}
+          y={8 - i * 3}
+          width="2.5"
+          height={3 + i * 3}
+          rx="0.75"
+          fill={i < level ? color : "var(--icon-disabled)"}
+          opacity={i < level ? 1 : 0.45}
+        />
+      ))}
+    </svg>
+  );
+}
+
+const impactLabel = (text: string, level: 1 | 2 | 3, color: string) => (
+  <span className="inline-flex items-center gap-1 whitespace-nowrap">
+    <ImpactBars level={level} color={color} />
+    {text}
+  </span>
+);
+
 const IMPACT_ITEMS = [
-  { value: "idea", label: "Low" },
-  { value: "workable", label: "Moderate" },
-  { value: "blocking", label: "Critical" },
+  { value: "idea", label: impactLabel("Low", 1, "var(--icon-accent)") },
+  { value: "workable", label: impactLabel("Moderate", 2, "var(--icon-warning)") },
+  { value: "blocking", label: impactLabel("Critical", 3, "var(--icon-error)") },
 ];
 
 const IMPACT_NOTE: Record<Impact, string> = {
@@ -101,7 +132,7 @@ const initials = (name: string | null, email: string | null) =>
     .map((p) => p[0]!.toUpperCase())
     .join("") || "?");
 
-export function HelpWindow({ onClose }: { onClose: () => void }) {
+export function HelpWindow({ onClose, photo = null }: { onClose: () => void; photo?: string | null }) {
   const pathname = usePathname();
   const here = locate(pathname);
   const leaf = useBreadcrumbLeafFor(pathname);
@@ -493,6 +524,7 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
                   <div className={styles.who}>
                     <span className={styles.whoMark} aria-hidden="true">
                       {initials(context.name, context.email)}
+                      <Face src={photo} />
                     </span>
                     <span className={styles.whoText}>
                       <span className={styles.whoName}>{context.name ?? context.email ?? "You"}</span>
@@ -504,7 +536,7 @@ export function HelpWindow({ onClose }: { onClose: () => void }) {
                   <p className={styles.railNote} data-tone={noEmail ? "warning" : undefined}>
                     {noEmail
                       ? "An email address is required to send a request."
-                      : "Confirmation and replies are sent to this address."}
+                      : "Replies are sent to this address."}
                   </p>
                 </>
               ) : (

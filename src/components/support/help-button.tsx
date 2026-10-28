@@ -17,10 +17,13 @@ const HelpWindow = dynamic(() => import("./help-window").then((m) => m.HelpWindo
 export function HelpButton({
   variant,
   className,
+  photo = null,
 }: {
   variant: "pill" | "phone";
   /** The phone bar's own button class, so it matches its neighbours. */
   className?: string;
+  /** The signed in person's photo, shown beside "Reporting as". */
+  photo?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const label = "Help & feedback";
@@ -47,7 +50,7 @@ export function HelpButton({
   return (
     <>
       {button}
-      {open && <HelpWindow onClose={() => setOpen(false)} />}
+      {open && <HelpWindow onClose={() => setOpen(false)} photo={photo} />}
     </>
   );
 }

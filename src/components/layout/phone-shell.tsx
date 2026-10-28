@@ -42,7 +42,15 @@ const APPROVAL_QUEUES = ["/supervisor/leave", "/supervisor/exceptions"];
 const noSubscribe = () => () => {};
 const useHydrated = () => useSyncExternalStore(noSubscribe, () => true, () => false);
 
-export function PhoneTopBar({ waiting, helpOffered = true }: { waiting: WaitingItem[]; helpOffered?: boolean }) {
+export function PhoneTopBar({
+  waiting,
+  helpOffered = true,
+  userPhoto = null,
+}: {
+  waiting: WaitingItem[];
+  helpOffered?: boolean;
+  userPhoto?: string | null;
+}) {
   const pathname = usePathname();
   const back = usePhoneBackState();
   const { title, folded, scrolled } = useFoldingTitle(pathname);
@@ -76,7 +84,7 @@ export function PhoneTopBar({ waiting, helpOffered = true }: { waiting: WaitingI
           <button type="button" className={styles.iconBtn} onClick={openCommandPalette} aria-label="Search pages">
             <Search className="h-5 w-5" aria-hidden="true" />
           </button>
-          {helpOffered && <HelpButton variant="phone" className={styles.iconBtn} />}
+          {helpOffered && <HelpButton variant="phone" className={styles.iconBtn} photo={userPhoto} />}
           <div className={styles.bell}>
             <NotificationBell items={waiting} />
           </div>
