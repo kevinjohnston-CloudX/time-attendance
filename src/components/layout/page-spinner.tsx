@@ -1,10 +1,6 @@
 /**
- * A full page spinner that needs no style sheet, for the screens shared by
- * both designs (the first paint, the not found screen while it decides).
- *
- * <p>Whatever those screens import is attached to every page of both
- * designs, and the new design's sheet on a classic page recolors it and
- * breaks its dark mode. So this is inline styles alone: the new design's
+ * A full page spinner that needs no style sheet, for screens that can paint
+ * before any has loaded (the first paint). Inline styles alone: the design's
  * tokens when they are on the page, the browser's own light or dark canvas
  * when not, and an SVG that spins without any CSS.
  */

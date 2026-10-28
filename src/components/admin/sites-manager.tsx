@@ -43,7 +43,7 @@ export function SitesManager({ sites }: { sites: Site[] }) {
     setEditing(site);
     setError(null);
   }
-  // A link from elsewhere (an employee record, a classic address) opens its record.
+  // A link from elsewhere (an employee record, an older bookmarked address) opens its record.
   useOpenFromLink(sites, open);
   function close() {
     setEditing(null);

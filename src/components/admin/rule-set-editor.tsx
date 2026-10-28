@@ -548,7 +548,7 @@ export function RuleSetEditor({ ruleSet: rs, payCodes }: { ruleSet: RuleSetRow |
         </Section>
 
         {/* Meals and breaks are set on the shift, which overrides these for anyone
-            with one. Kept as they are on save, as the classic editor does. */}
+            with one. Kept as they are on save. */}
         <input type="hidden" name="mealBreakMinutes" value={rs?.mealBreakMinutes ?? 30} />
         <input type="hidden" name="mealBreakAfterHours" value={(rs?.mealBreakAfterMinutes ?? 300) / 60} />
         <input type="hidden" name="autoDeductMeal" value={rs?.autoDeductMeal ? "true" : "false"} />

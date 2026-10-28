@@ -88,7 +88,7 @@ export function PayCategoriesManager({
     setEditing(c);
     setError(null);
   }
-  // A link from elsewhere (an employee record, a classic address) opens its record.
+  // A link from elsewhere (an employee record, an older bookmarked address) opens its record.
   useOpenFromLink(categories, open);
   function close() {
     setEditing(null);

@@ -14,7 +14,7 @@ import { codeOf } from "@/lib/action-errors";
  * open on screen can be downloaded, and one you cannot answers 404, the same
  * as one that does not exist.
  *
- * <p>`range` (or `dateRange`, from the classic design) is the date range on
+ * <p>`range` (or `dateRange`, which older links use) is the date range on
  * screen, as JSON. Without it the report's saved dates are used, which is
  * what a bookmarked link gets.
  */
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 
   let dateRange: unknown;
-  // `dateRange` is the classic design's name for the same value.
+  // `dateRange` is what older links call the same value.
   const range = req.nextUrl.searchParams.get("range") ?? req.nextUrl.searchParams.get("dateRange");
   if (range) {
     try {

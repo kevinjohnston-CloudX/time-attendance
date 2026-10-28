@@ -170,29 +170,6 @@ export const getExceptionPunches = withRBAC(
   }
 );
 
-/** Punches for a single timesheet — loaded lazily when the action panel opens. */
-export const getPunchesForTimesheet = withRBAC(
-  "TIMESHEET_APPROVE_TEAM",
-  async ({ employeeId, role, tenantId }, input: unknown) => {
-    const { timesheetId } = z.object({ timesheetId: z.string() }).parse(input ?? {});
-    const isPayroll = PAYROLL_ROLES.includes(role);
-    const t = tenantId ?? undefined;
-    const subordinateIds = isPayroll ? null : await getSubordinateIds(employeeId, tenantId);
-    if (!isPayroll && (!subordinateIds || subordinateIds.length === 0)) return [];
-
-    return db.punch.findMany({
-      where: {
-        timesheetId,
-        isApproved: true,
-        correctedById: null,
-        ...(subordinateIds ? { timesheet: { employee: { id: { in: subordinateIds }, tenantId: t } } } : {}),
-      },
-      select: { id: true, punchType: true, roundedTime: true },
-      orderBy: { roundedTime: "asc" },
-    });
-  }
-);
-
 export const resolveException = withRBAC(
   "TIMESHEET_APPROVE_TEAM",
   async (ctx, input: ResolveExceptionInput) => {

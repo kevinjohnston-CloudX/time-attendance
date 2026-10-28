@@ -16,8 +16,8 @@ model User {
   /// A sign in from before it is ended at its next request, so a reset
   /// reaches every browser and the mobile app, not only the next sign in.
   passwordChangedAt   DateTime?
-  /// "classic" or "new": which design this person sees. Empty means they
-  /// never picked, which is Classic. See lib/design-switch.
+  /// No longer read: the classic design was removed and everyone sees the
+  /// one design. Kept so no column is dropped; it held "classic" or "new".
   designPreference    String?
   /// A super admin's last company, entered again by itself at the next sign
   /// in. Not a relation on purpose: a removed company is simply skipped.

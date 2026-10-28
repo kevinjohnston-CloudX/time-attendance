@@ -8,8 +8,6 @@ import { LifeBuoy } from "lucide-react";
  * The Help & feedback button, in the shape each place draws it: a round button
  * in the top bar's icon pill, and a finger-sized one in the phone's top bar.
  *
- * <p>New design only: the window is built on the new design's tokens, which
- * the Classic design deliberately never loads.
  *
  * <p>The window and its editor load the first time it is opened, so no page
  * pays for them up front.

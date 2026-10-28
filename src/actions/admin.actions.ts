@@ -351,7 +351,7 @@ export const getEmployees = withRBAC(
           isActive: true,
           onLeave: true,
           shiftId: true,
-          // The classic design's list shows it.
+          // Shown under the role in the list.
           hireDate: true,
           user:       { select: { name: true, email: true, workEmail: true } },
           site:       { select: { name: true } },
@@ -2503,82 +2503,6 @@ export type LedgerDetailEntry = {
   status?: string;
   createdByName?: string | null;
 };
-
-// ─── Past-year accrual summary (per-leave-type totals for a completed year) ──
-
-export type PastYearRow = {
-  leaveTypeId: string;
-  leaveTypeName: string;
-  accrualTracked: boolean;
-  accruedMinutes: number;
-  carryOverMinutes: number;
-  adjustedMinutes: number;
-  usedMinutes: number;
-  finalBalanceMinutes: number;
-};
-
-export const getAccrualYearSummary = withRBAC(
-  "EMPLOYEE_MANAGE",
-  async (actor, input: unknown) => {
-    const { employeeId, year } = z
-      .object({ employeeId: z.string(), year: z.number().int() })
-      .parse(input);
-    await assertRecordInReach(actor, employeeId);
-
-    const yearStart = new Date(`${year}-01-01T00:00:00Z`);
-    const yearEnd   = new Date(`${year + 1}-01-01T00:00:00Z`);
-
-    const [leaveTypes, balances, accrualSums, adjustSums, carryOverSums] = await Promise.all([
-      db.leaveType.findMany({
-        where: { isActive: true },
-        orderBy: { name: "asc" },
-        select: { id: true, name: true, accrualTracked: true },
-      }),
-      db.leaveBalance.findMany({ where: { employeeId, accrualYear: year } }),
-      db.leaveAccrualLedger.groupBy({
-        by: ["leaveTypeId"],
-        where: { employeeId, action: { in: ["ACCRUAL", "EARNED_ADJUSTMENT"] }, payPeriodEnd: { gte: yearStart, lt: yearEnd } },
-        _sum: { deltaMinutes: true },
-      }),
-      db.leaveAccrualLedger.groupBy({
-        by: ["leaveTypeId"],
-        where: { employeeId, action: "ADJUSTMENT", createdAt: { gte: yearStart, lt: yearEnd } },
-        _sum: { deltaMinutes: true },
-      }),
-      db.leaveAccrualLedger.groupBy({
-        by: ["leaveTypeId"],
-        where: { employeeId, action: "CARRY_OVER", createdAt: { gte: yearStart, lt: yearEnd } },
-        _sum: { deltaMinutes: true },
-      }),
-    ]);
-
-    const accrualMap   = new Map(accrualSums.map((s) => [s.leaveTypeId, s._sum.deltaMinutes ?? 0]));
-    const adjustMap    = new Map(adjustSums.map((s) => [s.leaveTypeId, s._sum.deltaMinutes ?? 0]));
-    const carryOverMap = new Map(carryOverSums.map((s) => [s.leaveTypeId, s._sum.deltaMinutes ?? 0]));
-
-    const rows: PastYearRow[] = leaveTypes
-      .map((lt) => {
-        const bal       = balances.find((b) => b.leaveTypeId === lt.id);
-        const accrued   = accrualMap.get(lt.id) ?? 0;
-        const adjusted  = adjustMap.get(lt.id) ?? 0;
-        const carryOver = carryOverMap.get(lt.id) ?? 0;
-        if (!bal && accrued === 0 && adjusted === 0 && carryOver === 0) return null;
-        return {
-          leaveTypeId: lt.id,
-          leaveTypeName: lt.name,
-          accrualTracked: lt.accrualTracked,
-          accruedMinutes: accrued,
-          carryOverMinutes: carryOver,
-          adjustedMinutes: adjusted,
-          usedMinutes: bal?.usedMinutes ?? 0,
-          finalBalanceMinutes: bal?.balanceMinutes ?? 0,
-        };
-      })
-      .filter((r): r is PastYearRow => r !== null);
-
-    return rows;
-  }
-);
 
 export const getLeaveTypeLedgerDetail = withRBAC(
   "EMPLOYEE_MANAGE",

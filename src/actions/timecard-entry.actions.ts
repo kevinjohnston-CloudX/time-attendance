@@ -176,18 +176,7 @@ export const addManualPunchPair = withRBAC(
   }
 );
 
-// ─── Add a single manual punch (IN or OUT) to a timesheet day ───────────────
-
-export const addSingleManualPunch = withRBAC(
-  // Supervisors too, for their own team's timecards: the scope check in
-  // each action keeps them to their direct reports and off their own.
-  TIMECARD_EDITORS,
-  async (ctx, input: unknown) => {
-    const { timesheetId, punchType, punchTime, reason } =
-      singleManualPunchSchema.parse(input);
-    await saveManualPunches(ctx, timesheetId, [{ punchType, punchTime, reason }]);
-  }
-);
+// ─── Add a day's manual punches (one or more) to a timesheet ────────────────
 
 /**
  * A day's new punches from the timecard, saved together: one transaction and

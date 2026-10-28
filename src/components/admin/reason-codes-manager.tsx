@@ -96,7 +96,7 @@ export function ReasonCodesManager({ reasonCodes }: { reasonCodes: ReasonCodeIte
     setEditing(rc);
     setError(null);
   }
-  // A link from elsewhere (an employee record, a classic address) opens its record.
+  // A link from elsewhere (an employee record, an older bookmarked address) opens its record.
   useOpenFromLink(reasonCodes, open);
   function close() {
     setEditing(null);

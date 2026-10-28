@@ -1,5 +1,4 @@
-// The new design's styles, loaded by its own layouts rather than the shared
-// root, so the classic design never gets them.
+// The app's styles, loaded by each layout (and the error and not found screens).
 import "@/app/globals.css";
 /**
  * The auth shell.

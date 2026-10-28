@@ -51,7 +51,7 @@ export function DepartmentsManager({ departments, sites }: { departments: Depart
     setEditing(d);
     setError(null);
   }
-  // A link from elsewhere (an employee record, a classic address) opens its record.
+  // A link from elsewhere (an employee record, an older bookmarked address) opens its record.
   useOpenFromLink(departments, open);
   function close() {
     setEditing(null);

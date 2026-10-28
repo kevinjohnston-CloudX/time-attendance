@@ -33,7 +33,7 @@ describe("A shift past midnight", () => {
     expect(segments({}, {})).toEqual([{ minutes: 330, day: monday }]);
   });
   it("keeps it when the clock out was added on its own on the timecard", () => {
-    // addSingleManualPunch stores a clock out as stateBefore OUT.
+    // A manual clock out from the timecard is stored as stateBefore OUT.
     expect(segments({}, { stateBefore: "OUT" })).toEqual([{ minutes: 330, day: monday }]);
   });
   it("still splits a time clock shift at midnight", () => {

@@ -16,23 +16,6 @@ import type { PayFrequency } from "@prisma/client";
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
-export const getPayPeriods = withRBAC("PAY_PERIOD_MANAGE", async ({ tenantId }, _input: void) => {
-  // With no company, tenantId undefined would match every company's periods.
-  if (!tenantId) throw new Error("Tenant context required");
-  return db.payPeriod.findMany({
-    where: { tenantId },
-    orderBy: { startDate: "desc" },
-    include: {
-      timesheets: {
-        select: { status: true },
-      },
-      ruleSet: {
-        select: { id: true, name: true, payFrequency: true },
-      },
-    },
-  });
-});
-
 /**
  * The same periods for the Pay Periods rail, which shows how many timesheets
  * each one holds and how many of them are locked: both counted in the database

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-/** The classic design adds a department on a page of its own; this design opens Company Setup's window. */
+/** An older address for adding a department, kept for links and bookmarks: it opens Company Setup's window. */
 export default function NewDepartmentsPage() {
   redirect("/admin/site-settings?tab=departments&new=1");
 }

@@ -59,7 +59,7 @@ export function LeaveTypesManager({ leaveTypes, payCodes }: { leaveTypes: LeaveT
     setEditing(lt);
     setError(null);
   }
-  // A link from elsewhere (an employee record, a classic address) opens its record.
+  // A link from elsewhere (an employee record, an older bookmarked address) opens its record.
   useOpenFromLink(leaveTypes, open);
   function close() {
     setEditing(null);

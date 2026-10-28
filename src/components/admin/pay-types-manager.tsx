@@ -52,7 +52,7 @@ export function PayTypesManager({ payTypes }: { payTypes: PayType[] }) {
     setEditing(p);
     setError(null);
   }
-  // A link from elsewhere (an employee record, a classic address) opens its record.
+  // A link from elsewhere (an employee record, an older bookmarked address) opens its record.
   useOpenFromLink(payTypes, open);
   function close() {
     setEditing(null);

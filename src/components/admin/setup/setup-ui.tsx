@@ -36,7 +36,7 @@ export function useStatusView<T extends { isActive: boolean }>(rows: T[], initia
  * Opens a record's window when the address names one, then takes the name
  * off the address so a reload does not open it again. It is how a link from
  * elsewhere lands on the record itself: an employee's Pay & Rules, or the
- * one page per form addresses the classic design uses. `?edit=<id>` opens
+ * the older one page per form addresses, kept for bookmarks. `?edit=<id>` opens
  * that record, `?new=1` an empty form.
  */
 export function useOpenFromLink<T extends { id: string }>(rows: T[], open: (row: T | "new") => void) {

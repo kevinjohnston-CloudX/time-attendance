@@ -79,8 +79,7 @@ interface Props {
 const BALANCE_COLS = 9;
 
 /**
- * Minutes as hours and minutes ("1h 32m", "-3h 49m", "8h"), as the classic
- * page shows them; HR asked for these over decimal hours, which read 1h 32m
+ * Minutes as hours and minutes ("1h 32m", "-3h 49m", "8h"); HR asked for these over decimal hours, which read 1h 32m
  * as 1.53 and a NovaTime 6.16 h posting as 6.17.
  */
 function hrs(minutes: number): string {

@@ -10,7 +10,7 @@ import { getRefusedScans, recoverRefusedScans } from "@/lib/services/refused-sca
  * confirms.
  *
  * <p>Both behind PAY_PERIOD_MANAGE, the permission payroll's own punch entry
- * on this screen needs (addSingleManualPunch), because recovering a scan is
+ * on this screen needs (its manual punches), because recovering a scan is
  * that same act: payroll putting a punch on somebody's timecard. Anyone
  * without it gets FORBIDDEN from both, whatever the browser shows. The person
  * and the pay period are looked up inside the caller's tenant, and every scan
