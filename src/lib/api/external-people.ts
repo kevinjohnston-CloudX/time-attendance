@@ -20,7 +20,7 @@ import { decryptPii } from "@/lib/crypto/pii";
  */
 
 export const PAGE_SIZE_DEFAULT = 50;
-export const PAGE_SIZE_MAX = 200;
+export const PAGE_SIZE_MAX = 1000;
 
 const text = z.string().trim().min(1).max(200);
 

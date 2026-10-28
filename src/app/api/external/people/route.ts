@@ -19,7 +19,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Validation failed", details: parsed.error.flatten() }, { status: 400 });
   }
 
-  return NextResponse.json(await listPeople(auth.tenantId, parsed.data), {
+  const result = await listPeople(auth.tenantId, parsed.data);
+  // The same request one page on, as a path, or null on the last page. A
+  // path because behind the proxy this server does not know its public host.
+  let nextPage: string | null = null;
+  if (result.page * result.pageSize < result.total) {
+    const next = new URLSearchParams(req.nextUrl.searchParams);
+    next.set("page", String(result.page + 1));
+    nextPage = `/api/external/people?${next.toString()}`;
+  }
+  return NextResponse.json({ ...result, nextPage }, {
     headers: { "Cache-Control": "no-store" },
   });
 }

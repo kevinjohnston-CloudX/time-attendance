@@ -298,7 +298,7 @@ export function ApiDocumentation({ baseUrl, initialOpen, stickyTop }: { baseUrl:
     "supervisor": { "id": "clx7s8u9p0r1", "name": "Sam Lee", "employeeCode": "100012" },
     "lastModified": "2026-10-27T14:05:12.000Z"
   }`;
-  const peopleRes = `{\n  "people": [\n    ${person.replace(/\n/g, "\n    ")}\n  ],\n  "page": 1,\n  "pageSize": 50,\n  "total": 1\n}`;
+  const peopleRes = `{\n  "people": [\n    ${person.replace(/\n/g, "\n    ")}\n  ],\n  "page": 1,\n  "pageSize": 50,\n  "total": 1,\n  "nextPage": null\n}`;
   const personReq = `GET ${baseUrl}/api/external/people/clx9k2m4p0001ab12cd34ef56\nAuthorization: Bearer ta_a1b2c3d4...`;
   const personRes = `{\n  "person": ${person.replace(/\n  /g, "\n")}\n}`;
   const access = (
@@ -312,7 +312,7 @@ export function ApiDocumentation({ baseUrl, initialOpen, stickyTop }: { baseUrl:
       rows={[
         { name: "401", text: "Missing or invalid API key." },
         { name: "403", text: "The key is valid but does not have directory access." },
-        { name: "400", text: "A filter is not valid, for example a pageSize over 200. Includes a details object." },
+        { name: "400", text: "A filter is not valid, for example a pageSize over 1000. Includes a details object." },
         { name: "404", text: "No employee with that id in your company." },
       ]}
     />
@@ -499,12 +499,12 @@ export function ApiDocumentation({ baseUrl, initialOpen, stickyTop }: { baseUrl:
                   text: "Only employees whose record changed at or after this time, such as 2026-10-27T00:00:00Z. Renaming a site or department, or deleting someone, does not count, so run a full sync now and then.",
                 },
                 { name: "page", type: "integer", text: "Page number, starting at 1. Defaults to 1." },
-                { name: "pageSize", type: "integer", text: "Employees per page, 1 to 200. Defaults to 50." },
+                { name: "pageSize", type: "integer", text: "Employees per page, 1 to 1000. Defaults to 50." },
               ]}
             />
             <p style={{ margin: "8px 0 0", font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-              Filters combine. To find one person, send one exact filter such as <Code>email</Code> or <Code>badge</Code>. Use <Code>total</Code>{" "}
-              to know how many pages there are.
+              Filters combine. To find one person, send one exact filter such as <Code>email</Code> or <Code>badge</Code>. To read everyone, follow{" "}
+              <Code>nextPage</Code> (the same request one page on, as a path) until it is null.
             </p>
             <Label>Example Request: one page</Label>
             <CodeBlock lang="http" code={peopleReq} />
