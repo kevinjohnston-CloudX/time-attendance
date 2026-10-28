@@ -6,6 +6,7 @@ import { z } from "zod";
 import { assertEmployeeInScope, siteLimit, timesheetInScope } from "@/lib/rbac/scope";
 import { timecardList } from "@/lib/timecards/timecard-list";
 import { directReportsOf } from "@/lib/get-subordinate-ids";
+import { startedOn } from "@/lib/engines/segment-builder";
 
 // ─── Employee list (employee-centric timecard) ───────────────────────────────
 
@@ -157,6 +158,8 @@ export const getTimecardByEmployeeAndPeriod = withRBAC(
             payType: true,
             payRate: true,
             isActive: true,
+            hireDate: true,
+            adjustedHireDate: true,
             user: { select: { id: true, name: true } },
             department: { select: { id: true, name: true } },
             shift: { select: { mealConfig: true } },
@@ -208,8 +211,11 @@ export const getTimecardByEmployeeAndPeriod = withRBAC(
 
     if (!ts) return null;
 
+    // The day they started rather than the dates themselves, for the absent marks.
+    const { hireDate, adjustedHireDate, ...employee } = ts.employee;
     return {
       ...ts,
+      employee: { ...employee, startedOn: startedOn({ hireDate, adjustedHireDate }) },
       mealWaivers: ts.mealWaivers.map((w) => ({
         id: w.id,
         segmentDate: w.segmentDate.toISOString().slice(0, 10),
@@ -339,6 +345,8 @@ export const getTimecardDetail = withRBAC(
             payType: true,
             payRate: true,
             isActive: true,
+            hireDate: true,
+            adjustedHireDate: true,
             user: { select: { id: true, name: true } },
             department: { select: { id: true, name: true } },
             shift: { select: { mealConfig: true } },
@@ -392,8 +400,11 @@ export const getTimecardDetail = withRBAC(
       },
     });
 
+    // The day they started rather than the dates themselves, for the absent marks.
+    const { hireDate, adjustedHireDate, ...employee } = ts.employee;
     return {
       ...ts,
+      employee: { ...employee, startedOn: startedOn({ hireDate, adjustedHireDate }) },
       mealWaivers: ts.mealWaivers.map((w) => ({
         id: w.id,
         segmentDate: w.segmentDate.toISOString().slice(0, 10),

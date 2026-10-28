@@ -238,6 +238,7 @@ export default async function TimecardsPage({
           wmsId: timecard.employee.wmsId ?? null,
           payRate: !canSeePay ? null : periodRate != null ? periodRate : timecard.employee.payRate ? Number(timecard.employee.payRate) : null,
           payType: timecard.employee.payType,
+          startedOn: timecard.employee.startedOn,
           shift: timecard.employee.shift
             ? { mealConfig: timecard.employee.shift.mealConfig as { autoDeduct?: boolean; meals?: { workAtLeastHours: number; deductMinutes: number }[] } | null }
             : null,
