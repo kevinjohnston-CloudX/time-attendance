@@ -45,6 +45,16 @@ function fmtDate(d: Date | string, fmt: string) {
   return format(parseISO(iso), fmt);
 }
 
+/**
+ * Hours as working days of eight hours, the way leave is talked about, in
+ * brackets after the hours. Nothing under a tenth of a day, where "0.0 days"
+ * would say nothing the hours do not.
+ */
+function days(minutes: number): string {
+  const d = (minutes / 480).toFixed(1);
+  return d === "0.0" || d === "-0.0" ? "" : ` (${d} ${d === "1.0" ? "day" : "days"})`;
+}
+
 /** The balance row: four up on a wide screen, one up on a phone. */
 const BALANCE_GRID =
   "grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,23%)),1fr))]";
@@ -125,8 +135,27 @@ export default async function MyLeavePage() {
                 key={b.id}
                 label={b.leaveType.name}
                 value={(remainingMinutes / 60).toFixed(2)}
-                sub={`hours left${booked ? ` · ${booked}` : ""}`}
-              />
+                sub={`hours left${days(remainingMinutes)}${booked ? ` · ${booked}` : ""}`}
+              >
+                {/* The year at a glance: what there was, and what has gone. */}
+                <dl
+                  className="flex flex-col gap-1 pt-2.5"
+                  style={{ margin: 0, borderTop: "1px solid var(--stroke-divider)", font: "var(--type-body2)" }}
+                >
+                  <div className="flex items-baseline justify-between gap-3">
+                    <dt style={{ color: "var(--text-tertiary)" }}>Total this year</dt>
+                    <dd className="tabular" style={{ margin: 0, color: "var(--text-secondary)" }}>
+                      {(totalMinutes / 60).toFixed(2)} h{days(totalMinutes)}
+                    </dd>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <dt style={{ color: "var(--text-tertiary)" }}>Used</dt>
+                    <dd className="tabular" style={{ margin: 0, color: "var(--text-secondary)" }}>
+                      {(b.usedMinutes / 60).toFixed(2)} h
+                    </dd>
+                  </div>
+                </dl>
+              </StatCard>
             );
           })}
         </div>
