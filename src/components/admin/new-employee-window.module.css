@@ -34,7 +34,7 @@
   flex: none;
   align-items: center;
   gap: 12px;
-  padding: 18px 16px 16px 20px;
+  padding: 18px 16px 16px;
 }
 /* The glyph, until there is a name to show as initials instead. */
 .glyph {
@@ -76,12 +76,14 @@
   white-space: nowrap;
 }
 .subtitle {
+  display: -webkit-box;
   overflow: hidden;
   font: var(--type-body2);
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* The copied from note is two lines long; never more. */
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 /* ---- The steps ---- */
@@ -125,7 +127,6 @@
   min-width: 0;
   align-items: center;
   gap: 6px;
-  padding: 0 2px;
 }
 .stepNum {
   flex: none;
@@ -198,8 +199,8 @@
 .block {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 18px 20px 20px;
+  gap: 12px;
+  padding: 16px 20px 18px;
 }
 .block + .block {
   border-top: 1px solid var(--stroke-divider);
@@ -226,7 +227,7 @@
 .rows {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 .row {
   display: grid;
@@ -269,7 +270,7 @@
   flex: none;
   align-items: center;
   gap: 8px;
-  padding: 14px 16px 14px 20px;
+  padding: 14px 16px;
 }
 .footHint {
   display: flex;
