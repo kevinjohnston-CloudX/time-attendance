@@ -111,7 +111,13 @@ const HEADERS = [
   "Hours 3 Code", "Hours 3 Amount",
 ];
 
-const COL = { co: 0, batch: 1, file: 2, reg: 4, ot: 5, h3Code: 6, h3Amount: 7 };
+const COL = { co: 0, batch: 1, file: 2, reg: 4, ot: 5 };
+
+/**
+ * Where a row's hours codes go, as NovaTime writes them: the first in Hours 3,
+ * the next in the three extra Hours 3 pairs at the end. Hours 4 is left empty.
+ */
+const CODE_SLOTS = [6, 25, 27, 29];
 
 /** Buckets whose uncoded hours have no leave code to fall back to. */
 const NO_FALLBACK = new Set<PayBucket>(["REG", "OT", "DT", "UNPAID"]);
@@ -313,11 +319,13 @@ export async function buildAdpEpi(opts: {
   for (const p of sorted) {
     regMinutes += p.reg;
     otMinutes += p.ot;
-    const extra = [...p.codes.entries()].filter(([, m]) => m > 0);
+    // In code order, as NovaTime lists them (BRV, CAS or NSI before PTI).
+    const extra = [...p.codes.entries()].filter(([, m]) => m > 0).sort(([a], [b]) => a.localeCompare(b));
     for (const [code, m] of extra) byCode.set(code, (byCode.get(code) ?? 0) + m);
 
-    // One line per File #, then one more line per additional hours code.
-    const lines = Math.max(1, extra.length);
+    // One line per File #, with up to four hours codes on it; only a person
+    // with more than four codes goes on to a second line.
+    const lines = Math.max(1, Math.ceil(extra.length / CODE_SLOTS.length));
     for (let i = 0; i < lines; i++) {
       const row = new Array<string>(HEADERS.length).fill("");
       row[COL.co] = codes.coCode;
@@ -327,10 +335,10 @@ export async function buildAdpEpi(opts: {
         row[COL.reg] = hours(p.reg);
         row[COL.ot] = hours(p.ot);
       }
-      if (extra[i]) {
-        row[COL.h3Code] = extra[i][0];
-        row[COL.h3Amount] = hours(extra[i][1]);
-      }
+      extra.slice(i * CODE_SLOTS.length, (i + 1) * CODE_SLOTS.length).forEach(([code, m], j) => {
+        row[CODE_SLOTS[j]] = code;
+        row[CODE_SLOTS[j] + 1] = hours(m);
+      });
       rows.push(row);
     }
   }
