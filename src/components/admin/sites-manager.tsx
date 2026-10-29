@@ -5,7 +5,7 @@ import { useRouter } from "@/components/layout/navigation-progress";
 import { Building2, ChevronRight, Plus } from "lucide-react";
 import { createSite, updateSite } from "@/actions/admin.actions";
 import type { Site } from "@prisma/client";
-import { Button, EmptyState, Input, LinkButton, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
+import { Button, EmptyState, Input, LanguagePicker, LinkButton, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
 import {
   AreaPanel,
   Muted,
@@ -273,23 +273,23 @@ export function SiteDialog({
       </SelectField>
       {/* Informational for now: kept for the tablets, messages and documents
           to use later (lib/languages.ts). */}
-      <SelectField
-        label="Primary language"
-        name="primaryLanguage"
-        value={primary}
-        onChange={(e) => {
-          setPrimary(e.target.value);
-          setOthers((o) => o.filter((c) => c !== e.target.value));
-        }}
-        hint="The language this building mostly works in."
-      >
-        <option value="">Not set</option>
-        {LANGUAGES.map((l) => (
-          <option key={l.code} value={l.code}>
-            {l.name}
-          </option>
-        ))}
-      </SelectField>
+      <div className="flex w-full min-w-0 flex-col gap-1.5">
+        <label htmlFor="site-primary-language" className="wms-label">
+          Primary language
+        </label>
+        <LanguagePicker
+          id="site-primary-language"
+          name="primaryLanguage"
+          value={primary}
+          onChange={(code) => {
+            setPrimary(code);
+            setOthers((o) => o.filter((c) => c !== code));
+          }}
+        />
+        <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+          The language this building mostly works in. Type to find one.
+        </span>
+      </div>
       <PickList
         label="Other languages"
         name="additionalLanguages"

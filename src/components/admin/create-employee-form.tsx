@@ -6,9 +6,8 @@ import { format, parseISO } from "date-fns";
 import { createEmployee, getSupervisorOptions } from "@/actions/admin.actions";
 import type { CopyFromEmployee } from "@/lib/employee-copy";
 import { asksForClientBadge, isClientBadge } from "@/lib/utils/client-badge";
-import { LANGUAGES } from "@/lib/languages";
 import type { Site, Department, RuleSet } from "@prisma/client";
-import { Banner, Button, Input, SegmentedControl, Select } from "@/components/ui";
+import { Banner, Button, Input, LanguagePicker, SegmentedControl, Select } from "@/components/ui";
 import { Overlay } from "@/components/ui/overlay";
 import { Check, CircleCheck, Plus, UserPlus, X } from "lucide-react";
 import styles from "./new-employee-window.module.css";
@@ -229,6 +228,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
   }, [open, employees, loadedSupervisors]);
 
   const [payType, setPayType] = useState<string>(copyFrom ? (copyFrom.payType ?? "") : "HOURLY");
+  const [preferredLanguage, setPreferredLanguage] = useState("");
   // Blank unless copying, as the department and rule set: the building is chosen.
   const [selectedSiteId, setSelectedSiteId] = useState(copyFrom?.siteId ?? "");
   const filteredDepts = departments.filter((d) => d.sites.some((ds) => ds.site.id === selectedSiteId));
@@ -291,6 +291,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
     setSupervisorsFailed(false);
     setStep("job");
     setVisited(new Set());
+    setPreferredLanguage("");
     setEmailError(false);
     setError(null);
     if (copy) {
@@ -850,12 +851,18 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                       </Row>
                       {/* Informational for now (lib/languages.ts). */}
                       <Row>
-                        <SelectField label="Preferred Language" name="preferredLanguage" defaultValue="">
-                          <option value="">Not specified</option>
-                          {LANGUAGES.map((l) => (
-                            <option key={l.code} value={l.code}>{l.name}</option>
-                          ))}
-                        </SelectField>
+                        <div className={styles.field}>
+                          <label htmlFor="c-preferred-language" className={styles.fieldLabel}>
+                            Preferred Language
+                          </label>
+                          <LanguagePicker
+                            id="c-preferred-language"
+                            name="preferredLanguage"
+                            value={preferredLanguage}
+                            onChange={setPreferredLanguage}
+                            emptyLabel="Not specified"
+                          />
+                        </div>
                       </Row>
                     </Block>
                   </div>

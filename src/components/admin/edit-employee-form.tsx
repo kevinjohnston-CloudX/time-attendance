@@ -49,7 +49,8 @@ import { PayRatesTable } from "./pay-rates-table";
 import type { PayRateRow } from "@/actions/pay-rate.actions";
 import { TIME_ZONE_OPTIONS, timeZoneLabel } from "@/lib/utils/person-time-zone";
 import { Overlay } from "@/components/ui/overlay";
-import { LANGUAGES, languageName } from "@/lib/languages";
+import { languageName } from "@/lib/languages";
+import { LanguagePicker } from "@/components/ui/language-picker";
 
 /**
  * The employee record. It opens to read: every section shows its values as
@@ -1326,13 +1327,11 @@ export function EditEmployeeForm({
                 </Field>
                 {/* Informational for now (lib/languages.ts). */}
                 <Field label="Preferred language" htmlFor="f-preferredLanguage" read={languageName(v.preferredLanguage)}>
-                  {pick(
-                    "preferredLanguage",
-                    <>
-                      <option value="">Not set</option>
-                      {LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
-                    </>,
-                  )}
+                  <LanguagePicker
+                    id="f-preferredLanguage"
+                    value={draft.preferredLanguage}
+                    onChange={(code) => set("preferredLanguage", code as never)}
+                  />
                 </Field>
                 <Field label="Marital status" htmlFor="f-maritalStatus" read={v.maritalStatus}>
                   {pick(

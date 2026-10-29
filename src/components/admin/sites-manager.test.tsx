@@ -19,13 +19,16 @@ describe("Site languages", () => {
   it("shows the primary and the others, and never offers the primary twice", () => {
     let sent: FormData | null = null;
     render(<SiteDialog site={site} pending={false} error={null} onSubmit={(f) => { sent = f; }} onClose={() => {}} />);
-    const primary = screen.getByLabelText(/^Primary language/) as HTMLSelectElement;
-    expect(primary.value).toBe("es");
+    const primary = screen.getByLabelText(/^Primary language/) as HTMLInputElement;
+    expect(primary.value).toBe("Spanish");
     expect(screen.queryByLabelText("Spanish")).toBeNull();
     expect((screen.getByLabelText("English") as HTMLInputElement).checked).toBe(true);
 
-    // Making English the primary takes it out of the others.
-    fireEvent.change(primary, { target: { value: "en" } });
+    // Making English the primary, by typing, takes it out of the others.
+    fireEvent.focus(primary);
+    fireEvent.change(primary, { target: { value: "Eng" } });
+    fireEvent.keyDown(primary, { key: "Enter" });
+    expect(primary.value).toBe("English");
     expect(screen.queryByLabelText("English")).toBeNull();
     fireEvent.click(screen.getByLabelText("Portuguese"));
 
