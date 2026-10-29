@@ -96,8 +96,10 @@ export const SECTIONS: NavSection[] = [
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { label: "Punch Clock", href: "/time/punch", icon: Clock, permission: "PUNCH_OWN" },
-      { label: "My Timesheet", href: "/time/timesheet", icon: ClipboardList },
-      { label: "Punch History", href: "/time/history", icon: History },
+      // Only for someone with time of their own: a sign in only login (an
+      // agency viewer, Loss Prevention) has no timesheet or punches.
+      { label: "My Timesheet", href: "/time/timesheet", icon: ClipboardList, permission: ["PUNCH_OWN", "TIMESHEET_SUBMIT_OWN"] },
+      { label: "Punch History", href: "/time/history", icon: History, permission: ["PUNCH_OWN", "TIMESHEET_SUBMIT_OWN"] },
       { label: "My Leave", href: "/leave", icon: CalendarDays, permission: "LEAVE_REQUEST_OWN" },
       { label: "My Documents", href: "/documents", icon: FileText, permission: ["DOCUMENT_VIEW_OWN", "DOCUMENT_VIEW_ANY"] },
       {

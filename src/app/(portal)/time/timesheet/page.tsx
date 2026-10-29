@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { addDays, format } from "date-fns";
 import { auth } from "@/lib/auth";
+import { hasOwnTime } from "@/lib/rbac/check-permission";
 import { db } from "@/lib/db";
 import { parseUtcDate } from "@/lib/utils/date";
 import { LinkButton, PageHeader } from "@/components/ui";
@@ -32,6 +33,9 @@ export default async function TimesheetPage({
   const { payPeriodId } = await searchParams;
   const session = await auth();
   if (!session?.user?.employeeId) redirect("/dashboard");
+  // A sign in only login (sign-in-only.ts) has no time of its own. Someone
+  // inactive keeps this page whatever their role allows them now.
+  if (session.user.isActive !== false && !(await hasOwnTime(session.user))) redirect("/dashboard");
 
   // Fetch all timesheets for navigation list
   const timesheets = await db.timesheet.findMany({

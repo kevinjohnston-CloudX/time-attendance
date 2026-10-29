@@ -51,6 +51,11 @@ export default async function PortalLayout({
   // unhandled.
   const liveAttendanceOnlyRead = isPrivileged ? Promise.resolve(false) : isLiveAttendanceOnly(customRoleId);
   liveAttendanceOnlyRead.catch(() => {});
+  // The account shows a role of the company's own by its name: an agency
+  // viewer read "Employee", the built-in role its custom role sits on.
+  const ownRoleRead = customRoleId
+    ? db.customRole.findUnique({ where: { id: customRoleId }, select: { name: true, isSystem: true } }).catch(() => null)
+    : Promise.resolve(null);
 
   let isEmployeeActive = true;
   // Started here and awaited only when the shell is drawn, so the photo lookup
@@ -213,6 +218,8 @@ export default async function PortalLayout({
   const approvalsCount = waiting.filter((i) => i.href !== "/leave").reduce((n, i) => n + i.count, 0);
 
   const userPhoto = await userPhotoRead;
+  const ownRole = await ownRoleRead;
+  const roleShown = ownRole && !ownRole.isSystem ? ownRole.name : realRole;
 
   const destinations: Destination[] = isEmployeeActive
     ? [
@@ -284,7 +291,7 @@ export default async function PortalLayout({
           userName={session.user.name}
           userPhoto={userPhoto}
           permissions={userPermissions}
-          realRole={realRole}
+          realRole={roleShown}
           viewAsRole={viewAsRole}
           canViewAs={canUseViewAs && isEmployeeActive}
           viewAsOptions={viewAsOptions.map((r) => ({ id: r.id, name: r.name }))}
@@ -328,7 +335,7 @@ export default async function PortalLayout({
         userName={session.user.name}
         userPhoto={userPhoto}
         permissions={userPermissions}
-        realRole={realRole}
+        realRole={roleShown}
         viewAsRole={viewAsRole}
         canViewAs={canUseViewAs && isEmployeeActive}
         viewAsOptions={viewAsOptions.map((r) => ({ id: r.id, name: r.name }))}
