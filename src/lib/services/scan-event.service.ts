@@ -484,6 +484,22 @@ export async function resolveScanOutcome(
 }
 
 /**
+ * Takes a refused scan out of the time clock alternation: it was an attempt,
+ * not a crossing, so the person's next scan resolves from the punch before it.
+ * For the meal lockout: someone refused at 29 minutes who clocks in at 30 was
+ * otherwise read as clocking OUT, and raised a direction mismatch. As Oracle,
+ * whose state a refused punch does not toggle. Never throws, as
+ * {@link resolveScanOutcome}.
+ */
+export async function setScanAsideFromAlternation(scanEventId: string, note: string): Promise<void> {
+  try {
+    await db.scanEvent.update({ where: { id: scanEventId }, data: { direction: "UNKNOWN", note } });
+  } catch (err) {
+    console.error("scan_events: failed to set aside", scanEventId, err);
+  }
+}
+
+/**
  * Accepts the legacy API's "IN" / "OUT" in any casing; anything else is dropped.
  *
  * Exported because the gate ingest route passes the same value as

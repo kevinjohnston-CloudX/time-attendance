@@ -114,6 +114,7 @@ function parseForm(fd: FormData): RSFields {
     autoPayPayCodeId: (fd.get("autoPayPayCodeId") as string | null) || null,
     autoPayOverflowThresholdMinutes: Number(fd.get("autoPayOverflowThresholdMinutes") ?? 0),
     autoPayOverflowPayCodeId: (fd.get("autoPayOverflowPayCodeId") as string | null) || null,
+    mealLockoutMinutes: fd.get("mealLockoutEnabled") === "true" ? Number(fd.get("mealLockoutMinutes") ?? 30) : 0,
     mealBreakPremiumEnabled: fd.get("mealBreakPremiumEnabled") === "true",
     mealBreakPremiumMaxPerDay: Number(fd.get("mealBreakPremiumMaxPerDay") ?? 2),
     mealBreakPremiumResetEnabled: fd.get("mealBreakPremiumResetEnabled") === "true",
@@ -259,6 +260,7 @@ export function RuleSetEditor({ ruleSet: rs, payCodes }: { ruleSet: RuleSetRow |
   const [autoPayOn, setAutoPayOn] = useState(rs?.autoPayEnabled ?? false);
   const [expansionOn, setExpansionOn] = useState(rs?.workdayExpansionEnabled ?? false);
   const [premiumOn, setPremiumOn] = useState(rs?.mealBreakPremiumEnabled ?? false);
+  const [lockoutOn, setLockoutOn] = useState((rs?.mealLockoutMinutes ?? 0) > 0);
   const [flsaOn, setFlsaOn] = useState(rs?.flsaEnabled ?? false);
 
   /* Overtime values, which a state preset can refill. */
@@ -314,6 +316,7 @@ export function RuleSetEditor({ ruleSet: rs, payCodes }: { ruleSet: RuleSetRow |
       title: "Time",
       areas: [
         { id: "long-shifts", label: "Long shifts" },
+        { id: "meal-lockout", label: "Meal lockout", count: lockoutOn ? "On" : "Off" },
         { id: "shift-rounding", label: "Shift rounding", count: shiftRoundOn ? "On" : "Off" },
         { id: "punch-rounding", label: "Punch rounding", count: punchInOn || punchOutOn ? "On" : "Off" },
         { id: "pair-rounding", label: "Worked time rounding", count: pairOn ? "On" : "Off" },
@@ -561,6 +564,21 @@ export function RuleSetEditor({ ruleSet: rs, payCodes }: { ruleSet: RuleSetRow |
             <Num name="longShiftHours" min={1} step={0.25} defaultValue={hrs(rs?.longShiftMinutes, 12)} unit="hours" aria-label="Flag a shift as long after" />
           </Row>
         </Section>
+
+        {/* ── Meal lockout ── */}
+        <Section
+          id="meal-lockout"
+          title="Meal lockout"
+          hint="The time clock refuses a clock in back from a meal until the meal is long enough, and tells the person how many minutes are left. Counted in whole clock minutes, as the timecard counts a meal."
+          on={lockoutOn}
+          onToggle={setLockoutOn}
+          offText="Off. A clock in is taken however soon after a clock out."
+        >
+          <Row label="Shortest meal" hint="A clock in sooner than this after a clock out is refused.">
+            <Num name="mealLockoutMinutes" min={1} max={240} defaultValue={rs?.mealLockoutMinutes || 30} unit="min" aria-label="Shortest meal" />
+          </Row>
+        </Section>
+        <input type="hidden" name="mealLockoutEnabled" value={lockoutOn ? "true" : "false"} />
 
         {/* ── Shift rounding ── */}
         <Section

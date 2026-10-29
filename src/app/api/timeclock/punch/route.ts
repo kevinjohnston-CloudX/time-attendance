@@ -4,10 +4,10 @@ import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
 import { computeRoundedTime, computeShiftExpiry } from "@/lib/utils/date";
-import { getCurrentPunchState, findOpenPayPeriod, saveRejectedPunch, TOO_SOON_REJECTION } from "@/lib/utils/punch-helpers";
+import { getCurrentPunchState, findOpenPayPeriod, saveRejectedPunch, mealLockoutRejection, mealLockoutWait, TOO_SOON_REJECTION } from "@/lib/utils/punch-helpers";
 import { validateTransition } from "@/lib/state-machines/punch-state";
 import { timeclockScanSchema } from "@/lib/validators/punch.schema";
-import { recordScanEvent, resolveScanOutcome } from "@/lib/services/scan-event.service";
+import { recordScanEvent, resolveScanOutcome, setScanAsideFromAlternation } from "@/lib/services/scan-event.service";
 import { toTabletVerdict } from "@/lib/services/tablet-verdict";
 import { findEmployeeByBadge } from "@/lib/utils/badge-lookup";
 import { tabletTimeZone } from "@/lib/utils/tablet-time-zone";
@@ -405,6 +405,36 @@ export async function POST(req: NextRequest) {
 
   // 7. Auto-detect punch type and validate transition
   const punchType = detectPunchType(stateBefore);
+
+  // 7a. Meal lockout. A clock in too soon after a clock out is refused with the
+  //     minutes left, as Oracle refuses it for California. The tablets show
+  //     this pipeline's answer, so while only Oracle refused, nobody saw it: in
+  //     the 3 weeks to 10/29, 36 people went back to work after 28-29 minute
+  //     lunches, on CloudTime's "clocked in", owed a meal premium, and never
+  //     reached NovaTime. A 200, for the reason 5b gives; the tablet shows the
+  //     message and holds back the Oracle write.
+  if (punchType === "CLOCK_IN" && employee.ruleSet.mealLockoutMinutes > 0) {
+    const lastOut = await db.punch.findFirst({
+      where: {
+        employeeId: employee.id,
+        punchType: { in: ["CLOCK_OUT", "MEAL_START"] },
+        source: { not: "SYSTEM" },
+        isRejected: false,
+        correctedById: null,
+        hoursOnly: false,
+        punchTime: { lt: punchTime, gte: new Date(punchTime.getTime() - (employee.ruleSet.mealLockoutMinutes + 1) * 60_000) },
+      },
+      orderBy: { punchTime: "desc" },
+      select: { punchTime: true },
+    });
+    const wait = lastOut ? mealLockoutWait(lastOut.punchTime, punchTime, employee.ruleSet.mealLockoutMinutes) : 0;
+    if (wait > 0) {
+      const error = mealLockoutRejection(wait);
+      await settle("PUNCH_REJECTED", { punchType, rejectionReason: error });
+      if (scanEventId) await setScanAsideFromAlternation(scanEventId, "Refused by the meal lockout: not counted as a clock in or out");
+      return NextResponse.json({ success: false, punchId: null, error, minutesLeft: wait });
+    }
+  }
 
   // 8. Validate state transition
   const transition = validateTransition(stateBefore, punchType);

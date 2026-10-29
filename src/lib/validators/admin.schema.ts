@@ -246,6 +246,7 @@ export const ruleSetSchema = z.object({
   autoPayPayCodeId: z.string().nullable().optional(),
   autoPayOverflowThresholdMinutes: z.number().int().min(0).default(0),
   autoPayOverflowPayCodeId: z.string().nullable().optional(),
+  mealLockoutMinutes: z.number().int().min(0).max(240).default(0),
   mealBreakPremiumEnabled: z.boolean().default(false),
   mealBreakPremiumMaxPerDay: z.number().int().min(1).default(2),
   mealBreakPremiumResetEnabled: z.boolean().default(false),

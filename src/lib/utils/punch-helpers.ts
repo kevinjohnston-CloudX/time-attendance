@@ -9,6 +9,29 @@ import type { PunchSource, PunchState, PunchType } from "@prisma/client";
  */
 export const TOO_SOON_REJECTION = "Scanned again too quickly, please wait to prevent duplicates";
 
+/**
+ * Minutes still to wait before a clock in back from a meal, under a rule set's
+ * meal lockout; 0 when the clock in may go through. Counted in whole clock
+ * minutes, the seconds of both punches dropped, as Oracle counts it and as the
+ * timecard counts a meal: 12:37:12 to 1:06:54 is 29 minutes (1 to wait),
+ * 12:55:59 to 1:25:37 is 30 (none).
+ */
+export function mealLockoutWait(clockOutAt: Date, clockInAt: Date, lockoutMinutes: number): number {
+  if (lockoutMinutes <= 0) return 0;
+  const gap = Math.floor(clockInAt.getTime() / 60_000) - Math.floor(clockOutAt.getTime() / 60_000);
+  return gap >= 0 && gap < lockoutMinutes ? lockoutMinutes - gap : 0;
+}
+
+/** The time clock's answer to a clock in inside the meal lockout, worded as Oracle's. */
+export function mealLockoutRejection(minutesLeft: number): string {
+  return `Please wait ${minutesLeft} minute${minutesLeft === 1 ? "" : "s"} before clocking in again.`;
+}
+
+/** Whether a refusal is the meal lockout's: the rule working, not a timecard problem. */
+export function isMealLockoutRejection(reason: string | null | undefined): boolean {
+  return /^Please wait \d+ minutes? before clocking in again\.$/.test(reason ?? "");
+}
+
 export async function getCurrentPunchState(employeeId: string): Promise<PunchState> {
   const [lastApproved, lastSystemReset] = await Promise.all([
     db.punch.findFirst({
