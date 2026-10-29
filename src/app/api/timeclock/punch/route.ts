@@ -231,7 +231,7 @@ export async function POST(req: NextRequest) {
     return repeatResponse(samePunch);
   }
 
-  // 5b. Too soon after the last punch.
+  // 5b. Too soon after (or before) another punch.
   //
   //     Oracle refuses a punch inside five minutes of the previous one, and
   //     that rule is presently the only thing keeping a reader that fires twice
@@ -264,7 +264,13 @@ export async function POST(req: NextRequest) {
       // auto clock-out that had just closed the person's previous shift. With
       // it, 57 -- the kiosk-following-kiosk pairs the rule is actually for.
       source: "KIOSK",
-      punchTime: { gte: new Date(punchTime.getTime() - PUNCH_MIN_GAP_MS), lt: punchTime },
+      // Either side of this scan. A double tap can arrive out of order: the
+      // second tap recorded first, as the clock out, then the first, seconds
+      // late, taken as a clock in, since only punches before a scan were
+      // checked. 12 times at Rutherford 10/8-10/28, the first tap always from
+      // NJ299-HRTB001 (Luis M Van Grieken Garcia: 3:31:32 PM out, then 3:31:19
+      // PM in). The same instant is the same scan, answered at 5a'.
+      punchTime: { gte: new Date(punchTime.getTime() - PUNCH_MIN_GAP_MS), lte: new Date(punchTime.getTime() + PUNCH_MIN_GAP_MS) },
     },
     orderBy: { punchTime: "desc" },
     select: { punchTime: true },
