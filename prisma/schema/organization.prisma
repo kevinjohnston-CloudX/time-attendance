@@ -86,6 +86,10 @@ model Site {
   /// turned away since then, never a morning's worth at once. Refusals are
   /// recorded either way. Starts off (no default).
   gateAlertsOnSince DateTime?
+  /// The language the building mostly works in, and the others spoken there,
+  /// as language codes (lib/languages.ts, "es"). Informational for now.
+  primaryLanguage     String?
+  additionalLanguages String[] @default([])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -177,6 +181,9 @@ model Employee {
   /// who works in another zone than their site, such as a Rey 11 person in
   /// California. Null means the site's zone, which is everyone else.
   timeZone         String?
+  /// The language the person prefers, as a language code (lib/languages.ts).
+  /// Informational for now.
+  preferredLanguage String?
 
   // Work info
   jobTitle          String?

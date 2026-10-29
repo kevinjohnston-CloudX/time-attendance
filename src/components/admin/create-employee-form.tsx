@@ -6,6 +6,7 @@ import { format, parseISO } from "date-fns";
 import { createEmployee, getSupervisorOptions } from "@/actions/admin.actions";
 import type { CopyFromEmployee } from "@/lib/employee-copy";
 import { asksForClientBadge, isClientBadge } from "@/lib/utils/client-badge";
+import { LANGUAGES } from "@/lib/languages";
 import type { Site, Department, RuleSet } from "@prisma/client";
 import { Banner, Button, Input, SegmentedControl, Select } from "@/components/ui";
 import { Overlay } from "@/components/ui/overlay";
@@ -432,6 +433,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
         state: fd.get("state") as string,
         country: fd.get("country") as string,
         zipCode: fd.get("zipCode") as string,
+        preferredLanguage: (fd.get("preferredLanguage") as string | null) || null,
       });
 
       if (!result.success) {
@@ -844,6 +846,15 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                           <option value="Divorced">Divorced</option>
                           <option value="Widowed">Widowed</option>
                           <option value="Other">Other</option>
+                        </SelectField>
+                      </Row>
+                      {/* Informational for now (lib/languages.ts). */}
+                      <Row>
+                        <SelectField label="Preferred Language" name="preferredLanguage" defaultValue="">
+                          <option value="">Not specified</option>
+                          {LANGUAGES.map((l) => (
+                            <option key={l.code} value={l.code}>{l.name}</option>
+                          ))}
                         </SelectField>
                       </Row>
                     </Block>

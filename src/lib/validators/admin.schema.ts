@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { PayFrequency } from "@prisma/client";
 import { asksForClientBadge, isClientBadge } from "@/lib/utils/client-badge";
+import { isLanguageCode, LANGUAGES } from "@/lib/languages";
 
 export const ROLES = [
   "EMPLOYEE",
@@ -22,6 +23,15 @@ const LEAVE_CATEGORIES = [
 ] as const;
 
 const nullableStr = z.string().nullable().optional().transform((v) => v === undefined ? undefined : (v || null));
+
+/** A language code from lib/languages.ts; blank means none. */
+const languageCode = z
+  .string()
+  .nullable()
+  .optional()
+  .transform((v) => (v === undefined ? undefined : v || null))
+  .refine((v) => v == null || isLanguageCode(v), "Pick a language from the list");
+
 
 /** An optional email field: blank means none, anything else must be an address. */
 const optionalEmail = (message: string) =>
@@ -80,6 +90,7 @@ export const createEmployeeSchema = z.object({
   state: nullableStr,
   country: nullableStr,
   zipCode: nullableStr,
+  preferredLanguage: languageCode,
 }).superRefine((v, ctx) => {
   // A new hire needs a shift, a pay category and a holiday rule: without a
   // shift every day is a scheduled day (absences on weekends), without a pay
@@ -167,12 +178,16 @@ export const updateEmployeeSchema = z.object({
   state: nullableStr,
   country: nullableStr,
   zipCode: nullableStr,
+  preferredLanguage: languageCode,
 });
 
 export const siteSchema = z.object({
   name: z.string().min(1),
   timezone: z.string().min(1).default("America/New_York"),
   address: z.string().optional(),
+  // Informational for now (lib/languages.ts).
+  primaryLanguage: languageCode,
+  additionalLanguages: z.array(z.string()).max(LANGUAGES.length).optional(),
 });
 
 export const updateSiteSchema = siteSchema.extend({

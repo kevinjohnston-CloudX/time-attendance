@@ -9,6 +9,7 @@ import { Button, EmptyState, Input, LinkButton, Table, TBody, TD, TH, THead, TR 
 import {
   AreaPanel,
   Muted,
+  PickList,
   SelectField,
   SetupDialog,
   StatusBadge,
@@ -20,6 +21,7 @@ import {
   useOpenFromLink,
 } from "./setup/setup-ui";
 import { timeZoneLabel, timeZoneOptions } from "./setup/time-zones";
+import { LANGUAGES, languageName } from "@/lib/languages";
 
 /**
  * Sites: the buildings people clock in at, each with the time zone its
@@ -55,6 +57,7 @@ export function SitesManager({ sites }: { sites: Site[] }) {
       name: String(form.get("name") ?? "").trim(),
       timezone: String(form.get("timezone") ?? "") || "America/New_York",
       address: String(form.get("address") ?? ""),
+      ...siteLanguages(form),
     };
     setError(null);
     startTransition(async () => {
@@ -104,6 +107,7 @@ export function SitesManager({ sites }: { sites: Site[] }) {
                 <TH>Site</TH>
                 <TH>Time zone</TH>
                 <TH>Address</TH>
+                <TH>Languages</TH>
                 <TH>Status</TH>
                 <TH align="right">
                   <span className="sr-only">Leave policies</span>
@@ -118,6 +122,20 @@ export function SitesManager({ sites }: { sites: Site[] }) {
                     {timeZoneLabel(site.timezone)}
                   </TD>
                   <TD style={{ color: "var(--text-secondary)" }}>{site.address || <Muted>Not set</Muted>}</TD>
+                  <TD style={{ color: "var(--text-secondary)" }} title={languagesLine(site)}>
+                    {site.primaryLanguage ? (
+                      <>
+                        {languageName(site.primaryLanguage)}
+                        {site.additionalLanguages.length > 0 && (
+                          <span style={{ color: "var(--text-tertiary)" }}> + {site.additionalLanguages.length} more</span>
+                        )}
+                      </>
+                    ) : site.additionalLanguages.length > 0 ? (
+                      languagesLine(site)
+                    ) : (
+                      <Muted>Not set</Muted>
+                    )}
+                  </TD>
                   <TD>
                     <StatusBadge active={site.isActive} />
                   </TD>
@@ -147,6 +165,24 @@ export function SitesManager({ sites }: { sites: Site[] }) {
       )}
     </>
   );
+}
+
+/** A site's languages as the window sends them: the primary, and the others ticked. */
+export function siteLanguages(form: FormData): { primaryLanguage: string | null; additionalLanguages: string[] } {
+  return {
+    primaryLanguage: String(form.get("primaryLanguage") ?? "") || null,
+    additionalLanguages: String(form.get("additionalLanguages") ?? "").split(",").filter(Boolean),
+  };
+}
+
+/** "Spanish (primary), English, Portuguese". */
+function languagesLine(site: Pick<Site, "primaryLanguage" | "additionalLanguages">): string {
+  return [
+    site.primaryLanguage ? `${languageName(site.primaryLanguage)} (primary)` : null,
+    ...site.additionalLanguages.map(languageName),
+  ]
+    .filter(Boolean)
+    .join(", ");
 }
 
 /**
@@ -189,6 +225,8 @@ export function SiteDialog({
   const zones = timeZoneOptions(site?.timezone);
   const [zone, setZone] = useState(site?.timezone ?? "America/New_York");
   const timeNow = useTimeIn(zone);
+  const [primary, setPrimary] = useState(site?.primaryLanguage ?? "");
+  const [others, setOthers] = useState<string[]>(site?.additionalLanguages ?? []);
   return (
     <SetupDialog
       title={site ? site.name : "Add site"}
@@ -233,6 +271,34 @@ export function SiteDialog({
           </optgroup>
         )}
       </SelectField>
+      {/* Informational for now: kept for the tablets, messages and documents
+          to use later (lib/languages.ts). */}
+      <SelectField
+        label="Primary language"
+        name="primaryLanguage"
+        value={primary}
+        onChange={(e) => {
+          setPrimary(e.target.value);
+          setOthers((o) => o.filter((c) => c !== e.target.value));
+        }}
+        hint="The language this building mostly works in."
+      >
+        <option value="">Not set</option>
+        {LANGUAGES.map((l) => (
+          <option key={l.code} value={l.code}>
+            {l.name}
+          </option>
+        ))}
+      </SelectField>
+      <PickList
+        label="Other languages"
+        name="additionalLanguages"
+        items={LANGUAGES.filter((l) => l.code !== primary).map((l) => ({ id: l.code, label: l.name }))}
+        selected={others.filter((c) => c !== primary)}
+        onChange={setOthers}
+        searchPlaceholder="Find a language"
+        hint="Any others spoken here."
+      />
       {site && (
         <StatusField defaultActive={site.isActive} hint="An inactive site stays on the records that already use it." />
       )}

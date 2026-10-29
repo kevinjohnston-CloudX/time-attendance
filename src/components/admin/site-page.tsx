@@ -8,7 +8,7 @@ import type { Site } from "@prisma/client";
 import { Banner, Button, EmptyState, LinkButton, PageHeader, PinnedBar, Select } from "@/components/ui";
 import { updateSite } from "@/actions/admin.actions";
 import { assignSitePtoPolicy } from "@/actions/pto-policy.actions";
-import { SiteDialog } from "./sites-manager";
+import { SiteDialog, siteLanguages } from "./sites-manager";
 import { AreaPanel, LEAVE_CATEGORY_LABEL, StatusBadge, saveError } from "./setup/setup-ui";
 import { timeZoneLabel } from "./setup/time-zones";
 
@@ -71,6 +71,7 @@ export function SitePage({
         name: String(form.get("name") ?? "").trim(),
         timezone: String(form.get("timezone") ?? "") || "America/New_York",
         address: String(form.get("address") ?? ""),
+        ...siteLanguages(form),
         isActive: form.get("isActive") === "true",
       });
       if (!result.success) return setEditError(saveError(result.error));

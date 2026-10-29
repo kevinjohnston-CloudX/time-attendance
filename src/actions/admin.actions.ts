@@ -28,6 +28,7 @@ import { personTimeZone, timeZoneLabel } from "@/lib/utils/person-time-zone";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { webPunchByDefault } from "@/lib/web-punch";
 import { isSignInOnlyRole, isVisitorRole, seesTeam, SIGN_IN_ONLY_RULE_SET, VISITOR_DEPARTMENT } from "@/lib/sign-in-only";
+import { cleanLanguages, languageName } from "@/lib/languages";
 import { hoursToSeconds, secondsToMinutes } from "@/lib/leave-time";
 import { assertBalanceChangeAllowed, assertNotSenior, assertRecordInReach, assertSiteInReach, siteInReach, siteLimit } from "@/lib/rbac/scope";
 
@@ -605,6 +606,7 @@ export const createEmployee = withRBAC(
           holidayRuleId: signInRuleSetId ? null : parsed.holidayRuleId ?? null,
           payCategoryId: signInRuleSetId ? null : parsed.payCategoryId ?? null,
           payTypeId: signInRuleSetId ? null : parsed.payTypeId ?? null,
+          preferredLanguage: parsed.preferredLanguage ?? null,
           ...encPii,
         },
       });
@@ -640,7 +642,7 @@ export const updateEmployee = withRBAC(
       adjustedHireDate, jobTitle, jobTitleId, agencyId, terminationReason, terminatedAt: terminatedAtInput, timeZone, payType, payRate, chargeRate, holidayRate, overtimeRate,
       phone, phone2, gender, maritalStatus,
       emergencyContact, emergencyPhone, emergencyRelationship,
-      address1, address2, city, state, country, zipCode,
+      address1, address2, city, state, country, zipCode, preferredLanguage,
     } = updateEmployeeSchema.parse(input);
 
     if (!tenantId) throw new Error("Tenant context required");
@@ -790,6 +792,7 @@ export const updateEmployee = withRBAC(
           ...(terminationReason !== undefined && { terminationReason }),
           ...(terminatedAt !== undefined && { terminatedAt: terminatedAt ? new Date(terminatedAt + "T00:00:00.000Z") : null }),
           ...(timeZone !== undefined && { timeZone }),
+          ...(preferredLanguage !== undefined && { preferredLanguage }),
           ...(payType !== undefined && { payType }),
           ...(payRate !== undefined && { payRate }),
           ...(chargeRate !== undefined && { chargeRate }),
@@ -887,6 +890,7 @@ export const updateEmployee = withRBAC(
     if (moneyChanges(chargeRate, current.chargeRate)) diff("Charge Rate", usd(current.chargeRate), usd(chargeRate));
     if (moneyChanges(holidayRate, current.holidayRate)) diff("Holiday Rate", usd(current.holidayRate), usd(holidayRate));
     if (moneyChanges(overtimeRate, current.overtimeRate)) diff("Overtime Rate", usd(current.overtimeRate), usd(overtimeRate));
+    if (preferredLanguage !== undefined) diff("Preferred Language", languageName(current.preferredLanguage), languageName(preferredLanguage));
     if (timeZone !== undefined) diff("Time Zone", current.timeZone ? timeZoneLabel(current.timeZone) : "Site's time zone", timeZone ? timeZoneLabel(timeZone) : "Site's time zone");
     if (phone !== undefined) diff("Phone 1", decCurrent.phone, phone);
     if (phone2 !== undefined) diff("Phone 2", decCurrent.phone2, phone2);
@@ -1359,7 +1363,13 @@ export const createSite = withRBAC(
     if (!tenantId) throw new Error("Tenant context required");
     const parsed = siteSchema.parse(input);
     const site = await db.site.create({
-      data: { ...parsed, address: parsed.address?.trim() || null, tenantId },
+      data: {
+        ...parsed,
+        address: parsed.address?.trim() || null,
+        primaryLanguage: parsed.primaryLanguage ?? null,
+        additionalLanguages: cleanLanguages(parsed.primaryLanguage, parsed.additionalLanguages),
+        tenantId,
+      },
     });
     await writeAuditLog({
       tenantId,
@@ -1378,7 +1388,7 @@ export const updateSite = withRBAC(
   "SITE_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: UpdateSiteInput) => {
     if (!tenantId) throw new Error("Tenant context required");
-    const { siteId, isActive, address, ...rest } = updateSiteSchema.parse(input);
+    const { siteId, isActive, address, primaryLanguage, additionalLanguages, ...rest } = updateSiteSchema.parse(input);
     // Found inside this company first: an id from another one answers the
     // same "not found" as an id that does not exist.
     const own = await db.site.findFirst({ where: { id: siteId, tenantId }, select: { id: true } });
@@ -1391,6 +1401,9 @@ export const updateSite = withRBAC(
         // which Prisma skips, so the old address could never be removed.
         ...(address !== undefined && { address: address.trim() || null }),
         ...(isActive !== undefined && { isActive }),
+        // Informational for now. The others never repeat the primary.
+        ...(primaryLanguage !== undefined && { primaryLanguage }),
+        ...(additionalLanguages !== undefined && { additionalLanguages: cleanLanguages(primaryLanguage, additionalLanguages) }),
       },
     });
     await writeAuditLog({

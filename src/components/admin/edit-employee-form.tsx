@@ -49,6 +49,7 @@ import { PayRatesTable } from "./pay-rates-table";
 import type { PayRateRow } from "@/actions/pay-rate.actions";
 import { TIME_ZONE_OPTIONS, timeZoneLabel } from "@/lib/utils/person-time-zone";
 import { Overlay } from "@/components/ui/overlay";
+import { LANGUAGES, languageName } from "@/lib/languages";
 
 /**
  * The employee record. It opens to read: every section shows its values as
@@ -166,6 +167,7 @@ type Values = {
   overtimeRate: string;
   gender: string;
   maritalStatus: string;
+  preferredLanguage: string;
   phone: string;
   phone2: string;
   emergencyContact: string;
@@ -401,6 +403,7 @@ export function EditEmployeeForm({
       overtimeRate: employee.overtimeRate != null ? String(employee.overtimeRate) : "",
       gender: employee.gender ?? "",
       maritalStatus: employee.maritalStatus ?? "",
+      preferredLanguage: employee.preferredLanguage ?? "",
       phone: employee.phone ?? "",
       phone2: employee.phone2 ?? "",
       emergencyContact: employee.emergencyContact ?? "",
@@ -567,6 +570,7 @@ export function EditEmployeeForm({
         case "adjustedHireDate":
         case "terminatedAt":
         case "timeZone":
+        case "preferredLanguage":
           out[k] = val || null;
           break;
         default:
@@ -1319,6 +1323,16 @@ export function EditEmployeeForm({
                 </Field>
                 <Field label="Gender" htmlFor="f-gender" read={v.gender}>
                   {text("gender")}
+                </Field>
+                {/* Informational for now (lib/languages.ts). */}
+                <Field label="Preferred language" htmlFor="f-preferredLanguage" read={languageName(v.preferredLanguage)}>
+                  {pick(
+                    "preferredLanguage",
+                    <>
+                      <option value="">Not set</option>
+                      {LANGUAGES.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
+                    </>,
+                  )}
                 </Field>
                 <Field label="Marital status" htmlFor="f-maritalStatus" read={v.maritalStatus}>
                   {pick(
