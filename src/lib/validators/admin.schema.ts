@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PayFrequency } from "@prisma/client";
+import { asksForClientBadge, isClientBadge } from "@/lib/utils/client-badge";
 
 export const ROLES = [
   "EMPLOYEE",
@@ -72,6 +73,16 @@ export const createEmployeeSchema = z.object({
   state: nullableStr,
   country: nullableStr,
   zipCode: nullableStr,
+}).superRefine((v, ctx) => {
+  // A new hire needs a shift, a pay category and a holiday rule: without a
+  // shift every day is a scheduled day (absences on weekends), without a pay
+  // category no leave policy and no leave codes, without a holiday rule no
+  // holiday pay. Several hires in October were saved without them. Not for a
+  // client badge, who works no shift and keeps no timecard.
+  if (asksForClientBadge(v.wmsId) || isClientBadge(v.wmsId)) return;
+  if (!v.shiftId) ctx.addIssue({ code: "custom", path: ["shiftId"], message: "Choose a shift" });
+  if (!v.payCategoryId) ctx.addIssue({ code: "custom", path: ["payCategoryId"], message: "Choose a pay category" });
+  if (!v.holidayRuleId) ctx.addIssue({ code: "custom", path: ["holidayRuleId"], message: "Choose a holiday rule" });
 });
 
 export const updateEmployeeSchema = z.object({

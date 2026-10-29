@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { format, parseISO } from "date-fns";
 import { createEmployee, getSupervisorOptions } from "@/actions/admin.actions";
 import type { CopyFromEmployee } from "@/lib/employee-copy";
+import { asksForClientBadge, isClientBadge } from "@/lib/utils/client-badge";
 import type { Site, Department, RuleSet } from "@prisma/client";
 import { Banner, Button, Input, SegmentedControl, Select } from "@/components/ui";
 import { Overlay } from "@/components/ui/overlay";
@@ -58,7 +59,13 @@ type Snapshot = {
   email: string;
   departmentId: string;
   ruleSetId: string;
+  shiftId: string;
+  payCategoryId: string;
+  holidayRuleId: string;
 };
+
+/** A client badge (client-badge.ts) works no shift and keeps no timecard. */
+const forClient = (s: Snapshot) => asksForClientBadge(s.wmsId) || isClientBadge(s.wmsId);
 
 const NEEDED: { step: Step; label: string; missing: (s: Snapshot) => boolean }[] = [
   { step: "job", label: "full name", missing: (s) => !s.name.trim() },
@@ -67,6 +74,9 @@ const NEEDED: { step: Step; label: string; missing: (s: Snapshot) => boolean }[]
   { step: "job", label: "a work or personal email", missing: (s) => !s.workEmail.trim() && !s.email.trim() },
   { step: "job", label: "department", missing: (s) => !s.departmentId },
   { step: "pay", label: "rule set", missing: (s) => !s.ruleSetId },
+  { step: "pay", label: "holiday rule", missing: (s) => !s.holidayRuleId && !forClient(s) },
+  { step: "pay", label: "shift", missing: (s) => !s.shiftId && !forClient(s) },
+  { step: "pay", label: "pay category", missing: (s) => !s.payCategoryId && !forClient(s) },
 ];
 
 interface Props {
@@ -203,18 +213,22 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
 
   // What the header, the steps and the footer read. The fields stay
   // uncontrolled; this is read back from the form whenever one changes.
-  const blankSnapshot = (c: CopyFromEmployee | null, siteId: string): Snapshot => ({
+  const blankSnapshot = (c: CopyFromEmployee | null): Snapshot => ({
     name: "",
     hireDate: "",
     wmsId: "",
     workEmail: "",
     email: "",
-    // A required select with no empty option shows, and sends, its first one.
-    departmentId:
-      c?.departmentId ?? departments.find((d) => d.sites.some((ds) => ds.site.id === siteId))?.id ?? "",
-    ruleSetId: c?.ruleSetId ?? ruleSets[0]?.id ?? "",
+    // Blank unless copying: each is chosen, never the first in its list. The
+    // Rule Set used to start on the first by name, "Ca Exempt - Punch", and a
+    // Georgia and a Rutherford hire were saved on it unseen (no overtime).
+    departmentId: c?.departmentId ?? "",
+    ruleSetId: c?.ruleSetId ?? "",
+    shiftId: c?.shiftId ?? "",
+    payCategoryId: c?.payCategoryId ?? "",
+    holidayRuleId: c?.holidayRuleId ?? "",
   });
-  const [snap, setSnap] = useState<Snapshot>(() => blankSnapshot(copyFrom ?? null, copyFrom?.siteId ?? defaultSiteId));
+  const [snap, setSnap] = useState<Snapshot>(() => blankSnapshot(copyFrom ?? null));
 
   function readForm() {
     const f = formRef.current;
@@ -229,6 +243,9 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
       email: v("email"),
       departmentId: v("departmentId"),
       ruleSetId: v("ruleSetId"),
+      shiftId: v("shiftId"),
+      payCategoryId: v("payCategoryId"),
+      holidayRuleId: v("holidayRuleId"),
     };
     setSnap(next);
     if (next.workEmail.trim() || next.email.trim()) setEmailError(false);
@@ -247,12 +264,12 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
       setCopy(null);
       setSelectedSiteId(defaultSiteId);
       setPayType("HOURLY");
-      setSnap(blankSnapshot(null, defaultSiteId));
+      setSnap(blankSnapshot(null));
       const url = new URL(window.location.href);
       url.searchParams.delete("copyFrom");
       router.replace(url.pathname + url.search);
     } else {
-      setSnap(blankSnapshot(null, selectedSiteId));
+      setSnap(blankSnapshot(null));
     }
   }
 
@@ -398,6 +415,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
   const panelStyle = (s: Step): React.CSSProperties => ({ display: step === s ? "block" : "none" });
 
   const missing = NEEDED.filter((n) => n.missing(snap));
+  const client = forClient(snap);
   const stepDone = (s: Step) =>
     !STEPS.find((x) => x.value === s)?.optional && visited.has(s) && !missing.some((n) => n.step === s);
 
@@ -543,7 +561,8 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                             <option key={s.id} value={s.id}>{s.name}</option>
                           ))}
                         </SelectField>
-                        <SelectField label="Department" name="departmentId" required defaultValue={copy?.departmentId}>
+                        <SelectField label="Department" name="departmentId" required defaultValue={copy?.departmentId ?? ""}>
+                          <option value="">Choose a department</option>
                           {filteredDepts.map((d) => (
                             <option key={d.id} value={d.id}>{d.name}</option>
                           ))}
@@ -605,21 +624,24 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                   <div data-step="pay" style={panelStyle("pay")}>
                     <Block label="Time rules" note="How their hours are counted.">
                       <Row>
-                        <SelectField label="Rule Set" name="ruleSetId" required defaultValue={copy?.ruleSetId}>
+                        <SelectField label="Rule Set" name="ruleSetId" required defaultValue={copy?.ruleSetId ?? ""}>
+                          <option value="">Choose a rule set</option>
                           {ruleSets.map((rs) => (
                             <option key={rs.id} value={rs.id}>{rs.name}</option>
                           ))}
                         </SelectField>
-                        <SelectField label="Holiday Rule" name="holidayRuleId" defaultValue={copy?.holidayRuleId ?? ""}>
-                          <option value="">None</option>
+                        {/* Required for a new hire (temps take "No Holiday"); not
+                            for a client badge, which keeps no timecard. */}
+                        <SelectField label="Holiday Rule" name="holidayRuleId" required={!client} defaultValue={copy?.holidayRuleId ?? ""}>
+                          <option value="">Choose a holiday rule</option>
                           {holidayRules.map((r) => (
                             <option key={r.id} value={r.id}>{r.name}</option>
                           ))}
                         </SelectField>
                       </Row>
                       <Row cols={1}>
-                        <SelectField label="Shift" name="shiftId" defaultValue={copy?.shiftId ?? ""}>
-                          <option value="">None</option>
+                        <SelectField label="Shift" name="shiftId" required={!client} defaultValue={copy?.shiftId ?? ""}>
+                          <option value="">Choose a shift</option>
                           {shifts.map((s) => (
                             <option key={s.id} value={s.id}>
                               {s.name} ({fmtTime(s.startTime)} – {fmtTime(s.endTime)})
@@ -660,8 +682,8 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
 
                     <Block label="Payroll" note="Used when their hours are sent to payroll.">
                       <Row cols={3}>
-                        <SelectField label="Pay Category" name="payCategoryId" defaultValue={copy?.payCategoryId ?? ""}>
-                          <option value="">None</option>
+                        <SelectField label="Pay Category" name="payCategoryId" required={!client} defaultValue={copy?.payCategoryId ?? ""}>
+                          <option value="">Choose a pay category</option>
                           {payCategories.map((c) => (
                             <option key={c.id} value={c.id}>
                               {c.number}{c.description ? ` (${c.description})` : ""}
