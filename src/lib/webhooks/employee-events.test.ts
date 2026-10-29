@@ -15,7 +15,7 @@ vi.mock("@/lib/db", () => ({
 }));
 vi.mock("@/lib/api/external-people", () => ({ getPerson: async () => person.value }));
 vi.mock("next/server", () => ({ after: (fn: () => Promise<void>) => later.push(fn) }));
-const drain = vi.fn(async () => ({ claimed: 0, delivered: 0, failed: 0 }));
+const drain = vi.fn(async (_opts?: unknown) => ({ claimed: 0, delivered: 0, failed: 0 }));
 vi.mock("./dispatch", () => ({ drainWebhookQueue: (o: unknown) => drain(o) }));
 
 import { activeChangeEvent, queueEmployeeEvent, sendSoon } from "./employee-events";
