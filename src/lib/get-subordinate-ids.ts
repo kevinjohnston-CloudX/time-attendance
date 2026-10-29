@@ -68,14 +68,15 @@ const subtree = cache(async (actorId: string, tenantId: string | null): Promise<
       JOIN   reports r ON l."supervisorId" = r.id
     ),
     -- An agency viewer: everyone in its agency. The same test as
-    -- SIGN_IN_ONLY_ROLE in sign-in-only.ts: a role that is not a system one
-    -- and cannot punch for itself.
+    -- SIGN_IN_ONLY_ROLE in sign-in-only.ts: a role that is not a system one,
+    -- has permissions, and cannot punch for itself.
     agency AS (
       SELECT e.id
       FROM   "employees" e
       JOIN   "employees" v ON v.id = ${actorId} AND v."agencyId" IS NOT NULL AND e."agencyId" = v."agencyId"
       JOIN   "custom_roles" cr ON cr.id = v."customRoleId" AND NOT cr."isSystem"
-      WHERE  NOT EXISTS (
+      WHERE  EXISTS (SELECT 1 FROM "role_permissions" p0 WHERE p0."customRoleId" = cr.id)
+        AND  NOT EXISTS (
                SELECT 1 FROM "role_permissions" p
                WHERE  p."customRoleId" = cr.id AND p.resource = 'punch' AND p.action = 'write' AND p.scope = 'own'
              )

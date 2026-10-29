@@ -52,6 +52,9 @@ export const createEmployeeSchema = z.object({
   // A login with no timecard (sign-in-only.ts); createEmployee checks the role
   // really is one.
   signInOnly: z.boolean().optional(),
+  // A visitor (sign-in-only.ts): a badge for the security gate and nothing
+  // else. createEmployee checks the role and fills in the rest.
+  visitor: z.boolean().optional(),
   payType: z.enum(["HOURLY", "SALARY"]).nullable().optional(),
   payRate: z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().positive().nullable().optional()),
   // Work info
@@ -84,7 +87,7 @@ export const createEmployeeSchema = z.object({
   // holiday pay. Several hires in October were saved without them. Not for a
   // client badge, who works no shift and keeps no timecard, and none of it for
   // a sign in only account, which keeps no timecard either.
-  if (v.signInOnly) return;
+  if (v.signInOnly || v.visitor) return;
   if (!v.wmsId) ctx.addIssue({ code: "custom", path: ["wmsId"], message: "Badge ID is required" });
   if (!v.hireDate) ctx.addIssue({ code: "custom", path: ["hireDate"], message: "Hire date is required" });
   if (!v.ruleSetId) ctx.addIssue({ code: "custom", path: ["ruleSetId"], message: "Choose a rule set" });

@@ -12,7 +12,7 @@ import { publicError, withRBAC } from "@/lib/rbac/guard";
 import { zodMessage } from "@/lib/zod-message";
 import { photoUrls } from "@/lib/presence/photos";
 import { badgeWhere } from "@/lib/utils/badge-lookup";
-import { asksForClientBadge, isClientBadge, issueClientBadge } from "@/lib/utils/client-badge";
+import { asksForClientBadge, isClientBadge, issueClientBadge, previewClientBadge } from "@/lib/utils/client-badge";
 import { looksLikeBadge } from "@/lib/presence/people-search.service";
 import { MISSING_OPTIONS, PAY_OPTIONS, PERIOD_OPTIONS, PUNCH_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS, pick } from "@/components/admin/employees-list-options";
 import { writeAuditLog } from "@/lib/audit/logger";
@@ -27,7 +27,7 @@ import { todayKey } from "@/lib/pay-rates";
 import { personTimeZone, timeZoneLabel } from "@/lib/utils/person-time-zone";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { webPunchByDefault } from "@/lib/web-punch";
-import { isSignInOnlyRole, seesTeam, SIGN_IN_ONLY_RULE_SET } from "@/lib/sign-in-only";
+import { isSignInOnlyRole, isVisitorRole, seesTeam, SIGN_IN_ONLY_RULE_SET, VISITOR_DEPARTMENT } from "@/lib/sign-in-only";
 import { hoursToSeconds, secondsToMinutes } from "@/lib/leave-time";
 import { assertBalanceChangeAllowed, assertNotSenior, assertRecordInReach, assertSiteInReach, siteInReach, siteLimit } from "@/lib/rbac/scope";
 
@@ -250,9 +250,17 @@ export const getAdminRefData = withRBAC(
       givable: !r.liveAttendanceOnly || givesLimited,
       signInOnly: isSignInOnlyRole({ isSystem: r.isSystem, permissions }),
       seesTeam: seesTeam({ permissions }),
+      visitor: isVisitorRole({ isSystem: r.isSystem, permissions }),
     }));
+    // What New Employee fills in for a visitor: the next visitor badge, as a
+    // preview (it is taken at the save), and the Visitors department.
+    const [nextVisitorBadge, visitorDepartment] = await Promise.all([
+      roles.some((r) => r.visitor) ? previewClientBadge(db) : null,
+      db.department.findFirst({ where: { tenantId: t, name: VISITOR_DEPARTMENT, isActive: true }, select: { id: true, name: true } }),
+    ]);
     return {
       sites, departments, ruleSets, employees, customRoles: roles, shifts, holidayRules, payCategories, payTypes, jobTitles,
+      nextVisitorBadge, visitorDepartment,
       // The default markup as a plain number: a Decimal does not cross to the browser.
       agencies: agencies.map((a) => ({ ...a, defaultMarkupPct: a.defaultMarkupPct == null ? null : Number(a.defaultMarkupPct) })),
     };
@@ -480,23 +488,33 @@ export const createEmployee = withRBAC(
       roleName = cr?.name ?? null;
     }
 
-    // A sign in only account (sign-in-only.ts): only for a role that cannot
-    // punch, an agency viewer with its agency, and on UNASSIGNED with nothing
-    // that would make a timecard.
+    // A sign in only account or a visitor (sign-in-only.ts): only for the role
+    // that makes one, and on UNASSIGNED with nothing that would make a
+    // timecard. An agency viewer needs its agency. A visitor is filed in the
+    // Visitors department, gets the next visitor badge, and no email: a
+    // visitor never signs in.
     let signInRuleSetId: string | null = null;
-    if (parsed.signInOnly) {
+    let visitorDepartmentId: string | null = null;
+    if (parsed.signInOnly || parsed.visitor) {
       const role = resolvedCustomRoleId
         ? await db.customRole.findFirst({
             where: { id: resolvedCustomRoleId, tenantId },
             select: { isSystem: true, permissions: { select: { resource: true, action: true, scope: true } } },
           })
         : null;
-      if (!role || !isSignInOnlyRole(role)) {
-        throw new Error("Only a role that cannot punch, such as Agency (View Only) or Loss Prevention, is a sign-in only account. Choose that role, or fill in the pay and schedule step.");
+      if (parsed.visitor) {
+        if (!role || !isVisitorRole(role)) throw new Error("Only the Visitor role, with no permissions, makes a visitor. Choose that role.");
+        const dept = await db.department.findFirst({ where: { tenantId, name: VISITOR_DEPARTMENT, isActive: true }, select: { id: true } });
+        if (!dept) throw new Error(`Visitors are filed in the department named ${VISITOR_DEPARTMENT}, and this company has none. Add it, then try again.`);
+        visitorDepartmentId = dept.id;
+      } else {
+        if (!role || !isSignInOnlyRole(role)) {
+          throw new Error("Only a role that cannot punch, such as Agency (View Only) or Loss Prevention, is a sign-in only account. Choose that role, or fill in the pay and schedule step.");
+        }
+        if (seesTeam(role) && !parsed.agencyId) throw new Error("Choose the agency this login views.");
       }
-      if (seesTeam(role) && !parsed.agencyId) throw new Error("Choose the agency this login views.");
       const unassigned = await db.ruleSet.findFirst({ where: { tenantId, name: SIGN_IN_ONLY_RULE_SET }, select: { id: true } });
-      if (!unassigned) throw new Error(`Sign-in only accounts go on the rule set named ${SIGN_IN_ONLY_RULE_SET}, and this company has none. Add it in Rules Setup with no overtime, then try again.`);
+      if (!unassigned) throw new Error(`Sign-in only accounts and visitors go on the rule set named ${SIGN_IN_ONLY_RULE_SET}, and this company has none. Add it in Rules Setup with no overtime, then try again.`);
       signInRuleSetId = unassigned.id;
     }
     const ruleSetId = signInRuleSetId ?? parsed.ruleSetId;
@@ -507,7 +525,7 @@ export const createEmployee = withRBAC(
     // "CL" as the Badge ID asks for the next client badge, issued inside the
     // transaction below (client-badge.ts). "CL" as the employee code too means
     // the code is that badge.
-    const issuing = asksForClientBadge(parsed.wmsId);
+    const issuing = !!parsed.visitor || asksForClientBadge(parsed.wmsId);
     const ownCode = asksForClientBadge(parsed.employeeCode) ? undefined : parsed.employeeCode;
 
     // A Badge ID or login email already on file is said in words, with who has
@@ -531,8 +549,8 @@ export const createEmployee = withRBAC(
     }
     // Either email signs the person in, so one is needed, and neither may
     // belong to anyone else (in either of their two, ignoring capitals).
-    const personalEmail = cleanEmail(parsed.email, "personal");
-    const workEmail = cleanEmail(parsed.workEmail, "work");
+    const personalEmail = parsed.visitor ? null : cleanEmail(parsed.email, "personal");
+    const workEmail = parsed.visitor ? null : cleanEmail(parsed.workEmail, "work");
     // A client badge signs nobody in, so a client may have neither.
     const client = issuing || isClientBadge(parsed.wmsId);
     if (personalEmail || workEmail || !client) await assertEmailsFree(personalEmail, workEmail, null, tenantId);
@@ -565,10 +583,10 @@ export const createEmployee = withRBAC(
           // Admins start able to punch from the web; everyone else at the time clock.
           webPunchEnabled: webPunchByDefault(resolvedRole),
           siteId: parsed.siteId,
-          departmentId: parsed.departmentId,
+          departmentId: visitorDepartmentId ?? parsed.departmentId,
           ruleSetId,
           hireDate: calendarDay(hireDate),
-          supervisorId: parsed.supervisorId ?? null,
+          supervisorId: parsed.visitor ? null : parsed.supervisorId ?? null,
           wmsId,
           ...(signInRuleSetId
             ? { payType: null, payRate: null }
@@ -580,8 +598,8 @@ export const createEmployee = withRBAC(
                   : {}),
               }),
           jobTitle: parsed.jobTitle ?? null,
-          jobTitleId: parsed.jobTitleId ?? null,
-          agencyId: parsed.agencyId ?? null,
+          jobTitleId: parsed.visitor ? null : parsed.jobTitleId ?? null,
+          agencyId: parsed.visitor ? null : parsed.agencyId ?? null,
           adpWorkerId: signInRuleSetId ? null : parsed.adpWorkerId ?? null,
           shiftId: signInRuleSetId ? null : parsed.shiftId ?? null,
           holidayRuleId: signInRuleSetId ? null : parsed.holidayRuleId ?? null,
@@ -603,7 +621,7 @@ export const createEmployee = withRBAC(
           employeeCode: employee.employeeCode,
           role: roleName ?? resolvedRole,
           ...(issuing && { clientBadge: employee.wmsId }),
-          ...(signInRuleSetId && { signInOnly: true }),
+          ...(signInRuleSetId && (parsed.visitor ? { visitor: true } : { signInOnly: true })),
         },
       },
     });

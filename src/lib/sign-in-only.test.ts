@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isSignInOnlyRole, seesTeam } from "./sign-in-only";
+import { isSignInOnlyRole, isVisitorRole, seesTeam } from "./sign-in-only";
 
 // The roles as they are set up in the company on 10/29.
 const agencyViewer = { isSystem: false, permissions: [
@@ -21,6 +21,15 @@ describe("sign in only roles", () => {
     expect(isSignInOnlyRole(employee)).toBe(false);
     expect(isSignInOnlyRole(customPuncher)).toBe(false);
     expect(isSignInOnlyRole({ isSystem: true, permissions: [] })).toBe(false);
+  });
+
+  it("a role with no permissions is a visitor's, not a sign in only login's", () => {
+    const visitor = { isSystem: false, permissions: [] };
+    expect(isVisitorRole(visitor)).toBe(true);
+    expect(isSignInOnlyRole(visitor)).toBe(false);
+    expect(isVisitorRole(agencyViewer)).toBe(false);
+    expect(isVisitorRole(lossPrevention)).toBe(false);
+    expect(isVisitorRole({ isSystem: true, permissions: [] })).toBe(false);
   });
 
   it("an agency viewer sees a team, Loss Prevention does not", () => {

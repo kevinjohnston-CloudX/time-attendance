@@ -45,6 +45,10 @@ describe("createEmployeeSchema", () => {
     expect(problems({ ...base, signInOnly: true, wmsId: "", hireDate: "", ruleSetId: "", shiftId: "", payCategoryId: "", holidayRuleId: "" })).toEqual([]);
   });
 
+  it("asks a visitor for none of them either (createEmployee fills them in)", () => {
+    expect(problems({ name: "Visitor", siteId: "site", departmentId: "visitors", visitor: true, wmsId: "CL" })).toEqual([]);
+  });
+
   it("does not ask a client badge for them", () => {
     expect(problems({ ...base, wmsId: "CL", shiftId: "", payCategoryId: "", holidayRuleId: "" })).toEqual([]);
     expect(problems({ ...base, wmsId: "CL00003", shiftId: "", payCategoryId: "", holidayRuleId: "" })).toEqual([]);

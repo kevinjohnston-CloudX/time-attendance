@@ -67,18 +67,23 @@ type Snapshot = {
   signIn: boolean;
   /** ...and one that views a team: an agency viewer, who needs its agency. */
   needsAgency: boolean;
+  /** The role chosen is a visitor's: a badge for the security gate and nothing else. */
+  visitor: boolean;
+  siteId: string;
 };
 
 /** A client badge (client-badge.ts) works no shift and keeps no timecard. */
 const forClient = (s: Snapshot) => asksForClientBadge(s.wmsId) || isClientBadge(s.wmsId);
-/** Needed of anyone with a timecard: not a sign in only account. */
-const timecard = (s: Snapshot) => !s.signIn;
+/** Needed of anyone with a timecard: not a sign in only account or a visitor. */
+const timecard = (s: Snapshot) => !s.signIn && !s.visitor;
 
 const NEEDED: { step: Step; label: string; missing: (s: Snapshot) => boolean }[] = [
   { step: "job", label: "full name", missing: (s) => !s.name.trim() },
   { step: "job", label: "hire date", missing: (s) => !s.hireDate && timecard(s) },
   { step: "job", label: "badge ID", missing: (s) => !s.wmsId.trim() && timecard(s) },
-  { step: "job", label: "a work or personal email", missing: (s) => !s.workEmail.trim() && !s.email.trim() },
+  { step: "job", label: "site", missing: (s) => !s.siteId },
+  // A client badge and a visitor sign nobody in (client-badge.ts).
+  { step: "job", label: "a work or personal email", missing: (s) => !s.workEmail.trim() && !s.email.trim() && !forClient(s) && !s.visitor },
   { step: "job", label: "department", missing: (s) => !s.departmentId },
   { step: "job", label: "agency", missing: (s) => !s.agencyId && s.needsAgency },
   { step: "pay", label: "rule set", missing: (s) => !s.ruleSetId && timecard(s) },
@@ -96,8 +101,12 @@ interface Props {
    * when it opens, so the page does not carry every name in the company.
    */
   employees?: EmployeeOption[];
-  /** signInOnly and seesTeam: see sign-in-only.ts. */
-  customRoles: { id: string; name: string; signInOnly?: boolean; seesTeam?: boolean }[];
+  /** signInOnly, seesTeam and visitor: see sign-in-only.ts. */
+  customRoles: { id: string; name: string; signInOnly?: boolean; seesTeam?: boolean; visitor?: boolean }[];
+  /** The badge the next visitor gets (a preview: it is taken at the save). */
+  nextVisitorBadge?: string | null;
+  /** The department every visitor is filed in. */
+  visitorDepartment?: { id: string; name: string } | null;
   shifts: { id: string; name: string; startTime: string; endTime: string }[];
   holidayRules: { id: string; name: string }[];
   payCategories: { id: string; number: number; description: string | null }[];
@@ -119,6 +128,11 @@ function initialsOf(name: string): string {
   const first = parts[0][0] ?? "";
   const last = parts.length > 1 ? parts[parts.length - 1][0] ?? "" : "";
   return (first + last).toUpperCase();
+}
+
+/** Today as the date field shows it (yyyy-MM-dd), on this computer's clock. */
+function todayIso(): string {
+  return format(new Date(), "yyyy-MM-dd");
 }
 
 /** "a", "a and b", "a, b and c". */
@@ -178,7 +192,7 @@ function Row({ cols = 2, children }: { cols?: 1 | 2 | 3 | 4; children: ReactNode
   );
 }
 
-export function CreateEmployeeForm({ sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies, copyFrom }: Props) {
+export function CreateEmployeeForm({ sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies, nextVisitorBadge, visitorDepartment, copyFrom }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -213,10 +227,9 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
     };
   }, [open, employees, loadedSupervisors]);
 
-  const defaultSiteId =
-    sites.find((s) => departments.some((d) => d.sites.some((ds) => ds.site.id === s.id)))?.id ?? sites[0]?.id ?? "";
   const [payType, setPayType] = useState<string>(copyFrom ? (copyFrom.payType ?? "") : "HOURLY");
-  const [selectedSiteId, setSelectedSiteId] = useState(copyFrom?.siteId ?? defaultSiteId);
+  // Blank unless copying, as the department and rule set: the building is chosen.
+  const [selectedSiteId, setSelectedSiteId] = useState(copyFrom?.siteId ?? "");
   const filteredDepts = departments.filter((d) => d.sites.some((ds) => ds.site.id === selectedSiteId));
   const activeAgencies = agencies.filter((a) => !a.inactiveOn || new Date(a.inactiveOn) > new Date());
 
@@ -225,11 +238,12 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
   /** What the role picked (its select value) makes of the account. */
   const roleKind = (value: string | null | undefined) => {
     const role = value?.startsWith("custom:") ? customRoles.find((r) => r.id === value.slice(7)) : undefined;
-    return { signIn: !!role?.signInOnly, needsAgency: !!role?.signInOnly && !!role?.seesTeam };
+    return { signIn: !!role?.signInOnly, needsAgency: !!role?.signInOnly && !!role?.seesTeam, visitor: !!role?.visitor };
   };
   const blankSnapshot = (c: CopyFromEmployee | null): Snapshot => ({
     ...roleKind(c?.role),
     agencyId: c?.agencyId ?? "",
+    siteId: c?.siteId ?? "",
     name: "",
     hireDate: "",
     wmsId: "",
@@ -263,6 +277,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
       payCategoryId: v("payCategoryId"),
       holidayRuleId: v("holidayRuleId"),
       agencyId: v("agencyId"),
+      siteId: v("siteId"),
       ...roleKind(v("role")),
     };
     setSnap(next);
@@ -280,13 +295,14 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
     if (copy) {
       // The next Add Employee starts blank, and a refresh does not reopen the copy.
       setCopy(null);
-      setSelectedSiteId(defaultSiteId);
+      setSelectedSiteId("");
       setPayType("HOURLY");
       setSnap(blankSnapshot(null));
       const url = new URL(window.location.href);
       url.searchParams.delete("copyFrom");
       router.replace(url.pathname + url.search);
     } else {
+      setSelectedSiteId("");
       setSnap(blankSnapshot(null));
     }
   }
@@ -337,7 +353,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
       bad.reportValidity();
       return false;
     }
-    if (s === "job" && !snap.workEmail.trim() && !snap.email.trim()) {
+    if (s === "job" && !snap.workEmail.trim() && !snap.email.trim() && !forClient(snap) && !snap.visitor) {
       setEmailError(true);
       formRef.current?.querySelector<HTMLInputElement>('input[name="workEmail"]')?.focus();
       return false;
@@ -377,8 +393,9 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
 
       const result = await createEmployee({
         name: fd.get("name") as string,
-        email: fd.get("email") as string,
-        workEmail: fd.get("workEmail") as string,
+        // Switched off for a visitor, who never signs in: not sent.
+        email: (fd.get("email") as string | null) ?? "",
+        workEmail: (fd.get("workEmail") as string | null) ?? "",
         employeeCode: (fd.get("employeeCode") as string) || "",
         role,
         customRoleId,
@@ -391,6 +408,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
         supervisorId: fd.get("supervisorId") as string,
         wmsId: (fd.get("wmsId") as string | null) || undefined,
         signInOnly: snap.signIn,
+        visitor: snap.visitor,
         payType: (fd.get("payType") as "HOURLY" | "SALARY" | null) || null,
         payTypeId: (fd.get("payTypeId") as string) || null,
         payRate: payRateRaw ? Number(payRateRaw) : null,
@@ -549,14 +567,27 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                         <Input label="Full Name" name="name" required autoComplete="off" />
                       </Row>
                       <Row>
-                        <Input label="Hire Date" name="hireDate" type="date" required={!snap.signIn} />
-                        <Input
-                          label="Badge ID (WMS)"
-                          name="wmsId"
-                          placeholder={snap.signIn ? "Not needed for a sign-in only account" : "The number on their QR badge"}
-                          required={!snap.signIn}
-                          autoComplete="off"
-                        />
+                        {snap.visitor ? (
+                          // A visitor: today, and the next visitor badge, filled in
+                          // and not editable. "CL" asks the save for that badge
+                          // (client-badge.ts); the number shown is its preview.
+                          <>
+                            <Input label="Hire Date" type="date" value={todayIso()} disabled readOnly />
+                            <input type="hidden" name="wmsId" value="CL" />
+                            <Input label="Badge ID (WMS)" value={nextVisitorBadge ?? "CL"} disabled readOnly />
+                          </>
+                        ) : (
+                          <>
+                            <Input label="Hire Date" name="hireDate" type="date" required={!snap.signIn} />
+                            <Input
+                              label="Badge ID (WMS)"
+                              name="wmsId"
+                              placeholder={snap.signIn ? "Not needed for a sign-in only account" : "The number on their QR badge"}
+                              required={!snap.signIn}
+                              autoComplete="off"
+                            />
+                          </>
+                        )}
                       </Row>
                     </Block>
 
@@ -564,30 +595,42 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                         least one is needed, which Continue and the save both say. */}
                     <Block
                       label="Sign in"
-                      note={emailError ? "Add a work or personal email so they can sign in." : "At least one email is needed. Invites go to the work email first."}
-                      noteTone={emailError ? "error" : undefined}
+                      note={
+                        snap.visitor
+                          ? "Visitors never sign in, so no email."
+                          : emailError
+                            ? "Add a work or personal email so they can sign in."
+                            : "At least one email is needed. Invites go to the work email first."
+                      }
+                      noteTone={emailError && !snap.visitor ? "error" : undefined}
                     >
                       <Row>
-                        <Input label="Work Email" name="workEmail" type="email" autoComplete="off" />
-                        <Input label="Personal Email" name="email" type="email" autoComplete="off" />
+                        <Input label="Work Email" name="workEmail" type="email" autoComplete="off" disabled={snap.visitor} />
+                        <Input label="Personal Email" name="email" type="email" autoComplete="off" disabled={snap.visitor} />
                       </Row>
                     </Block>
 
                     <Block
                       label="Placement"
                       note={
-                        snap.needsAgency
-                          ? "A sign-in only login: no badge, timecard or pay. They see everyone in the agency chosen below."
-                          : snap.signIn
-                            ? "A sign-in only login: no badge, timecard or pay, so there is no pay and schedule step."
-                            : undefined
+                        snap.visitor
+                          ? visitorDepartment
+                            ? "A visitor: a badge for the security gate, and nothing else. No sign in, time clock, timecard or pay. Choose the site they are visiting."
+                            : "Visitors are filed in a department named Visitors, and there is none. Add it before adding a visitor."
+                          : snap.needsAgency
+                            ? "A sign-in only login: no badge, timecard or pay. They see everyone in the agency chosen below."
+                            : snap.signIn
+                              ? "A sign-in only login: no badge, timecard or pay, so there is no pay and schedule step."
+                              : undefined
                       }
+                      noteTone={snap.visitor && !visitorDepartment ? "error" : undefined}
                     >
                       <Row>
                         <SelectField
                           label="Site"
                           name="siteId"
                           value={selectedSiteId}
+                          required
                           onChange={(e) => {
                             setSelectedSiteId(e.target.value);
                             // The department list changes with the site; read it
@@ -595,19 +638,30 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                             requestAnimationFrame(readForm);
                           }}
                         >
+                          <option value="">Choose a site</option>
                           {sites.map((s) => (
                             <option key={s.id} value={s.id}>{s.name}</option>
                           ))}
                         </SelectField>
-                        <SelectField label="Department" name="departmentId" required defaultValue={copy?.departmentId ?? ""}>
-                          <option value="">Choose a department</option>
-                          {filteredDepts.map((d) => (
-                            <option key={d.id} value={d.id}>{d.name}</option>
-                          ))}
-                        </SelectField>
+                        {snap.visitor ? (
+                          // Every visitor is filed in Visitors, filled in and not editable.
+                          <>
+                            <input type="hidden" name="departmentId" value={visitorDepartment?.id ?? ""} />
+                            <SelectField label="Department" disabled value={visitorDepartment?.id ?? ""}>
+                              <option value={visitorDepartment?.id ?? ""}>{visitorDepartment?.name ?? "No Visitors department"}</option>
+                            </SelectField>
+                          </>
+                        ) : (
+                          <SelectField label="Department" name="departmentId" required defaultValue={copy?.departmentId ?? ""}>
+                            <option value="">{selectedSiteId ? "Choose a department" : "Choose a site first"}</option>
+                            {filteredDepts.map((d) => (
+                              <option key={d.id} value={d.id}>{d.name}</option>
+                            ))}
+                          </SelectField>
+                        )}
                       </Row>
                       <Row>
-                        <SelectField label="Job Title" name="jobTitleId" defaultValue={copy?.jobTitleId ?? ""}>
+                        <SelectField label="Job Title" name="jobTitleId" disabled={snap.visitor} defaultValue={copy?.jobTitleId ?? ""}>
                           <option value="">None</option>
                           {jobTitles.map((jt) => (
                             <option key={jt.id} value={jt.id}>
@@ -616,7 +670,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                           ))}
                         </SelectField>
                         {supervisors ? (
-                          <SelectField label="Supervisor" name="supervisorId" defaultValue={copy?.supervisorId ?? ""}>
+                          <SelectField label="Supervisor" name="supervisorId" disabled={snap.visitor} defaultValue={copy?.supervisorId ?? ""}>
                             <option value="">None</option>
                             {supervisors.map((emp) => (
                               <option key={emp.id} value={emp.id}>{emp.user.name}</option>
@@ -646,7 +700,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                         </SelectField>
                         {/* Agencies past their inactive date stay on file for the
                             people already in them, but are not offered for new hires. */}
-                        <SelectField label="Agency" name="agencyId" required={snap.needsAgency} defaultValue={copy?.agencyId ?? ""}>
+                        <SelectField label="Agency" name="agencyId" required={snap.needsAgency} disabled={snap.visitor} defaultValue={copy?.agencyId ?? ""}>
                           <option value="">{snap.needsAgency ? "Choose the agency they view" : "None"}</option>
                           {activeAgencies.map((a) => (
                             <option key={a.id} value={a.id}>
@@ -660,9 +714,14 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
 
                   {/* ── 2. Pay and schedule ── */}
                   <div data-step="pay" style={panelStyle("pay")}>
-                    {/* Switched off for a sign in only account: a disabled field
-                        is neither checked nor sent. */}
-                    <fieldset disabled={snap.signIn} className={styles.plainFieldset}>
+                    {/* Switched off for a sign in only account and a visitor: a
+                        disabled field is neither checked nor sent. */}
+                    {snap.visitor && (
+                      <div className={styles.banner}>
+                        <Banner tone="info" body="Visitors keep no timecard, so nothing here applies to them." />
+                      </div>
+                    )}
+                    <fieldset disabled={snap.signIn || snap.visitor} className={styles.plainFieldset}>
                     <Block label="Time rules" note="How their hours are counted.">
                       <Row>
                         <SelectField label="Rule Set" name="ruleSetId" required defaultValue={copy?.ruleSetId ?? ""}>
