@@ -128,7 +128,7 @@ describe("the summary of a period with unpaid leave", () => {
           timesheetId: "t1", status: "OPEN", otAuthorized: false, exceptionCount: 0, exceptions: [],
           payPeriod: { startDate: "2026-10-11T00:00:00.000Z", endDate: "2026-10-25T00:00:00.000Z", status: "OPEN" },
           employee: {
-            user: { name: "Test Person" }, department: { name: "Vas" }, employeeCode: "T1", wmsId: "605247", payRate: 15, payType: "HOURLY", shift: null,
+            user: { name: "Test Person" }, department: { name: "Vas" }, employeeCode: "T1", wmsId: "605247", payRate: 15, payType: "HOURLY", startedOn: "2020-01-01", shift: null,
             ruleSet: { overtimeRequiresAuth: false, allowTimesheetOtAuth: false, defaultPayCodeId: null },
           },
           punches: [],
@@ -156,6 +156,46 @@ describe("the summary of a period with unpaid leave", () => {
     // Label, Regular, Overtime, Double, Unpaid, Total hours, Rate, Regular pay, Overtime pay, Double pay, Total pay
     expect(cells(/^Unpaid time off/)).toEqual(["Unpaid time off (13)", "—", "—", "—", "16.00", "16.00", "$15.00", "—", "—", "—", "$0.00"]);
     expect(cells(/^Totals$/)).toEqual(["Totals", "8.00", "—", "—", "16.00", "24.00", "$15.00", "$120.00", "—", "—", "$120.00"]);
+    vi.useRealTimers();
+  });
+});
+
+// Hired 10/19, in a period that began 10/11: the weekdays before were marked
+// Absent on the timecard though no absence was ever recorded for them.
+describe("someone who started partway through the period", () => {
+  it("marks no day before the start date Absent, and the days from it as usual", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-22T16:00:00Z"));
+    const employee = { employeeId: "e1", name: "Test Person", employeeCode: "T1", wmsId: "115229", department: "Vas", siteId: "s1", siteName: "Site", isActive: true, payType: "HOURLY", startedOn: "2026-10-19" };
+    render(
+      <TimecardViewer
+        payPeriods={[{ id: "p1", startDate: "2026-10-11T00:00:00.000Z", endDate: "2026-10-25T00:00:00.000Z", status: "OPEN" }]}
+        selectedPeriodId="p1"
+        employees={[employee]}
+        selectedEmployeeId="e1"
+        timecard={{
+          timesheetId: "t1", status: "OPEN", otAuthorized: false, exceptionCount: 0, exceptions: [],
+          payPeriod: { startDate: "2026-10-11T00:00:00.000Z", endDate: "2026-10-25T00:00:00.000Z", status: "OPEN" },
+          employee: {
+            user: { name: "Test Person" }, department: { name: "Vas" }, employeeCode: "T1", wmsId: "115229", payRate: 15, payType: "HOURLY", startedOn: "2026-10-19", shift: null,
+            ruleSet: { overtimeRequiresAuth: false, allowTimesheetOtAuth: false, defaultPayCodeId: null },
+          },
+          punches: [], segments: [], overtimeBuckets: [], mealWaivers: [], mealPremiumWaivers: [], notes: [], dayReasons: [],
+        }}
+        payFrequency="BIWEEKLY"
+        payCodes={[]}
+        reasonCodes={[]}
+        sites={[]}
+        selectedSiteId={null}
+        departments={[]}
+        selectedDepartmentId={null}
+        userRole="SYSTEM_ADMIN"
+        siteTimezone="America/New_York"
+      />,
+    );
+    const row = (label: RegExp) => screen.getAllByRole("row").find((r) => label.test(r.textContent ?? ""))!;
+    for (const day of [/Mon, Oct 12/, /Wed, Oct 14/, /Fri, Oct 16/]) expect(row(day).textContent).not.toContain("Absent");
+    expect(row(/Mon, Oct 19/).textContent).toContain("Absent");
     vi.useRealTimers();
   });
 });

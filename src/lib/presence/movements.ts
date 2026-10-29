@@ -270,12 +270,13 @@ export function buildPersonDay(
   const flags: MovementFlag[] = [];
   const add = (f: MovementFlag, when: boolean) => when && flags.push(f);
 
-  // Salaried people do not use the time clock, so inside without a clock in
-  // is their normal day, not something to flag.
+  // Salaried people do not use the time clock, and visitors cannot, so inside
+  // without a clock in is their normal day, not something to flag.
   add(
     "INSIDE_OFF_CLOCK",
     hasGate &&
       !person.salaried &&
+      !person.visitor &&
       (isToday ? nowState.inside && nowState.clock === "OUT" : lanes.totals.insideOffClockMin >= GAP_MIN),
   );
   add(

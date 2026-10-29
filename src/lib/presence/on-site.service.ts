@@ -10,6 +10,7 @@ import { isHere, scansElsewhere, scansHere, scansHereSql, siteOf, siteScope } fr
 import { NOT_COUNTED_OUTCOMES } from "./scan-rules";
 import { clockStateAfter } from "./lanes";
 import { NOT_SCREEN_ACCOUNT } from "./screen-accounts";
+import { CLIENT_DEPARTMENT_SHOWN, VISITOR_DEPARTMENT_ID, isClientBadge } from "@/lib/utils/client-badge";
 import type {
   PresenceBoard,
   PresenceDetail,
@@ -293,6 +294,7 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
     const gateIn = gate?.direction === "IN";
     const clockState = clockStateOf(clock);
     const awayRow = gateIn ? undefined : awayById.get(emp.id);
+    const visitor = isClientBadge(emp.wmsId);
 
     let status: PresenceStatus | null = null;
     let inside = false;
@@ -322,8 +324,9 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
       since = clock!.scanTime;
     } else if (gateIn) {
       // Salaried people are not expected to clock in, so for them being
-      // through the gate is being at work, not a warning.
-      status = emp.payType === "SALARY" ? "ON_SITE" : "OFF_CLOCK";
+      // through the gate is being at work, not a warning. A visitor cannot
+      // clock in at all.
+      status = visitor ? "VISITOR" : emp.payType === "SALARY" ? "ON_SITE" : "OFF_CLOCK";
       inside = true;
       // Inside since whichever came last: walking through the gate, or
       // clocking out while still in the building.
@@ -333,6 +336,8 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
       since = todayActivity.lastOut ?? latestOf(gate?.scanTime ?? null, clock?.scanTime ?? null);
     } else if (onLeave.has(emp.id)) {
       status = "ON_LEAVE";
+    } else if (visitor) {
+      // Nobody expects a visitor: one not seen today is not on the board.
     } else if (schedule) {
       status = "NOT_ARRIVED";
     } else if (rosterIds.has(emp.id)) {
@@ -355,13 +360,14 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
       id: emp.id,
       name: shownName(emp),
       employeeCode: emp.employeeCode,
-      departmentId: emp.department?.id ?? null,
-      department: emp.department?.name ?? null,
+      departmentId: visitor ? VISITOR_DEPARTMENT_ID : emp.department?.id ?? null,
+      department: visitor ? CLIENT_DEPARTMENT_SHOWN : emp.department?.name ?? null,
       jobTitle: emp.jobTitle?.trim() || null,
       shiftId: emp.shift?.id ?? null,
       shift: emp.shift?.name ?? null,
       photoUrl: photos.get(emp.id) ?? null,
       salaried: emp.payType === "SALARY",
+      visitor,
       status,
       inside,
       breakKind,
@@ -568,10 +574,11 @@ export async function getPresenceDetail(
     name: shownName(emp),
     employeeCode: emp.employeeCode,
     jobTitle: emp.jobTitle,
-    department: emp.department?.name ?? null,
+    department: isClientBadge(emp.wmsId) ? CLIENT_DEPARTMENT_SHOWN : emp.department?.name ?? null,
     shift: emp.shift?.name ?? null,
     supervisor: emp.supervisor?.user?.name ?? null,
     salaried: emp.payType === "SALARY",
+    visitor: isClientBadge(emp.wmsId),
     inactive,
     homeSite: emp.site && emp.site.id !== siteId ? emp.site.name : null,
     site: emp.site?.name ?? null,

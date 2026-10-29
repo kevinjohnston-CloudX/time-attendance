@@ -74,6 +74,7 @@ export const createPtoPolicySchema = z
     forecastMode:             z.enum(["MONTHS", "END_OF_YEAR"]).nullable().optional(),
     forecastMonths:           z.number().int().min(1).max(120).nullable().optional(),
     forecastApplyToAvailable: z.boolean().default(false),
+    useFirstLeaveTypeIds:     z.array(z.string().min(1)).max(5).default([]),
     rules:                      z.array(ptoPolicyRuleSchema),
   })
   .merge(postingScheduleSchema);
@@ -95,6 +96,7 @@ export const updatePtoPolicySchema = z
     forecastMode:             z.enum(["MONTHS", "END_OF_YEAR"]).nullable().optional(),
     forecastMonths:           z.number().int().min(1).max(120).nullable().optional(),
     forecastApplyToAvailable: z.boolean().optional(),
+    useFirstLeaveTypeIds:     z.array(z.string().min(1)).max(5).optional(),
     rules:                      z.array(ptoPolicyRuleSchema).optional(),
   })
   .merge(postingScheduleSchema.partial());

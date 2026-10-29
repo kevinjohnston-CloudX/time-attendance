@@ -57,8 +57,11 @@ async function assertOwnRefs(
   tenantId: string,
   leaveTypeId: string | null | undefined,
   rules: { leaveTypeId: string; carryOverToLeaveTypeId?: string | null; payCodeId?: string | null }[] | undefined,
+  useFirst: string[] = [],
 ) {
-  const lt = [...new Set([leaveTypeId, ...(rules ?? []).flatMap((r) => [r.leaveTypeId, r.carryOverToLeaveTypeId])].filter((x): x is string => !!x))];
+  if (leaveTypeId && useFirst.includes(leaveTypeId)) throw new Error("A policy's own leave type is always used last, so it can't also be one to use first.");
+  if (new Set(useFirst).size !== useFirst.length) throw new Error("Each leave type to use first can be listed once.");
+  const lt = [...new Set([leaveTypeId, ...useFirst, ...(rules ?? []).flatMap((r) => [r.leaveTypeId, r.carryOverToLeaveTypeId])].filter((x): x is string => !!x))];
   const pc = [...new Set((rules ?? []).map((r) => r.payCodeId).filter((x): x is string => !!x))];
   const [ltFound, pcFound] = await Promise.all([
     lt.length ? db.leaveType.count({ where: { id: { in: lt }, tenantId } }) : 0,
@@ -80,7 +83,7 @@ export const createPtoPolicy = withRBAC(
   async ({ employeeId: actorId, tenantId }, input: unknown) => {
     const {
       name, description, isDefault, leaveTypeId, maxDailyHours, allowNegativeBalance, maxNegativeHours, carryOverEnabled, carryOverRespectMaxBalance,
-      forecastEnabled, forecastMode, forecastMonths, forecastApplyToAvailable, rules,
+      forecastEnabled, forecastMode, forecastMonths, forecastApplyToAvailable, useFirstLeaveTypeIds, rules,
       rateMode, serviceMonthBasis, postingAnchorDate,
       posting1Freq, posting1Month, posting1Day,
       dualPosting, posting2Freq, posting2Month, posting2Day,
@@ -88,7 +91,7 @@ export const createPtoPolicy = withRBAC(
       balanceReset, resetMonth, resetDay,
     } = createPtoPolicySchema.parse(input);
     if (!tenantId) throw new Error("Tenant context required");
-    await assertOwnRefs(tenantId, leaveTypeId, rules);
+    await assertOwnRefs(tenantId, leaveTypeId, rules, useFirstLeaveTypeIds);
 
     const policy = await db.$transaction(async (tx) => {
       if (isDefault) {
@@ -114,6 +117,7 @@ export const createPtoPolicy = withRBAC(
           forecastMode:               forecastMode ?? null,
           forecastMonths:             forecastMonths ?? null,
           forecastApplyToAvailable:   forecastApplyToAvailable ?? false,
+          useFirstLeaveTypeIds,
           rateMode,
           serviceMonthBasis,
           postingAnchorDate: postingAnchorDate ?? null,
@@ -180,14 +184,14 @@ export const updatePtoPolicy = withRBAC(
       posting2ServiceMonthBasis, posting2AnchorDate, posting2StartsOnYear, posting2BasedOnMonths,
       balanceReset, resetMonth, resetDay,
       leaveTypeId, maxDailyHours, allowNegativeBalance, maxNegativeHours, carryOverEnabled, carryOverRespectMaxBalance,
-      forecastEnabled, forecastMode, forecastMonths, forecastApplyToAvailable,
+      forecastEnabled, forecastMode, forecastMonths, forecastApplyToAvailable, useFirstLeaveTypeIds,
       ...fields
     } = updatePtoPolicySchema.parse(input);
     if (!tenantId) throw new Error("Tenant context required");
     // Found inside the caller's company first; it used to update by id alone.
-    const own = await db.ptoPolicy.findFirst({ where: { id: ptoPolicyId, tenantId }, select: { id: true } });
+    const own = await db.ptoPolicy.findFirst({ where: { id: ptoPolicyId, tenantId }, select: { id: true, leaveTypeId: true, useFirstLeaveTypeIds: true } });
     if (!own) throw new Error("NOT_FOUND");
-    await assertOwnRefs(tenantId, leaveTypeId, rules);
+    await assertOwnRefs(tenantId, leaveTypeId ?? own.leaveTypeId, rules, useFirstLeaveTypeIds ?? own.useFirstLeaveTypeIds);
 
     await db.$transaction(async (tx) => {
       if (fields.isDefault) {
@@ -228,6 +232,7 @@ export const updatePtoPolicy = withRBAC(
           ...(forecastMode              !== undefined && { forecastMode:   forecastMode ?? null }),
           ...(forecastMonths            !== undefined && { forecastMonths: forecastMonths ?? null }),
           ...(forecastApplyToAvailable  !== undefined && { forecastApplyToAvailable }),
+          ...(useFirstLeaveTypeIds      !== undefined && { useFirstLeaveTypeIds }),
         },
       });
 

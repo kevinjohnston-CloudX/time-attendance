@@ -186,12 +186,15 @@ export function PersonPanel({
   const name = person?.name ?? detail?.name ?? "";
   const currentPhoto = usePhoto(employeeId, person?.photoUrl ?? detail?.photoUrl);
   const salaried = person?.salaried ?? detail?.salaried ?? false;
+  const visitor = person?.visitor ?? detail?.visitor ?? false;
+  // Nobody to hold to the time clock: office staff do not use it, visitors cannot.
+  const clockFree = salaried || visitor;
   const meta = person ? STATUS_META[person.status] : null;
   const mins = person ? minutesSince(person.since, now) : null;
   const schedule = shown ? fmtShift(shown.scheduledStart, shown.scheduledEnd) : undefined;
   const label = dayLabel(day, today);
   const offerShift =
-    !!scheduling && isToday && !!shown && !shown.wmsScheduled && !(person?.inactive || shown.inactive);
+    !!scheduling && isToday && !!shown && !shown.wmsScheduled && !visitor && !(person?.inactive || shown.inactive);
   const oldest = addDays(today, -DAYS_BACK);
 
   const time = (ms: number) => fmtTime(new Date(ms).toISOString(), tz);
@@ -207,9 +210,9 @@ export function PersonPanel({
   const shiftEnd =
     shiftStart !== null && shiftEndRaw !== null && shiftEndRaw <= shiftStart ? shiftEndRaw + 24 * 60 * 60 * 1000 : shiftEndRaw;
   const lateOnClock =
-    !salaried && !!lanes?.clockIn && shiftStart !== null && lanes.clockIn > shiftStart + LATE_GRACE_MIN * 60000;
+    !clockFree && !!lanes?.clockIn && shiftStart !== null && lanes.clockIn > shiftStart + LATE_GRACE_MIN * 60000;
   const earlyOnClock =
-    !salaried &&
+    !clockFree &&
     !!lanes?.clockOut &&
     where?.clock === "OUT" &&
     shiftStart !== null &&
@@ -222,7 +225,11 @@ export function PersonPanel({
       : null;
   const tags = [
     person && isToday && person.outsideOnMeal ? <Badge key="out" tone="neutral" size="sm">Outside the building</Badge> : null,
-    salaried ? <Badge key="salary" tone="neutral" size="sm">Office</Badge> : null,
+    visitor ? (
+      <Badge key="visitor" tone="info" size="sm">Visitor</Badge>
+    ) : salaried ? (
+      <Badge key="salary" tone="neutral" size="sm">Office</Badge>
+    ) : null,
     person?.inactive || detail?.inactive ? <Badge key="inactive" tone="error" size="sm">Inactive employee</Badge> : null,
     detail?.homeSite ?? person?.homeSite ? <HomeSiteBadge key="home" site={detail?.homeSite ?? person?.homeSite ?? null} /> : null,
   ].filter(Boolean);
@@ -397,8 +404,16 @@ export function PersonPanel({
                       label="Clock in"
                       value={lanes.clockIn ? time(lanes.clockIn) : null}
                       valueTone={lateOnClock ? "warning" : undefined}
-                      empty={lanes.clock.length ? "Since yesterday" : salaried ? "Office staff" : "Not clocked in"}
-                      sub={salaried ? "Not expected to clock in" : shown.scheduledStart ? `Due ${formatTimeOfDay(shown.scheduledStart)}` : "Not scheduled"}
+                      empty={lanes.clock.length ? "Since yesterday" : visitor ? "Visitor" : salaried ? "Office staff" : "Not clocked in"}
+                      sub={
+                        visitor
+                          ? "No time clock"
+                          : salaried
+                            ? "Not expected to clock in"
+                            : shown.scheduledStart
+                              ? `Due ${formatTimeOfDay(shown.scheduledStart)}`
+                              : "Not scheduled"
+                      }
                     />
                     <Glance
                       label="Clock out"
@@ -414,7 +429,7 @@ export function PersonPanel({
                             : "None"
                       }
                       emptyTone={where && where.clock !== "OUT" ? (isToday ? "accent" : "warning") : undefined}
-                      sub={salaried ? "" : shown.scheduledEnd ? `Ends ${formatTimeOfDay(shown.scheduledEnd)}` : schedule ? "" : "Not scheduled"}
+                      sub={clockFree ? "" : shown.scheduledEnd ? `Ends ${formatTimeOfDay(shown.scheduledEnd)}` : schedule ? "" : "Not scheduled"}
                     />
                     <Glance
                       label="On the clock"
@@ -509,7 +524,7 @@ export function PersonPanel({
                   {hasGateData && <Total label="Inside the building" minutes={lanes.totals.insideMin} />}
                   <Total label="On the clock" minutes={lanes.totals.workMin} />
                   <Total label="Meals and breaks" minutes={lanes.totals.mealMin + lanes.totals.breakMin} />
-                  {hasGateData && !salaried && (
+                  {hasGateData && !clockFree && (
                     <Total
                       label="In building, out time clock"
                       minutes={lanes.totals.insideOffClockMin}
@@ -646,6 +661,8 @@ function statusSentence(p: PresencePerson, tz: string, mins: number | null, nowI
       return at ? `In building since ${at}${forHow}, out time clock` : "In building, out time clock";
     case "ON_SITE":
       return at ? `Inside since ${at}${forHow}` : "Inside";
+    case "VISITOR":
+      return at ? `In building since ${at}${forHow}` : "In building";
     case "LEFT":
       return at ? `Left at ${at}` : "Left";
     case "ELSEWHERE": {

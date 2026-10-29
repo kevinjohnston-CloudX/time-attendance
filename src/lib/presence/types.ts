@@ -19,6 +19,8 @@
  *       not being paid, which is what loss prevention asks about first.</li>
  *   <li>ON_SITE: through the gate and salaried. Salaried people do not use
  *       the time clock, so being inside is simply being at work.</li>
+ *   <li>VISITOR: through the gate on a client's badge (client-badge.ts). A
+ *       visitor never uses the time clock, and is never expected.</li>
  *   <li>NO_GATE_SCAN: on the clock, but the gate never saw them come in.</li>
  *   <li>LEFT: seen today, now out.</li>
  *   <li>ON_LEAVE: approved time off today, not seen.</li>
@@ -39,6 +41,7 @@ export type PresenceStatus =
   | "ON_MEAL"
   | "OFF_CLOCK"
   | "ON_SITE"
+  | "VISITOR"
   | "NO_GATE_SCAN"
   | "LEFT"
   | "ON_LEAVE"
@@ -64,6 +67,11 @@ export interface PresencePerson {
   photoUrl: string | null;
   /** Paid a salary, so not expected to use the time clock. */
   salaried: boolean;
+  /**
+   * On a client's badge (client-badge.ts): never uses the time clock. Their
+   * department reads Visitor, under VISITOR_DEPARTMENT_ID.
+   */
+  visitor: boolean;
   status: PresenceStatus;
   /** Counted in the building total. */
   inside: boolean;
@@ -146,6 +154,8 @@ export interface PresenceDetail {
   supervisor: string | null;
   /** Paid a salary, so not expected to use the time clock. */
   salaried: boolean;
+  /** On a client's badge: never uses the time clock (PresencePerson.visitor). */
+  visitor: boolean;
   inactive: boolean;
   /** The site on their record, when it is not this building. */
   homeSite: string | null;
@@ -341,6 +351,8 @@ export interface DayPerson {
   photoUrl: string | null;
   /** Paid a salary, so not expected to use the time clock. */
   salaried: boolean;
+  /** On a client's badge: never uses the time clock (PresencePerson.visitor). */
+  visitor: boolean;
   inactive: boolean;
   /** That day's schedule in site time, HH:mm. */
   scheduledStart: string | null;

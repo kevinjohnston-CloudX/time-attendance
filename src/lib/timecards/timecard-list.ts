@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { periodDayRange } from "@/lib/pay-period-days";
+import { startedOn } from "@/lib/engines/segment-builder";
 
 const nextDayKey = (k: string, n = 1) => new Date(Date.parse(k + "T12:00:00Z") + n * 86_400_000).toISOString().slice(0, 10);
 
@@ -75,6 +76,8 @@ export async function timecardList(scope: Prisma.EmployeeWhereInput, tenantId: s
       wmsId: true,
       isActive: true,
       payType: true,
+      hireDate: true,
+      adjustedHireDate: true,
       user: { select: { name: true } },
       department: { select: { name: true } },
       site: { select: { id: true, name: true } },
@@ -95,6 +98,7 @@ export async function timecardList(scope: Prisma.EmployeeWhereInput, tenantId: s
       siteName: emp.site?.name ?? null,
       isActive: emp.isActive,
       payType: emp.payType ?? null,
+      startedOn: startedOn(emp),
       status: locked ? "LOCKED" : "OPEN",
       exceptionTypes: [...new Set(cards.flatMap((c) => c.exceptions.map((e) => e.exceptionType)))],
     };

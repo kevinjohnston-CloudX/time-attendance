@@ -38,6 +38,7 @@ function person(over: Partial<PresencePerson>): PresencePerson {
     shift: "First",
     photoUrl: null,
     salaried: false,
+    visitor: false,
     status: "WORKING",
     inside: true,
     breakKind: null,

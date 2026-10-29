@@ -125,6 +125,8 @@ type EmployeeListItem = {
   siteName: string | null;
   isActive: boolean;
   payType?: string | null;
+  /** The day they started, "yyyy-MM-dd": no day before it is an absence. */
+  startedOn?: string;
   // optional period-dependent fields (present when loaded via batch payroll view)
   timesheetId?: string;
   status?: string;
@@ -225,6 +227,7 @@ type TimecardDetail = {
     wmsId: string | null;
     payRate: number | null;
     payType: string | null;
+    startedOn: string;
     shift: { mealConfig: { autoDeduct?: boolean; minMealMinutes?: number; maxMealMinutes?: number; meals?: { workAtLeastHours: number; deductMinutes: number }[] } | null } | null;
     ruleSet: { overtimeRequiresAuth: boolean; allowTimesheetOtAuth: boolean; defaultPayCodeId: string | null };
   };
@@ -1513,12 +1516,11 @@ export function TimecardViewer({
 
   async function handleOpenAddEntry(dayStr: string) {
     setAddEntryDay(dayStr);
-    // Fetch leave types lazily once
-    if (leaveTypes.length === 0) {
-      const result = await getLeaveTypesForTimecard({});
-      if (result.success && result.data) {
-        setLeaveTypes(result.data as LeaveTypeOption[]);
-      }
+    // The person's own leave types, asked each time: the list depends on
+    // whose timecard is open, and the page keeps this state between people.
+    const result = await getLeaveTypesForTimecard({ employeeId: selectedEmployeeId ?? undefined });
+    if (result.success && result.data) {
+      setLeaveTypes(result.data as LeaveTypeOption[]);
     }
   }
 
@@ -2700,6 +2702,7 @@ export function TimecardViewer({
                       const listEmpForSalary = employees.find((e) => e.employeeId === selectedEmployeeId);
                       const isSalaryEmployee =
                         (timecard?.employee.payType ?? listEmpForSalary?.payType) === "SALARY";
+                      const startDay = timecard?.employee.startedOn ?? listEmpForSalary?.startedOn;
                       const SALARY_VIRTUAL_MINS = 480;
                       // Pay weeks, counted from the first day on screen (the
                       // period's start, or the custom range's), the same weeks
@@ -2771,8 +2774,11 @@ export function TimecardViewer({
                       // past, has no punches and no leave segments.
                       // Salary employees get virtual 8h credit — never absent.
                       const isPast = day < today;
+                      // Before they started: not absent, and no salary hours (the
+                      // timecard engine's rule, startedOn in segment-builder).
+                      const beforeStart = !!startDay && dayStr < startDay;
                       const isSalaryVirtualDay =
-                        !timecard && isSalaryEmployee && !isWeekend && !isTodayRow && isPast;
+                        !timecard && isSalaryEmployee && !isWeekend && !isTodayRow && isPast && !beforeStart;
                       const isAbsent =
                         !isWeekend &&
                         !isTodayRow &&
@@ -2780,7 +2786,8 @@ export function TimecardViewer({
                         dayPunches.length === 0 &&
                         leaveSegments.length === 0 &&
                         daySegments.length === 0 &&
-                        !isSalaryVirtualDay;
+                        !isSalaryVirtualDay &&
+                        !beforeStart;
 
                       const mainPunchIds = [firstIn?.id, lastOut?.id].filter(Boolean) as string[];
                       const isMainRowPendingDelete = mainPunchIds.length > 0 && pendingDeletions.some(

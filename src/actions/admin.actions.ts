@@ -12,6 +12,7 @@ import { publicError, withRBAC } from "@/lib/rbac/guard";
 import { zodMessage } from "@/lib/zod-message";
 import { photoUrls } from "@/lib/presence/photos";
 import { badgeWhere } from "@/lib/utils/badge-lookup";
+import { asksForClientBadge, isClientBadge, issueClientBadge } from "@/lib/utils/client-badge";
 import { looksLikeBadge } from "@/lib/presence/people-search.service";
 import { MISSING_OPTIONS, PAY_OPTIONS, PERIOD_OPTIONS, PUNCH_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS, pick } from "@/components/admin/employees-list-options";
 import { writeAuditLog } from "@/lib/audit/logger";
@@ -471,11 +472,17 @@ export const createEmployee = withRBAC(
       roleName = cr?.name ?? null;
     }
 
+    // "CL" as the Badge ID asks for the next client badge, issued inside the
+    // transaction below (client-badge.ts). "CL" as the employee code too means
+    // the code is that badge.
+    const issuing = asksForClientBadge(parsed.wmsId);
+    const ownCode = asksForClientBadge(parsed.employeeCode) ? undefined : parsed.employeeCode;
+
     // A Badge ID or login email already on file is said in words, with who has
     // it: the database refusal reached the screen only as "Something went
     // wrong". Mostly a rehire whose old record is inactive (Fidella Rios,
     // 639608, from the NovaTime import), who should be made active instead.
-    const badge = parsed.employeeCode || parsed.wmsId;
+    const badge = ownCode || (issuing ? undefined : parsed.wmsId);
     if (badge) {
       const taken = await db.employee.findFirst({
         where: { tenantId, OR: [{ employeeCode: badge }, { wmsId: badge }] },
@@ -494,9 +501,12 @@ export const createEmployee = withRBAC(
     // belong to anyone else (in either of their two, ignoring capitals).
     const personalEmail = cleanEmail(parsed.email, "personal");
     const workEmail = cleanEmail(parsed.workEmail, "work");
-    await assertEmailsFree(personalEmail, workEmail, null, tenantId);
+    // A client badge signs nobody in, so a client may have neither.
+    const client = issuing || isClientBadge(parsed.wmsId);
+    if (personalEmail || workEmail || !client) await assertEmailsFree(personalEmail, workEmail, null, tenantId);
 
     const employee = await db.$transaction(async (tx) => {
+      const wmsId = issuing ? await issueClientBadge(tx) : parsed.wmsId ?? null;
       const user = await tx.user.create({
         data: {
           name: parsed.name,
@@ -511,7 +521,7 @@ export const createEmployee = withRBAC(
         address1: parsed.address1, address2: parsed.address2, city: parsed.city, state: parsed.state, country: parsed.country, zipCode: parsed.zipCode,
       });
 
-      const employeeCode = parsed.employeeCode || parsed.wmsId || `EMP-${Date.now()}`;
+      const employeeCode = ownCode || wmsId || `EMP-${Date.now()}`;
 
       return tx.employee.create({
         data: {
@@ -527,7 +537,7 @@ export const createEmployee = withRBAC(
           ruleSetId: parsed.ruleSetId,
           hireDate: calendarDay(parsed.hireDate),
           supervisorId: parsed.supervisorId ?? null,
-          wmsId: parsed.wmsId ?? null,
+          wmsId,
           payType: parsed.payType ?? null,
           payRate: parsed.payRate ?? null,
           ...(parsed.payRate
@@ -552,7 +562,13 @@ export const createEmployee = withRBAC(
       entityType: "EMPLOYEE",
       entityId: employee.id,
       action: "EMPLOYEE_CREATED",
-      changes: { after: { employeeCode: employee.employeeCode, role: roleName ?? resolvedRole } },
+      changes: {
+        after: {
+          employeeCode: employee.employeeCode,
+          role: roleName ?? resolvedRole,
+          ...(issuing && { clientBadge: employee.wmsId }),
+        },
+      },
     });
 
     revalidatePath("/admin/employees");
@@ -641,7 +657,13 @@ export const updateEmployee = withRBAC(
       }
     }
     if (roleChanges) await assertAssignable(me, tenantId, role, customRoleId);
-    if (personalChanged || workChanged) {
+    // "CL" as the Badge ID asks for the next client badge, issued in the
+    // transaction below (client-badge.ts). A client badge signs nobody in, so
+    // a client may clear both emails.
+    const issuing = asksForClientBadge(wmsId);
+    const client = issuing || isClientBadge(wmsId === undefined ? current.wmsId : wmsId);
+    let issuedBadge: string | null = null;
+    if ((personalChanged || workChanged) && (nextPersonal || nextWork || !client)) {
       await assertEmailsFree(nextPersonal, nextWork, current.userId, tenantId, [
         personalChanged ? nextPersonal : null,
         workChanged ? nextWork : null,
@@ -665,6 +687,7 @@ export const updateEmployee = withRBAC(
     }
 
     await db.$transaction(async (tx) => {
+      if (issuing) issuedBadge = await issueClientBadge(tx);
       if (name !== undefined || personalChanged || workChanged) {
         await tx.user.update({
           where: { id: current.userId },
@@ -696,7 +719,7 @@ export const updateEmployee = withRBAC(
           ...(isActive !== undefined && { isActive }),
           ...(onLeave !== undefined && { onLeave }),
           ...(webPunchEnabled !== undefined && { webPunchEnabled }),
-          ...(wmsId !== undefined && { wmsId }),
+          ...(wmsId !== undefined && { wmsId: issuedBadge ?? wmsId }),
           // A barcode set by hand is marked as an override so the Oracle sync
           // leaves it alone — otherwise a deliberate correction would be undone
           // on the next run and nobody would know why the badge stopped working.
@@ -792,7 +815,7 @@ export const updateEmployee = withRBAC(
     const punchLabel = (on: boolean) => (on ? "Allowed" : "Time clock only");
     if (webPunchEnabled !== undefined) diff("Punching from the web", punchLabel(current.webPunchEnabled), punchLabel(webPunchEnabled));
     if (jobTitle !== undefined) diff("Job Title", current.jobTitle, jobTitle);
-    if (wmsId !== undefined) diff("Badge ID (WMS)", current.wmsId, wmsId);
+    if (wmsId !== undefined) diff("Badge ID (WMS)", current.wmsId, issuedBadge ?? wmsId);
     if (barcode !== undefined) diff("Badge barcode", current.barcode, barcode);
     if (adpWorkerId !== undefined) diff("ADP Worker ID", current.adpWorkerId, adpWorkerId);
     if (terminationReason !== undefined) diff("Termination Reason", current.terminationReason, terminationReason);
@@ -2241,7 +2264,8 @@ export const bulkCreateEmployees = withRBAC(
               ruleSetId: r.ruleSetId,
               hireDate: calendarDay(r.hireDate),
               supervisorId: null,
-              wmsId: r.wmsId ?? null,
+              // "CL" asks for the next client badge (client-badge.ts).
+              wmsId: asksForClientBadge(r.wmsId) ? await issueClientBadge(tx) : r.wmsId ?? null,
               payType: r.payType ?? null,
               payRate: r.payRate ?? null,
               ...(r.payRate
@@ -2496,6 +2520,76 @@ function ledgerLabel(action: string): string {
   }
 }
 
+/** One leave type's figures as at a date, in minutes with the fraction kept. */
+export type LeaveBalanceAsOf = {
+  balanceMinutes: number;
+  accruedMinutes: number;
+  netAdjustmentMinutes: number | null;
+  approvedMinutes: number;
+  pendingMinutes: number;
+  postedMinutes: number;
+};
+
+/**
+ * Each leave type's balance and totals as they stood at the end of a day, for
+ * the accruals page when a date range ends on it.
+ *
+ * <p>The balance is today's with everything dated after that day taken back
+ * out. Leave counts on its own day, not the day it was entered: Massiel Esaa's
+ * PTO for 11/11–11/13, imported and entered weeks ahead, is still hers on
+ * 10/27 (58.19 then, 34.19 now). Accruals count from their pay period's end,
+ * as the page's Accrued does; booked leave from the day it starts.
+ */
+export const getLeaveBalancesAsOf = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async (actor, input: { employeeId: string; date: string }): Promise<Record<string, LeaveBalanceAsOf>> => {
+    const { employeeId, date } = z.object({ employeeId: z.string(), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).parse(input);
+    await assertRecordInReach(actor, employeeId);
+    const year = new Date().getFullYear();
+    const yearStart = new Date(`${year}-01-01T00:00:00Z`);
+    const yearEnd = new Date(`${year + 1}-01-01T00:00:00Z`);
+    const dayOf = (d: Date) => d.toISOString().slice(0, 10);
+
+    const [balances, ledger, requests] = await Promise.all([
+      db.leaveBalance.findMany({ where: { employeeId, accrualYear: year }, select: { leaveTypeId: true, balanceSeconds: true } }),
+      db.leaveAccrualLedger.findMany({
+        where: { employeeId, createdAt: { gte: yearStart, lt: yearEnd }, action: { not: "EOD_SNAPSHOT" } },
+        select: { leaveTypeId: true, action: true, deltaSeconds: true, createdAt: true, payPeriodEnd: true, leaveRequestId: true, leaveRequest: { select: { startDate: true } } },
+      }),
+      db.leaveRequest.findMany({
+        where: { employeeId, status: { in: ["APPROVED", "PENDING", "POSTED"] }, startDate: { gte: yearStart, lte: new Date(`${date}T00:00:00Z`) } },
+        select: { leaveTypeId: true, status: true, durationSeconds: true },
+      }),
+    ]);
+    // Adjustments that only undo a timecard deduction are left out of Net Adj., as on the page.
+    const timecardRequests = new Set(ledger.filter((e) => e.action === "TIMECARD_DEDUCTION" && e.leaveRequestId).map((e) => e.leaveRequestId!));
+
+    const out: Record<string, LeaveBalanceAsOf> = {};
+    const row = (id: string) =>
+      (out[id] ??= { balanceMinutes: 0, accruedMinutes: 0, netAdjustmentMinutes: null, approvedMinutes: 0, pendingMinutes: 0, postedMinutes: 0 });
+    for (const b of balances) row(b.leaveTypeId).balanceMinutes = b.balanceSeconds / 60;
+    for (const e of ledger) {
+      const r = row(e.leaveTypeId);
+      const effective = dayOf(e.leaveRequest?.startDate ?? e.createdAt);
+      if (effective > date) r.balanceMinutes -= e.deltaSeconds / 60;
+      if ((e.action === "ACCRUAL" || e.action === "EARNED_ADJUSTMENT") && e.payPeriodEnd && dayOf(e.payPeriodEnd) <= date) {
+        r.accruedMinutes += e.deltaSeconds / 60;
+      }
+      if (e.action === "ADJUSTMENT" && dayOf(e.createdAt) <= date && !(e.leaveRequestId && timecardRequests.has(e.leaveRequestId))) {
+        r.netAdjustmentMinutes = (r.netAdjustmentMinutes ?? 0) + e.deltaSeconds / 60;
+      }
+    }
+    for (const q of requests) {
+      const r = row(q.leaveTypeId);
+      const m = q.durationSeconds / 60;
+      if (q.status === "APPROVED") r.approvedMinutes += m;
+      else if (q.status === "PENDING") r.pendingMinutes += m;
+      else r.postedMinutes += m;
+    }
+    return out;
+  }
+);
+
 export type LedgerDetailEntry = {
   id: string;
   date: string;
@@ -2528,17 +2622,17 @@ export const getLeaveTypeLedgerDetail = withRBAC(
       db.leaveAccrualLedger.findFirst({
         where: { employeeId, leaveTypeId, createdAt: { lt: yearStart }, action: { not: "EOD_SNAPSHOT" } },
         orderBy: { createdAt: "desc" },
-        select: { balanceAfter: true },
+        select: { balanceAfterSeconds: true },
       }),
       db.leaveAccrualLedger.findMany({
         where: { employeeId, leaveTypeId, createdAt: { gte: yearStart, lt: yearEnd }, action: { not: "EOD_SNAPSHOT" } },
         orderBy: { createdAt: "asc" },
-        select: { id: true, action: true, deltaMinutes: true, balanceAfter: true, createdAt: true, note: true, createdById: true },
+        select: { id: true, action: true, deltaSeconds: true, balanceAfterSeconds: true, createdAt: true, note: true, createdById: true },
       }),
       db.leaveRequest.findMany({
         where: { employeeId, leaveTypeId, status: { in: ["APPROVED", "PENDING"] }, startDate: { gte: yearStart, lt: yearEnd } },
         orderBy: { startDate: "asc" },
-        select: { id: true, startDate: true, durationMinutes: true, status: true },
+        select: { id: true, startDate: true, durationSeconds: true, status: true },
       }),
       db.leaveAccrualLedger.findMany({
         where: { employeeId, leaveTypeId, action: { not: "EOD_SNAPSHOT" } },
@@ -2560,7 +2654,9 @@ export const getLeaveTypeLedgerDetail = withRBAC(
     yearSet.add(today.getUTCFullYear());
     const availableYears = [...yearSet].sort((a, b) => b - a);
 
-    const openingBalance = openingEntry?.balanceAfter ?? 0;
+    // Minutes with the fraction kept, from the seconds columns, so the ledger
+    // shows a 6.16 h posting as 6.16 (lib/leave-time).
+    const openingBalance = (openingEntry?.balanceAfterSeconds ?? 0) / 60;
 
     // Batch-fetch names for users who appear in these ledger entries
     const creatorIds = [...new Set(yearEntries.map((e) => e.createdById).filter(Boolean))] as string[];
@@ -2575,8 +2671,8 @@ export const getLeaveTypeLedgerDetail = withRBAC(
       date: e.createdAt.toISOString().slice(0, 10),
       type: e.action,
       label: ledgerLabel(e.action),
-      deltaMinutes: e.deltaMinutes,
-      runningBalance: e.balanceAfter,
+      deltaMinutes: e.deltaSeconds / 60,
+      runningBalance: e.balanceAfterSeconds / 60,
       isFuture: false,
       note: e.note,
       createdByName: e.createdById ? (creatorNameById.get(e.createdById) ?? null) : null,
@@ -2664,12 +2760,12 @@ export const getLeaveTypeLedgerDetail = withRBAC(
           | { kind: "forecast"; date: Date; deltaMinutes: number };
 
         const futureItems: FutureItem[] = [
-          ...futureRequests.map((r) => ({ kind: "leave" as const, date: r.startDate, id: r.id, durationMinutes: r.durationMinutes, status: r.status })),
+          ...futureRequests.map((r) => ({ kind: "leave" as const, date: r.startDate, id: r.id, durationMinutes: r.durationSeconds / 60, status: r.status })),
           ...forecastItems.map((f) => ({ kind: "forecast" as const, date: f.date, deltaMinutes: f.deltaMinutes })),
         ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
         let runningBal = yearEntries.length > 0
-          ? yearEntries[yearEntries.length - 1].balanceAfter
+          ? yearEntries[yearEntries.length - 1].balanceAfterSeconds / 60
           : openingBalance;
         let fcIdx = 0;
 
@@ -2704,15 +2800,15 @@ export const getLeaveTypeLedgerDetail = withRBAC(
       }
     } else {
       // Past year: just add future-approved requests that fall in the year (shouldn't happen but guard)
-      let runningBal = yearEntries.length > 0 ? yearEntries[yearEntries.length - 1].balanceAfter : openingBalance;
+      let runningBal = yearEntries.length > 0 ? yearEntries[yearEntries.length - 1].balanceAfterSeconds / 60 : openingBalance;
       for (const r of futureRequests) {
-        runningBal -= r.durationMinutes;
+        runningBal -= r.durationSeconds / 60;
         entries.push({
           id: r.id,
           date: r.startDate.toISOString().slice(0, 10),
           type: "LEAVE_REQUEST",
           label: r.status === "APPROVED" ? "Approved Leave" : "Pending Leave",
-          deltaMinutes: -r.durationMinutes,
+          deltaMinutes: -r.durationSeconds / 60,
           runningBalance: runningBal,
           isFuture: true,
           status: r.status,

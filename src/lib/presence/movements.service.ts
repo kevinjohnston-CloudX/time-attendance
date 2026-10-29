@@ -8,6 +8,7 @@ import { endedAmong } from "./employment";
 import { expectedHours, SHIFT_HOURS_SELECT } from "./expected-hours";
 import { EFFECTIVE_TYPE_SQL, PUNCH_CHAIN, PUNCH_CHAIN_JOINS } from "./effective-punch";
 import { scansElsewhere, scansHere, scansHereSql, siteOf, siteScope } from "./site-scope";
+import { CLIENT_DEPARTMENT_SHOWN, VISITOR_DEPARTMENT_ID, isClientBadge } from "@/lib/utils/client-badge";
 import type { DayPerson, PresenceScan, SiteDay } from "./types";
 
 /**
@@ -272,17 +273,19 @@ export async function getSiteDay(
     // Only this site's own people are expected here; a visitor's shift is
     // their home building's business.
     const schedule = expectedHours(shiftById.get(e.id), scheduleById.get(e.id), day);
+    const visitor = isClientBadge(e.wmsId);
     return {
       id: e.id,
       name: shownName(e),
       employeeCode: e.employeeCode,
-      departmentId: e.department?.id ?? null,
-      department: e.department?.name ?? null,
+      departmentId: visitor ? VISITOR_DEPARTMENT_ID : e.department?.id ?? null,
+      department: visitor ? CLIENT_DEPARTMENT_SHOWN : e.department?.name ?? null,
       jobTitle: e.jobTitle?.trim() || null,
       shiftId: e.shift?.id ?? null,
       shift: e.shift?.name ?? null,
       photoUrl: photos.get(e.id) ?? null,
       salaried: e.payType === "SALARY",
+      visitor,
       inactive: ended.has(e.id),
       scheduledStart: schedule?.start ?? null,
       scheduledEnd: schedule?.end ?? null,

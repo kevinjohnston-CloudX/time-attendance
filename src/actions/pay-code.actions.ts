@@ -6,6 +6,7 @@ import { editableTimesheetInScope } from "@/lib/rbac/scope";
 import { TIMECARD_EDITORS } from "@/lib/rbac/permissions";
 import { reconcileLeaveDeductions, reconcileSalarySegmentDeduction } from "@/lib/engines/leave-deduction";
 import { openClockInOnDay, shiftClockIn } from "@/lib/engines/shift-clock-in";
+import { assertPayCodeAllowed } from "@/lib/pay-code-availability";
 import { z } from "zod";
 
 // ─── List pay codes for tenant ──────────────────────────────────────────────
@@ -250,9 +251,15 @@ export const setSegmentPayCode = withRBAC(
   TIMECARD_EDITORS,
   async (ctx, input: z.infer<typeof setSegmentPayCodeSchema>) => {
     const { segmentId, payCodeId } = setSegmentPayCodeSchema.parse(input);
-    const { timesheetId } = await db.workSegment.findUniqueOrThrow({ where: { id: segmentId }, select: { timesheetId: true } });
+    const current = await db.workSegment.findUniqueOrThrow({
+      where: { id: segmentId },
+      select: { timesheetId: true, payCodeId: true, timesheet: { select: { employeeId: true } } },
+    });
+    const { timesheetId } = current;
     await editableTimesheetInScope(ctx, timesheetId);
     if (payCodeId) await assertOwnPayCode(payCodeId, ctx.tenantId);
+    // A code newly chosen must be the person's; one a line already has stays.
+    if (payCodeId && payCodeId !== current.payCodeId) await assertPayCodeAllowed(current.timesheet.employeeId, payCodeId);
 
     // Update the segment immediately so the UI reflects the change
     const segment = await db.workSegment.update({
@@ -398,6 +405,10 @@ export const setAbsentDayPayCode = withRBAC(
     const existing = await db.workSegment.findFirst({
       where: { timesheetId, segmentDate: date, durationMinutes: 0, segmentType: "LEAVE" },
     });
+    if (payCodeId && payCodeId !== existing?.payCodeId) {
+      const { employeeId } = await db.timesheet.findUniqueOrThrow({ where: { id: timesheetId }, select: { employeeId: true } });
+      await assertPayCodeAllowed(employeeId, payCodeId);
+    }
 
     if (!payCodeId) {
       if (existing) {

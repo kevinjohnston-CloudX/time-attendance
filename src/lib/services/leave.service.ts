@@ -7,6 +7,7 @@ import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
 import { reverseLeaveUsage } from "@/lib/engines/accrual-engine";
 import { hoursToSeconds, secondsToHours } from "@/lib/leave-time";
 import { writeAuditLog } from "@/lib/audit/logger";
+import { assertLeaveTypeAllowed } from "@/lib/pay-code-availability";
 import { requestLeaveSchema, type DaySelectionInput } from "@/lib/validators/leave.schema";
 
 // ─── Queries ────────────────────────────────────────────────────────────────
@@ -45,6 +46,9 @@ export async function createLeaveRequestCore(
   },
 ) {
   const { leaveTypeId, selectedDays, note } = requestLeaveSchema.parse(input);
+  // Only leave the person's policies give them (CA Sick for an NJ employee
+  // was refused nowhere), from every way a request comes in.
+  await assertLeaveTypeAllowed(employeeId, leaveTypeId);
 
   const employee = await db.employee.findUniqueOrThrow({
     where: { id: employeeId },

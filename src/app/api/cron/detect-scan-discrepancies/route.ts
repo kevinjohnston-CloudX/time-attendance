@@ -3,6 +3,7 @@ import { cronAuthorized } from "@/lib/cron-auth";
 import { db } from "@/lib/db";
 import { findScanDiscrepancies } from "@/lib/services/scan-event.service";
 import { findOpenPayPeriod, TOO_SOON_REJECTION } from "@/lib/utils/punch-helpers";
+import { isClientBadge } from "@/lib/utils/client-badge";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 
@@ -41,6 +42,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   let alreadyKnown = 0;
   let unattributable = 0;
   let repeats = 0;
+  let clientScans = 0;
   const errors: string[] = [];
 
   for (const d of discrepancies) {
@@ -58,6 +60,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // exception for HR to clear.
     if (d.kind === "REJECTED" && d.rejectionReason === TOO_SOON_REJECTION) {
       repeats += 1;
+      continue;
+    }
+
+    // Likewise a client's badge at a time clock (client-badge.ts): the clock
+    // refusing it is the rule working, and a client keeps no timecard to raise
+    // anything on. Known by the badge, not the refusal's wording, which has
+    // changed once already.
+    if (isClientBadge(d.badgeCode)) {
+      clientScans += 1;
       continue;
     }
 
@@ -138,6 +149,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     alreadyKnown,
     unattributable,
     skippedRepeatScans: repeats,
+    skippedClientScans: clientScans,
     errors: errors.slice(0, 20),
   });
 }

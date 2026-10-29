@@ -54,6 +54,13 @@ export const STATUS_META: Record<PresenceStatus, StatusMeta> = {
     color: "var(--ps-working)",
     badge: "success",
   },
+  VISITOR: {
+    label: "Visitor",
+    heading: "Visitors",
+    hint: "On a visitor badge, so never on the time clock. The security gate saw them come in",
+    color: "var(--ps-visitor)",
+    badge: "info",
+  },
   NOT_ARRIVED: {
     label: "Not arrived",
     heading: "Not arrived",
@@ -91,8 +98,8 @@ export const STATUS_META: Record<PresenceStatus, StatusMeta> = {
   },
 };
 
-/** The four that make up the building total, in the order the board lists them. */
-export const INSIDE_STATUSES: PresenceStatus[] = ["WORKING", "NO_GATE_SCAN", "ON_MEAL", "OFF_CLOCK", "ON_SITE"];
+/** The ones that make up the building total, in the order the board lists them. */
+export const INSIDE_STATUSES: PresenceStatus[] = ["WORKING", "NO_GATE_SCAN", "ON_MEAL", "OFF_CLOCK", "ON_SITE", "VISITOR"];
 export const AWAY_STATUSES: PresenceStatus[] = ["NOT_ARRIVED", "LEFT", "ELSEWHERE", "ON_LEAVE", "NOT_SCHEDULED"];
 
 /** A meal and a break share a status; the tile still says which one it is. */
@@ -165,6 +172,7 @@ export function sinceLine(p: PresencePerson, timeZone: string, nowIso: string): 
       return at ? `${p.breakKind === "BREAK" ? "Break" : "Meal"} since ${at}` : statusLabel(p);
     case "OFF_CLOCK":
     case "ON_SITE":
+    case "VISITOR":
       return at ? `Inside since ${at}` : "Inside";
     case "LEFT":
       return at ? `Left at ${at}` : "Left";
@@ -393,6 +401,9 @@ export function readerLines(p: PresencePerson, tz: string, now: number, hasGateD
       });
     }
   }
+
+  // A visitor has no time clock to report on.
+  if (p.visitor) return lines;
 
   const c = p.clock;
   if (!c) {

@@ -10,6 +10,7 @@
   --ps-working: var(--fill-success);
   --ps-meal: var(--fill-warning);
   --ps-offclock: var(--wms-color-violet-500);
+  --ps-visitor: var(--fill-accent);
   --ps-absent: var(--stroke-default);
   --ps-left: var(--stroke-default);
   --ps-late: var(--text-error);

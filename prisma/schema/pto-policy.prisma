@@ -70,6 +70,11 @@ model PtoPolicy {
   forecastMonths           Int?    // number of months ahead (only when forecastMode = "MONTHS")
   forecastApplyToAvailable Boolean @default(false) // when true, available balance includes forecasted hours
 
+  /// Leave types whose balances leave of this policy's type is taken from
+  /// first, in this order, before its own: NovaTime's advanced secondary pay
+  /// codes, PTO120 and PTO160 using PTO Carry Over before PTO. Empty: only its own.
+  useFirstLeaveTypeIds String[] @default([])
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

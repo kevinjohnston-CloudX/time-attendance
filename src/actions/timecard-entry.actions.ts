@@ -20,16 +20,75 @@ import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { placeEnteredHours } from "@/lib/entered-hours";
 import { hoursToSeconds } from "@/lib/leave-time";
 import { postLeaveUsage, reverseLeaveUsage } from "@/lib/engines/accrual-engine";
+import { assertLeaveTypeAllowed, assertPayCodeAllowed, availabilityFor, leaveTypeAllowed } from "@/lib/pay-code-availability";
+import { splitNote, useFirstPieces } from "@/lib/engines/leave-use-first";
+
+type TxClient = Parameters<Parameters<typeof db.$transaction>[0]>[0];
+
+/**
+ * Leave entered on one timecard day, as requests already off the balance: one,
+ * or one per balance when the person's policy takes it from other balances
+ * first (PTO120: PTO Carry Over, then PTO; lib/engines/leave-use-first).
+ */
+async function createTimecardLeave(
+  tx: TxClient,
+  o: { employeeId: string; leaveTypeId: string; date: Date; seconds: number; note?: string | null; actorId: string; status: "APPROVED" | "POSTED"; split: boolean },
+  audit: (req: { id: string; leaveTypeId: string; durationSeconds: number }) => Promise<unknown>,
+) {
+  const { pieces, policyName } = o.split
+    ? await useFirstPieces(tx, o.employeeId, o.leaveTypeId, o.date, o.seconds)
+    : { pieces: [{ leaveTypeId: o.leaveTypeId, seconds: o.seconds }], policyName: null };
+  const names = new Map(
+    pieces.length > 1
+      ? (await tx.leaveType.findMany({ where: { id: { in: pieces.map((p) => p.leaveTypeId) } }, select: { id: true, name: true } })).map((t) => [t.id, t.name] as const)
+      : [],
+  );
+  const note = splitNote(o.note, pieces, names, policyName);
+  const now = new Date();
+  const created = [];
+  for (const piece of pieces) {
+    const req = await tx.leaveRequest.create({
+      data: {
+        employeeId: o.employeeId,
+        leaveTypeId: piece.leaveTypeId,
+        status: o.status,
+        startDate: o.date,
+        endDate: o.date,
+        // Exact to the hundredth: 0.56 hours stays 0.56 (lib/leave-time).
+        durationSeconds: piece.seconds,
+        note,
+        submittedAt: now,
+        reviewedAt: now,
+        reviewedById: o.actorId,
+        ...(o.status === "POSTED" ? { postedAt: now } : {}),
+      },
+    });
+    await audit(req);
+    // Off the balance now: a posted request is never taken at the period lock,
+    // and HR approval takes an approved one. The next piece reads the balance
+    // this one left.
+    await postLeaveUsage(req.id, tx);
+    created.push(req);
+  }
+  return created;
+}
 
 // ─── Get leave types for timecard entry modal ─────────────────────────────────
 
+/** The leave types for the timecard's leave entry: with a person named, only theirs. */
 export const getLeaveTypesForTimecard = withRBAC(
   TIMECARD_EDITORS,
-  async ({ tenantId }): Promise<LeaveType[]> => {
-    return db.leaveType.findMany({
+  async ({ tenantId }, input?: { employeeId?: string }): Promise<LeaveType[]> => {
+    const types = await db.leaveType.findMany({
       where: { tenantId: tenantId!, isActive: true },
       orderBy: { name: "asc" },
     });
+    const employeeId = input?.employeeId;
+    if (!employeeId) return types;
+    const person = await db.employee.findFirst({ where: { id: employeeId, tenantId: tenantId! }, select: { id: true } });
+    if (!person) return types;
+    const available = await availabilityFor(person.id);
+    return types.filter((t) => leaveTypeAllowed(available, t.id));
   }
 );
 
@@ -46,6 +105,7 @@ export const addManualPunchPair = withRBAC(
     // Only a timecard in the caller's company, and never their own.
     const sheet = await timesheetInScope(ctx, timesheetId, TIMECARD_EDITORS_COMPANY);
     if (sheet.employeeId === ctx.employeeId) throw new Error("You can't change your own timecard");
+    if (payCodeId) await assertPayCodeAllowed(sheet.employeeId, payCodeId);
 
     const inDate = new Date(inTime);
     const outDate = new Date(outTime);
@@ -304,6 +364,7 @@ export const addPayrollLeaveEntry = withRBAC(
     // Only a timecard in the caller's company, and never their own.
     const sheet = await timesheetInScope(ctx, timesheetId, TIMECARD_EDITORS_COMPANY);
     if (sheet.employeeId === ctx.employeeId) throw new Error("You can't change your own timecard");
+    await assertLeaveTypeAllowed(sheet.employeeId, leaveTypeId);
 
     // Verify timesheet is editable
     const ts = await db.timesheet.findUniqueOrThrow({
@@ -316,41 +377,23 @@ export const addPayrollLeaveEntry = withRBAC(
 
     const leaveDate = new Date(date + "T00:00:00.000Z");
 
-    const leaveRequest = await db.$transaction(async (tx) => {
-      const req = await tx.leaveRequest.create({
-        data: {
-          employeeId: ts.employeeId,
-          leaveTypeId,
-          status: "APPROVED",
-          startDate: leaveDate,
-          endDate: leaveDate,
-          durationSeconds: hoursToSeconds(hours),
-          note: note ?? null,
-          submittedAt: new Date(),
-          reviewedAt: new Date(),
-          reviewedById: actorId,
-        },
-      });
+    const requests = await db.$transaction((tx) =>
+      createTimecardLeave(
+        tx,
+        { employeeId: ts.employeeId, leaveTypeId, date: leaveDate, seconds: hoursToSeconds(hours), note, actorId, status: "APPROVED", split: true },
+        (req) =>
+          writeAuditLog({
+            tenantId: tenantId!,
+            actorId,
+            action: "PAYROLL_LEAVE_ADDED",
+            entityType: "TIMESHEET",
+            entityId: timesheetId,
+            changes: { after: { leaveRequestId: req.id, leaveTypeId: req.leaveTypeId, date, hours: req.durationSeconds / 3600 } },
+          }),
+      ),
+    );
 
-      await writeAuditLog({
-        tenantId: tenantId!,
-        actorId,
-        action: "PAYROLL_LEAVE_ADDED",
-        entityType: "TIMESHEET",
-        entityId: timesheetId,
-        changes: {
-          after: { leaveRequestId: req.id, leaveTypeId, date, hours },
-        },
-      });
-
-      // Off the balance now, as HR approval takes it; the period lock leaves
-      // a request already taken alone.
-      await postLeaveUsage(req.id, tx);
-
-      return req;
-    });
-
-    await syncLeaveSegments(leaveRequest.id);
+    for (const req of requests) await syncLeaveSegments(req.id);
     revalidatePath("/payroll/timecards");
   }
 );
@@ -555,6 +598,7 @@ export const addManualHoursEntry = withRBAC(
     // Before either path below, the 0 hour one included: a locked or payroll
     // approved timecard takes no new entries.
     assertEditable(sheet.status);
+    if (payCodeId) await assertPayCodeAllowed(sheet.employeeId, payCodeId);
 
     const minutes = Math.round(hours * 60);
 
@@ -614,6 +658,9 @@ export const addManualHoursEntry = withRBAC(
     // Determine if this pay code maps to a leave type.
     // If so, use the leave-request path (no punches, no meal deduction).
     let leaveTypeId: string | null = null;
+    // The leave type's own code (5 PTO), not one found by its bucket (40 PTO
+    // payout): only the leave itself is split across balances used first.
+    let ownCode = false;
     if (payCodeId && tenantId) {
       const payCode = await db.payCode.findUnique({
         where: { id: payCodeId },
@@ -623,13 +670,20 @@ export const addManualHoursEntry = withRBAC(
       let leaveType = await db.leaveType.findFirst({
         where: { payCodeId, isActive: true, tenantId },
       });
-      // Fall back: payBucket is a leave bucket → find matching leaveType by category
+      // Fall back: payBucket is a leave bucket → find matching leaveType by category.
+      // The oldest of its category, the main one: a PTO payout or PTO retro
+      // line comes off PTO, never PTO Carry Over or Comp Time, which share its
+      // category; with no order the database could hand back either.
       if (!leaveType && payCode?.payBucket && LEAVE_BUCKETS.has(payCode.payBucket)) {
         leaveType = await db.leaveType.findFirst({
           where: { category: payCode.payBucket as never, isActive: true, tenantId },
+          orderBy: { createdAt: "asc" },
         });
       }
-      if (leaveType) leaveTypeId = leaveType.id;
+      if (leaveType) {
+        leaveTypeId = leaveType.id;
+        ownCode = leaveType.payCodeId === payCodeId;
+      }
     }
 
     if (leaveTypeId) {
@@ -638,47 +692,32 @@ export const addManualHoursEntry = withRBAC(
       // and no IN/OUT times appear on the timecard.
       const leaveDate = new Date(date + "T00:00:00.000Z");
 
-      const leaveRequest = await db.$transaction(async (tx) => {
-        const req = await tx.leaveRequest.create({
-          data: {
-            employeeId: ts.employeeId,
-            leaveTypeId,
-            status: "POSTED",
-            startDate: leaveDate,
-            endDate: leaveDate,
-            // Exact to the hundredth: 0.56 hours stays 0.56 (lib/leave-time).
-            durationSeconds: hoursToSeconds(hours),
-            note: note ?? null,
-            submittedAt: new Date(),
-            reviewedAt: new Date(),
-            reviewedById: actorId,
-            postedAt: new Date(),
-          },
-        });
+      const typeChosen = leaveTypeId;
+      const requests = await db.$transaction((tx) =>
+        createTimecardLeave(
+          tx,
+          { employeeId: ts.employeeId, leaveTypeId: typeChosen, date: leaveDate, seconds: hoursToSeconds(hours), note, actorId, status: "POSTED", split: ownCode },
+          (req) =>
+            writeAuditLog({
+              tenantId: tenantId!,
+              actorId,
+              action: "MANUAL_PUNCH_ADDED",
+              entityType: "TIMESHEET",
+              entityId: timesheetId,
+              changes: { after: { date, hours: req.durationSeconds / 3600, leaveTypeId: req.leaveTypeId, source: "MANUAL_HOURS_LEAVE" } },
+            }),
+        ),
+      );
 
-        await writeAuditLog({
-          tenantId: tenantId!,
-          actorId,
-          action: "MANUAL_PUNCH_ADDED",
-          entityType: "TIMESHEET",
-          entityId: timesheetId,
-          changes: { after: { date, hours, leaveTypeId, source: "MANUAL_HOURS_LEAVE" } },
-        });
-
-        // Posted, so the period lock (which posts approved leave) never takes
-        // it: off the balance here, or it never comes off.
-        await postLeaveUsage(req.id, tx);
-
-        return req;
-      });
-
-      await syncLeaveSegments(leaveRequest.id);
+      for (const req of requests) await syncLeaveSegments(req.id);
 
       // If the caller chose a specific pay code (e.g. PTO CARRYOVER vs PTO),
-      // override what the policy resolver picked for the resulting LEAVE segments.
+      // override what the policy resolver picked for the resulting LEAVE
+      // segments: on the part of the chosen leave type, as a part taken from a
+      // balance used first keeps that balance's own code.
       if (payCodeId) {
         await db.workSegment.updateMany({
-          where: { leaveRequestId: leaveRequest.id },
+          where: { leaveRequestId: { in: requests.filter((r) => r.leaveTypeId === typeChosen).map((r) => r.id) } },
           data: { payCodeId },
         });
       }
