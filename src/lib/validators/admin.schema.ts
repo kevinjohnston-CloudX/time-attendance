@@ -44,10 +44,14 @@ export const createEmployeeSchema = z.object({
   customRoleId: z.string().optional(),
   siteId: z.string().min(1),
   departmentId: z.string().min(1),
-  ruleSetId: z.string().min(1),
-  hireDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be yyyy-MM-dd"),
+  // Required of everyone but a sign in only account (below).
+  ruleSetId: z.string().optional().transform((v) => v || undefined),
+  hireDate: z.union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be yyyy-MM-dd"), z.literal("")]).optional().transform((v) => v || undefined),
   supervisorId: z.string().optional().or(z.literal("")).transform((v) => v || undefined),
-  wmsId: z.string().min(1, "Badge ID is required"),
+  wmsId: z.string().optional().transform((v) => v?.trim() || undefined),
+  // A login with no timecard (sign-in-only.ts); createEmployee checks the role
+  // really is one.
+  signInOnly: z.boolean().optional(),
   payType: z.enum(["HOURLY", "SALARY"]).nullable().optional(),
   payRate: z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().positive().nullable().optional()),
   // Work info
@@ -78,7 +82,12 @@ export const createEmployeeSchema = z.object({
   // shift every day is a scheduled day (absences on weekends), without a pay
   // category no leave policy and no leave codes, without a holiday rule no
   // holiday pay. Several hires in October were saved without them. Not for a
-  // client badge, who works no shift and keeps no timecard.
+  // client badge, who works no shift and keeps no timecard, and none of it for
+  // a sign in only account, which keeps no timecard either.
+  if (v.signInOnly) return;
+  if (!v.wmsId) ctx.addIssue({ code: "custom", path: ["wmsId"], message: "Badge ID is required" });
+  if (!v.hireDate) ctx.addIssue({ code: "custom", path: ["hireDate"], message: "Hire date is required" });
+  if (!v.ruleSetId) ctx.addIssue({ code: "custom", path: ["ruleSetId"], message: "Choose a rule set" });
   if (asksForClientBadge(v.wmsId) || isClientBadge(v.wmsId)) return;
   if (!v.shiftId) ctx.addIssue({ code: "custom", path: ["shiftId"], message: "Choose a shift" });
   if (!v.payCategoryId) ctx.addIssue({ code: "custom", path: ["payCategoryId"], message: "Choose a pay category" });

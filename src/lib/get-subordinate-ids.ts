@@ -1,6 +1,7 @@
 import { cache } from "react";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { SIGN_IN_ONLY_ROLE } from "@/lib/sign-in-only";
 
 /**
  * The people who report to a supervisor directly: those whose supervisor of
@@ -20,8 +21,11 @@ export function directReportsOf(supervisorEmployeeId: string): Prisma.EmployeeWh
         OR: [
           { supervisorId: supervisorEmployeeId },
           { additionalSupervisors: { some: { supervisorId: supervisorEmployeeId } } },
+          // An agency viewer (sign-in-only.ts) sees everyone in its agency.
+          { agencyRef: { is: { employees: { some: { id: supervisorEmployeeId, customRole: { is: SIGN_IN_ONLY_ROLE } } } } } },
         ],
       },
+      { id: { not: supervisorEmployeeId } },
     ],
   };
 }
@@ -62,8 +66,24 @@ const subtree = cache(async (actorId: string, tenantId: string | null): Promise<
       SELECT l."employeeId"
       FROM   links l
       JOIN   reports r ON l."supervisorId" = r.id
+    ),
+    -- An agency viewer: everyone in its agency. The same test as
+    -- SIGN_IN_ONLY_ROLE in sign-in-only.ts: a role that is not a system one
+    -- and cannot punch for itself.
+    agency AS (
+      SELECT e.id
+      FROM   "employees" e
+      JOIN   "employees" v ON v.id = ${actorId} AND v."agencyId" IS NOT NULL AND e."agencyId" = v."agencyId"
+      JOIN   "custom_roles" cr ON cr.id = v."customRoleId" AND NOT cr."isSystem"
+      WHERE  NOT EXISTS (
+               SELECT 1 FROM "role_permissions" p
+               WHERE  p."customRoleId" = cr.id AND p.resource = 'punch' AND p.action = 'write' AND p.scope = 'own'
+             )
+        AND  (${tenantId}::text IS NULL OR e."tenantId" = ${tenantId})
     )
     SELECT id FROM reports WHERE id <> ${actorId}
+    UNION
+    SELECT id FROM agency WHERE id <> ${actorId}
   `;
   return rows.map((r) => r.id);
 });

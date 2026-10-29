@@ -62,21 +62,29 @@ type Snapshot = {
   shiftId: string;
   payCategoryId: string;
   holidayRuleId: string;
+  agencyId: string;
+  /** The role chosen makes a login with no timecard (sign-in-only.ts). */
+  signIn: boolean;
+  /** ...and one that views a team: an agency viewer, who needs its agency. */
+  needsAgency: boolean;
 };
 
 /** A client badge (client-badge.ts) works no shift and keeps no timecard. */
 const forClient = (s: Snapshot) => asksForClientBadge(s.wmsId) || isClientBadge(s.wmsId);
+/** Needed of anyone with a timecard: not a sign in only account. */
+const timecard = (s: Snapshot) => !s.signIn;
 
 const NEEDED: { step: Step; label: string; missing: (s: Snapshot) => boolean }[] = [
   { step: "job", label: "full name", missing: (s) => !s.name.trim() },
-  { step: "job", label: "hire date", missing: (s) => !s.hireDate },
-  { step: "job", label: "badge ID", missing: (s) => !s.wmsId.trim() },
+  { step: "job", label: "hire date", missing: (s) => !s.hireDate && timecard(s) },
+  { step: "job", label: "badge ID", missing: (s) => !s.wmsId.trim() && timecard(s) },
   { step: "job", label: "a work or personal email", missing: (s) => !s.workEmail.trim() && !s.email.trim() },
   { step: "job", label: "department", missing: (s) => !s.departmentId },
-  { step: "pay", label: "rule set", missing: (s) => !s.ruleSetId },
-  { step: "pay", label: "holiday rule", missing: (s) => !s.holidayRuleId && !forClient(s) },
-  { step: "pay", label: "shift", missing: (s) => !s.shiftId && !forClient(s) },
-  { step: "pay", label: "pay category", missing: (s) => !s.payCategoryId && !forClient(s) },
+  { step: "job", label: "agency", missing: (s) => !s.agencyId && s.needsAgency },
+  { step: "pay", label: "rule set", missing: (s) => !s.ruleSetId && timecard(s) },
+  { step: "pay", label: "holiday rule", missing: (s) => !s.holidayRuleId && !forClient(s) && timecard(s) },
+  { step: "pay", label: "shift", missing: (s) => !s.shiftId && !forClient(s) && timecard(s) },
+  { step: "pay", label: "pay category", missing: (s) => !s.payCategoryId && !forClient(s) && timecard(s) },
 ];
 
 interface Props {
@@ -88,7 +96,8 @@ interface Props {
    * when it opens, so the page does not carry every name in the company.
    */
   employees?: EmployeeOption[];
-  customRoles: { id: string; name: string }[];
+  /** signInOnly and seesTeam: see sign-in-only.ts. */
+  customRoles: { id: string; name: string; signInOnly?: boolean; seesTeam?: boolean }[];
   shifts: { id: string; name: string; startTime: string; endTime: string }[];
   holidayRules: { id: string; name: string }[];
   payCategories: { id: string; number: number; description: string | null }[];
@@ -213,7 +222,14 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
 
   // What the header, the steps and the footer read. The fields stay
   // uncontrolled; this is read back from the form whenever one changes.
+  /** What the role picked (its select value) makes of the account. */
+  const roleKind = (value: string | null | undefined) => {
+    const role = value?.startsWith("custom:") ? customRoles.find((r) => r.id === value.slice(7)) : undefined;
+    return { signIn: !!role?.signInOnly, needsAgency: !!role?.signInOnly && !!role?.seesTeam };
+  };
   const blankSnapshot = (c: CopyFromEmployee | null): Snapshot => ({
+    ...roleKind(c?.role),
+    agencyId: c?.agencyId ?? "",
     name: "",
     hireDate: "",
     wmsId: "",
@@ -246,6 +262,8 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
       shiftId: v("shiftId"),
       payCategoryId: v("payCategoryId"),
       holidayRuleId: v("holidayRuleId"),
+      agencyId: v("agencyId"),
+      ...roleKind(v("role")),
     };
     setSnap(next);
     if (next.workEmail.trim() || next.email.trim()) setEmailError(false);
@@ -295,9 +313,11 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
     };
   }, [open]);
 
-  const stepIndex = STEPS.findIndex((s) => s.value === step);
-  const nextStep = STEPS[stepIndex + 1];
-  const prevStep = STEPS[stepIndex - 1];
+  // A sign in only account has no pay and schedule step: it keeps no timecard.
+  const steps = snap.signIn ? STEPS.filter((s) => s.value !== "pay") : STEPS;
+  const stepIndex = steps.findIndex((s) => s.value === step);
+  const nextStep = steps[stepIndex + 1];
+  const prevStep = steps[stepIndex - 1];
   const onLast = !nextStep;
 
   function goTo(target: Step) {
@@ -364,10 +384,13 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
         customRoleId,
         siteId: fd.get("siteId") as string,
         departmentId: fd.get("departmentId") as string,
-        ruleSetId: fd.get("ruleSetId") as string,
-        hireDate: fd.get("hireDate") as string,
+        // A sign in only account's pay and schedule fields are switched off,
+        // so not sent: the server puts it on UNASSIGNED.
+        ruleSetId: (fd.get("ruleSetId") as string | null) || undefined,
+        hireDate: (fd.get("hireDate") as string | null) || undefined,
         supervisorId: fd.get("supervisorId") as string,
-        wmsId: fd.get("wmsId") as string,
+        wmsId: (fd.get("wmsId") as string | null) || undefined,
+        signInOnly: snap.signIn,
         payType: (fd.get("payType") as "HOURLY" | "SALARY" | null) || null,
         payTypeId: (fd.get("payTypeId") as string) || null,
         payRate: payRateRaw ? Number(payRateRaw) : null,
@@ -417,7 +440,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
   const missing = NEEDED.filter((n) => n.missing(snap));
   const client = forClient(snap);
   const stepDone = (s: Step) =>
-    !STEPS.find((x) => x.value === s)?.optional && visited.has(s) && !missing.some((n) => n.step === s);
+    !steps.find((x) => x.value === s)?.optional && visited.has(s) && !missing.some((n) => n.step === s);
 
   const name = snap.name.trim();
   const initials = initialsOf(name);
@@ -470,7 +493,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
             </header>
 
             <ol className={styles.steps} aria-label="Steps">
-              {STEPS.map((s, i) => (
+              {steps.map((s, i) => (
                 <li key={s.value}>
                   <button
                     type="button"
@@ -526,8 +549,14 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                         <Input label="Full Name" name="name" required autoComplete="off" />
                       </Row>
                       <Row>
-                        <Input label="Hire Date" name="hireDate" type="date" required />
-                        <Input label="Badge ID (WMS)" name="wmsId" placeholder="The number on their QR badge" required autoComplete="off" />
+                        <Input label="Hire Date" name="hireDate" type="date" required={!snap.signIn} />
+                        <Input
+                          label="Badge ID (WMS)"
+                          name="wmsId"
+                          placeholder={snap.signIn ? "Not needed for a sign-in only account" : "The number on their QR badge"}
+                          required={!snap.signIn}
+                          autoComplete="off"
+                        />
                       </Row>
                     </Block>
 
@@ -544,7 +573,16 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                       </Row>
                     </Block>
 
-                    <Block label="Placement">
+                    <Block
+                      label="Placement"
+                      note={
+                        snap.needsAgency
+                          ? "A sign-in only login: no badge, timecard or pay. They see everyone in the agency chosen below."
+                          : snap.signIn
+                            ? "A sign-in only login: no badge, timecard or pay, so there is no pay and schedule step."
+                            : undefined
+                      }
+                    >
                       <Row>
                         <SelectField
                           label="Site"
@@ -608,8 +646,8 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                         </SelectField>
                         {/* Agencies past their inactive date stay on file for the
                             people already in them, but are not offered for new hires. */}
-                        <SelectField label="Agency" name="agencyId" defaultValue={copy?.agencyId ?? ""}>
-                          <option value="">None</option>
+                        <SelectField label="Agency" name="agencyId" required={snap.needsAgency} defaultValue={copy?.agencyId ?? ""}>
+                          <option value="">{snap.needsAgency ? "Choose the agency they view" : "None"}</option>
                           {activeAgencies.map((a) => (
                             <option key={a.id} value={a.id}>
                               {a.code} ({a.description})
@@ -622,6 +660,9 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
 
                   {/* ── 2. Pay and schedule ── */}
                   <div data-step="pay" style={panelStyle("pay")}>
+                    {/* Switched off for a sign in only account: a disabled field
+                        is neither checked nor sent. */}
+                    <fieldset disabled={snap.signIn} className={styles.plainFieldset}>
                     <Block label="Time rules" note="How their hours are counted.">
                       <Row>
                         <SelectField label="Rule Set" name="ruleSetId" required defaultValue={copy?.ruleSetId ?? ""}>
@@ -701,6 +742,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                         <Input label="ADP Worker ID" name="adpWorkerId" autoComplete="off" />
                       </Row>
                     </Block>
+                    </fieldset>
                   </div>
 
                   {/* ── 3. Personal details ── */}

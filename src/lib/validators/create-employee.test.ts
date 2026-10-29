@@ -33,6 +33,18 @@ describe("createEmployeeSchema", () => {
     expect(problems({ ...base, shiftId: null })).toEqual(["Choose a shift"]);
   });
 
+  it("still needs a badge, hire date and rule set from anyone with a timecard", () => {
+    expect(problems({ ...base, wmsId: "", hireDate: "", ruleSetId: "" })).toEqual([
+      "Badge ID is required",
+      "Hire date is required",
+      "Choose a rule set",
+    ]);
+  });
+
+  it("asks a sign in only account for none of them (createEmployee checks the role)", () => {
+    expect(problems({ ...base, signInOnly: true, wmsId: "", hireDate: "", ruleSetId: "", shiftId: "", payCategoryId: "", holidayRuleId: "" })).toEqual([]);
+  });
+
   it("does not ask a client badge for them", () => {
     expect(problems({ ...base, wmsId: "CL", shiftId: "", payCategoryId: "", holidayRuleId: "" })).toEqual([]);
     expect(problems({ ...base, wmsId: "CL00003", shiftId: "", payCategoryId: "", holidayRuleId: "" })).toEqual([]);

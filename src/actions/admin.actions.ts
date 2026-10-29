@@ -27,6 +27,7 @@ import { todayKey } from "@/lib/pay-rates";
 import { personTimeZone, timeZoneLabel } from "@/lib/utils/person-time-zone";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { webPunchByDefault } from "@/lib/web-punch";
+import { isSignInOnlyRole, seesTeam, SIGN_IN_ONLY_RULE_SET } from "@/lib/sign-in-only";
 import { hoursToSeconds, secondsToMinutes } from "@/lib/leave-time";
 import { assertBalanceChangeAllowed, assertNotSenior, assertRecordInReach, assertSiteInReach, siteInReach, siteLimit } from "@/lib/rbac/scope";
 
@@ -201,7 +202,7 @@ export const getAdminRefData = withRBAC(
         : Promise.resolve([] as { id: string; user: { name: string | null } }[]),
       db.customRole.findMany({
         where: { tenantId: t, isActive: true },
-        select: { id: true, name: true, isSystem: true, rank: true, liveAttendanceOnly: true },
+        select: { id: true, name: true, isSystem: true, rank: true, liveAttendanceOnly: true, permissions: { select: { resource: true, action: true, scope: true } } },
         orderBy: { rank: "asc" },
       }),
       db.shift.findMany({
@@ -242,7 +243,14 @@ export const getAdminRefData = withRBAC(
     // the forms leave it out for anyone else, unless the person edited has it.
     const me = await currentIdentity();
     const givesLimited = !!me && givesLiveAttendanceRoles(me);
-    const roles = customRoles.map((r) => ({ ...r, givable: !r.liveAttendanceOnly || givesLimited }));
+    // Whether each role makes a sign in only account (no timecard), and whether
+    // that account views a team (an agency viewer, who needs its agency).
+    const roles = customRoles.map(({ permissions, ...r }) => ({
+      ...r,
+      givable: !r.liveAttendanceOnly || givesLimited,
+      signInOnly: isSignInOnlyRole({ isSystem: r.isSystem, permissions }),
+      seesTeam: seesTeam({ permissions }),
+    }));
     return {
       sites, departments, ruleSets, employees, customRoles: roles, shifts, holidayRules, payCategories, payTypes, jobTitles,
       // The default markup as a plain number: a Decimal does not cross to the browser.
@@ -472,6 +480,30 @@ export const createEmployee = withRBAC(
       roleName = cr?.name ?? null;
     }
 
+    // A sign in only account (sign-in-only.ts): only for a role that cannot
+    // punch, an agency viewer with its agency, and on UNASSIGNED with nothing
+    // that would make a timecard.
+    let signInRuleSetId: string | null = null;
+    if (parsed.signInOnly) {
+      const role = resolvedCustomRoleId
+        ? await db.customRole.findFirst({
+            where: { id: resolvedCustomRoleId, tenantId },
+            select: { isSystem: true, permissions: { select: { resource: true, action: true, scope: true } } },
+          })
+        : null;
+      if (!role || !isSignInOnlyRole(role)) {
+        throw new Error("Only a role that cannot punch, such as Agency (View Only) or Loss Prevention, is a sign-in only account. Choose that role, or fill in the pay and schedule step.");
+      }
+      if (seesTeam(role) && !parsed.agencyId) throw new Error("Choose the agency this login views.");
+      const unassigned = await db.ruleSet.findFirst({ where: { tenantId, name: SIGN_IN_ONLY_RULE_SET }, select: { id: true } });
+      if (!unassigned) throw new Error(`Sign-in only accounts go on the rule set named ${SIGN_IN_ONLY_RULE_SET}, and this company has none. Add it in Rules Setup with no overtime, then try again.`);
+      signInRuleSetId = unassigned.id;
+    }
+    const ruleSetId = signInRuleSetId ?? parsed.ruleSetId;
+    if (!ruleSetId) throw new Error("Choose a rule set");
+    // A login with no timecard starts the day it is made.
+    const hireDate = parsed.hireDate ?? new Date().toISOString().slice(0, 10);
+
     // "CL" as the Badge ID asks for the next client badge, issued inside the
     // transaction below (client-badge.ts). "CL" as the employee code too means
     // the code is that badge.
@@ -534,23 +566,27 @@ export const createEmployee = withRBAC(
           webPunchEnabled: webPunchByDefault(resolvedRole),
           siteId: parsed.siteId,
           departmentId: parsed.departmentId,
-          ruleSetId: parsed.ruleSetId,
-          hireDate: calendarDay(parsed.hireDate),
+          ruleSetId,
+          hireDate: calendarDay(hireDate),
           supervisorId: parsed.supervisorId ?? null,
           wmsId,
-          payType: parsed.payType ?? null,
-          payRate: parsed.payRate ?? null,
-          ...(parsed.payRate
-            ? { payRates: { create: { effectiveDate: new Date(`${parsed.hireDate}T00:00:00.000Z`), rate1: parsed.payRate, createdById: actorId || null } } }
-            : {}),
+          ...(signInRuleSetId
+            ? { payType: null, payRate: null }
+            : {
+                payType: parsed.payType ?? null,
+                payRate: parsed.payRate ?? null,
+                ...(parsed.payRate
+                  ? { payRates: { create: { effectiveDate: new Date(`${hireDate}T00:00:00.000Z`), rate1: parsed.payRate, createdById: actorId || null } } }
+                  : {}),
+              }),
           jobTitle: parsed.jobTitle ?? null,
           jobTitleId: parsed.jobTitleId ?? null,
           agencyId: parsed.agencyId ?? null,
-          adpWorkerId: parsed.adpWorkerId ?? null,
-          shiftId: parsed.shiftId ?? null,
-          holidayRuleId: parsed.holidayRuleId ?? null,
-          payCategoryId: parsed.payCategoryId ?? null,
-          payTypeId: parsed.payTypeId ?? null,
+          adpWorkerId: signInRuleSetId ? null : parsed.adpWorkerId ?? null,
+          shiftId: signInRuleSetId ? null : parsed.shiftId ?? null,
+          holidayRuleId: signInRuleSetId ? null : parsed.holidayRuleId ?? null,
+          payCategoryId: signInRuleSetId ? null : parsed.payCategoryId ?? null,
+          payTypeId: signInRuleSetId ? null : parsed.payTypeId ?? null,
           ...encPii,
         },
       });
@@ -567,6 +603,7 @@ export const createEmployee = withRBAC(
           employeeCode: employee.employeeCode,
           role: roleName ?? resolvedRole,
           ...(issuing && { clientBadge: employee.wmsId }),
+          ...(signInRuleSetId && { signInOnly: true }),
         },
       },
     });
