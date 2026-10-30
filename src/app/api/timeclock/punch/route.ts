@@ -14,6 +14,7 @@ import { tabletTimeZone } from "@/lib/utils/tablet-time-zone";
 import type { Prisma, PunchType, PunchState } from "@prisma/client";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { CLIENT_TIME_CLOCK_REJECTION, isClientBadge } from "@/lib/utils/client-badge";
+import { WMS_TERMINATION_ENDS_EMPLOYMENT, employmentEnded, madeActiveAt } from "@/lib/presence/employment";
 
 function unauthorized() {
   return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
@@ -200,6 +201,29 @@ export async function POST(req: NextRequest) {
 
   if (!employee.isActive) {
     await settle("PUNCH_REJECTED", { rejectionReason: "Employee is inactive" });
+    return NextResponse.json(
+      { success: false, error: "Employee is inactive" },
+      { status: 400 }
+    );
+  }
+
+  // Ended all the same, though still Active here: a termination date nothing
+  // since undoes, or terminated in WMS (employment.ts, the gate's own rule).
+  // Until 2026-10-30 a time clock refused Inactive only, so someone the gate
+  // turned away could still clock in. Refused in the inactive answer's exact
+  // words, which every tablet already handles: build 167 shows "Employment
+  // ended" with its alarm, 159 to 166 show the punch as not recorded. The
+  // reason kept on the scan says which system ended it. Decides this punch
+  // only; isActive and the timecard are left as they are.
+  const punchDay = new Intl.DateTimeFormat("en-CA", { timeZone: scanZone }).format(punchTime);
+  const madeActive = (await madeActiveAt([employee])).get(employee.id) ?? null;
+  if (employmentEnded(employee, punchDay, madeActive, WMS_TERMINATION_ENDS_EMPLOYMENT)) {
+    const byCloudTime = employmentEnded(employee, punchDay, madeActive, false);
+    await settle("PUNCH_REJECTED", {
+      rejectionReason: byCloudTime
+        ? "Employee is inactive (termination date has passed)"
+        : "Employee is inactive (terminated in WMS)",
+    });
     return NextResponse.json(
       { success: false, error: "Employee is inactive" },
       { status: 400 }
