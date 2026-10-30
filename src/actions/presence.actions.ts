@@ -307,6 +307,7 @@ export const addToTodaysSchedule = withRBAC(
           terminatedAt: true,
           hireDate: true,
           adjustedHireDate: true,
+          wmsActive: true,
           timeZone: true,
           site: { select: { timezone: true } },
         },

@@ -258,6 +258,7 @@ export async function getSiteDay(
           terminatedAt: true,
           hireDate: true,
           adjustedHireDate: true,
+          wmsActive: true,
           wmsName: true,
           user: { select: { name: true } },
           jobTitle: true,

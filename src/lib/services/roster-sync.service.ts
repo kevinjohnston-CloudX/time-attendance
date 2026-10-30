@@ -26,6 +26,11 @@ import { SyncTally } from "@/lib/services/sync-run.service";
  * authority, so a disagreement is reported and left for a person. Flip
  * APPLY_ACTIVE_STATE once the feed has been trusted for a few weeks.
  *
+ * <p>What WMS says is kept beside it instead, in employees.wmsActive, for the
+ * gate alone: someone WMS has terminated is turned away at security even
+ * while CloudTime still has them Active (src/lib/presence/employment.ts).
+ * Nothing else reads it, so the time clock and payroll are as they were.
+ *
  * <p><b>Why this reads everything up front.</b> `framewrk.users` returns about
  * 18,000 rows and CloudTime has a few hundred employees, so the overwhelming
  * majority of a batch matches nothing. An earlier version issued two or three
@@ -150,6 +155,7 @@ export async function applyRosterBatch(
       barcodeOverride: true,
       isActive: true,
       wmsName: true,
+      wmsActive: true,
     },
   });
 
@@ -208,6 +214,12 @@ export async function applyRosterBatch(
   const resolvedEmpIds: string[] = [];
   let ignoredJunk = 0;
   let unmatchedUnseen = 0;
+  /**
+   * What WMS says of each person in this batch: employed if any of their rows
+   * says so. Only a person every row calls terminated is recorded as such, so
+   * a stale duplicate row can never turn somebody away at the gate.
+   */
+  const wmsSays = new Map<string, boolean>();
 
   for (const row of rows) {
     const empId = (row.empId ?? "").trim();
@@ -250,6 +262,12 @@ export async function applyRosterBatch(
         `Not in CloudTime yet. ${failedScans} ${failedScans === 1 ? "scan was" : "scans were"} already refused, so this person is held for review`,
       );
       continue;
+    }
+
+    // Before anything below can skip the row: a badge clash says nothing
+    // about whether the person is still employed.
+    if (typeof row.isActive === "boolean") {
+      wmsSays.set(employee.id, (wmsSays.get(employee.id) ?? false) || row.isActive);
     }
 
     const changes: Record<string, unknown> = {};
@@ -339,6 +357,29 @@ export async function applyRosterBatch(
   if (newBadges.length) {
     await db.employeeBadge.createMany({ data: newBadges, skipDuplicates: true });
     tally.note("BADGES_ADDED", "-", `${newBadges.length} additional card(s) recorded`);
+  }
+
+  // WMS's view of who is employed, written only where it changed: two
+  // statements for the whole batch, normally none.
+  const byId = new Map(employees.map((e) => [e.id, e]));
+  const nowEmployed: string[] = [];
+  const nowTerminated: string[] = [];
+  for (const [id, active] of wmsSays) {
+    if (byId.get(id)?.wmsActive === active) continue;
+    (active ? nowEmployed : nowTerminated).push(id);
+  }
+  if (nowEmployed.length) {
+    await db.employee.updateMany({ where: { tenantId, id: { in: nowEmployed } }, data: { wmsActive: true } });
+  }
+  if (nowTerminated.length) {
+    await db.employee.updateMany({ where: { tenantId, id: { in: nowTerminated } }, data: { wmsActive: false } });
+  }
+  if (nowEmployed.length || nowTerminated.length) {
+    tally.note(
+      "WMS_STATE",
+      "-",
+      `WMS status recorded: ${nowTerminated.length} terminated, ${nowEmployed.length} employed`,
+    );
   }
 
   // Anyone who was staged as missing and now exists stops being pending —

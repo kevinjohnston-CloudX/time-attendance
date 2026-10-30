@@ -172,9 +172,19 @@ const ROSTER_SQL = `
            ws.terminated        AS "terminated",
            d.description        AS "departmentName",
            sw.shiftdescription  AS "shiftDescription",
+           -- A record that still employs the person is read first. WMS often
+           -- enters a returning person again under the same number instead of
+           -- re-enabling them, leaving the old record terminated beside the new
+           -- one: 6 of the 10 people HR kept on 2026-10-30, one of them with six
+           -- records. Reading the oldest copy reported people who work every
+           -- day as terminated, which the gate now acts on. Among records in the
+           -- same state the pick is as before, so nobody else's row changes.
            ROW_NUMBER() OVER (
              PARTITION BY u.empid
-             ORDER BY wu.userid, ws.shiftid, u.usersid
+             ORDER BY CASE WHEN ws.terminated = 0 THEN 0
+                           WHEN ws.terminated IS NULL THEN 1
+                           ELSE 2 END,
+                      wu.userid, ws.shiftid, u.usersid
            ) AS rn
     FROM framewrk.users u
     JOIN framewrk.contact c       ON c.contactid = u.contactid
