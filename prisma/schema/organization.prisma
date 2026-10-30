@@ -145,9 +145,9 @@ model Employee {
   /// sync has seen them; anything showing it falls back to the legal name.
   wmsName      String?
   /// Whether WMS (Oracle) still employs this person, as of the last roster
-  /// sync. Kept beside isActive, never copied into it: the time clock, the
-  /// timecards and payroll go by isActive alone. Only the gate reads this, to
-  /// turn away someone WMS has terminated (src/lib/presence/employment.ts).
+  /// sync. Kept beside isActive, never copied into it: timecards and payroll
+  /// go by isActive alone. The gate and the time clock read this to turn away
+  /// someone WMS has terminated (src/lib/presence/employment.ts).
   /// Null until the sync has seen them, which counts as employed.
   wmsActive    Boolean?
 

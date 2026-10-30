@@ -26,10 +26,10 @@ import { SyncTally } from "@/lib/services/sync-run.service";
  * authority, so a disagreement is reported and left for a person. Flip
  * APPLY_ACTIVE_STATE once the feed has been trusted for a few weeks.
  *
- * <p>What WMS says is kept beside it instead, in employees.wmsActive, for the
- * gate alone: someone WMS has terminated is turned away at security even
- * while CloudTime still has them Active (src/lib/presence/employment.ts).
- * Nothing else reads it, so the time clock and payroll are as they were.
+ * <p>What WMS says is kept beside it instead, in employees.wmsActive: someone
+ * WMS has terminated is turned away at security and refused at the time clock
+ * even while CloudTime still has them Active (src/lib/presence/employment.ts).
+ * Timecards and payroll still go by isActive.
  *
  * <p><b>Why this reads everything up front.</b> `framewrk.users` returns about
  * 18,000 rows and CloudTime has a few hundred employees, so the overwhelming

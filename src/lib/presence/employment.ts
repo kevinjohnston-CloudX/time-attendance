@@ -31,13 +31,15 @@ import { db } from "@/lib/db";
  * above, or WMS by the roster sync's employees.wmsActive (false = terminated
  * there, null = not seen, which counts as employed). WMS terminations often
  * never reach CloudTime, and HR confirmed on 2026-10-30 that most of the
- * people in that state should indeed be stopped. Nothing else asks: the time
- * clock, timecards and payroll go by isActive, so a WMS record that is wrong
- * costs a person the door, never their pay.
+ * people in that state should indeed be stopped. The same day the time clock
+ * was made to refuse their punches too (punch route, Cristian's decision), so
+ * a WMS record that is wrong now stops a person clocking in until WMS is
+ * corrected. Timecards and payroll still go by isActive.
  */
 
 /**
- * Whether the gate and loss prevention's screens honour a WMS termination.
+ * Whether a WMS termination ends employment: at the gate, on loss prevention's
+ * screens, and for a time clock punch.
  * On since 2026-10-30, once the ten Active people HR said to keep had been
  * corrected in WMS and the bridge read a returning person's current record
  * rather than their oldest one. Turning it off puts the gate back on
