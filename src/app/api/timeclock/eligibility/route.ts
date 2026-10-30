@@ -5,7 +5,7 @@ import { shownNameOrNull } from "@/lib/utils/shown-name";
 import { recordGateRefusal } from "@/lib/presence/gate-refusals.service";
 import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
-import { employmentEnded, madeActiveAt } from "@/lib/presence/employment";
+import { WMS_TERMINATION_ENDS_EMPLOYMENT, employmentEnded, madeActiveAt } from "@/lib/presence/employment";
 import { CLIENT_DEPARTMENT_SHOWN, isClientBadge } from "@/lib/utils/client-badge";
 
 /**
@@ -102,6 +102,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       terminatedAt: true,
       hireDate: true,
       adjustedHireDate: true,
+      wmsActive: true,
       siteId: true,
       wmsName: true,
       user: { select: { name: true } },
@@ -171,12 +172,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   // Status decides; a termination date only while nothing since says they came
   // back (employment.ts). Someone made Active again is let in even when the
-  // old date was never cleared.
-  const terminated = employmentEnded(
-    employee,
-    today,
-    (await madeActiveAt([employee])).get(employee.id) ?? null,
-  );
+  // old date was never cleared. At a gate, a WMS termination ends it too; a
+  // time clock asking keeps CloudTime's answer alone, as do builds that do not
+  // say which they are.
+  const madeActive = (await madeActiveAt([employee])).get(employee.id) ?? null;
+  const honourWms = WMS_TERMINATION_ENDS_EMPLOYMENT && from.stream === "SECURITY";
+  const terminated = employmentEnded(employee, today, madeActive, honourWms);
+  const terminatedBy = !terminated
+    ? undefined
+    : employmentEnded(employee, today, madeActive, false)
+      ? "CLOUDTIME"
+      : "WMS";
 
   // A client's badge (client-badge.ts) needs no schedule: a visitor has no
   // shift in Oracle to have one from. Termination, presence and the photo are
@@ -211,6 +217,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // The tablet is told WORKDAY all the same; this is for the log only.
     standIn: scheduleDay?.source === "STAND_IN" || undefined,
     terminated: terminated || undefined,
+    terminatedBy,
     ...from,
     noting,
     ms: Date.now() - started,

@@ -2,10 +2,43 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/db", () => ({ db: {} }));
 
-import { employmentEnded, recordsMadeActive } from "./employment";
+import { WMS_TERMINATION_ENDS_EMPLOYMENT, employmentEnded, recordsMadeActive } from "./employment";
 
 const d = (iso: string) => new Date(iso);
 const TODAY = "2026-10-13";
+
+describe("a WMS termination, at the gate", () => {
+  const wmsTerminated = { isActive: true, terminatedAt: null, wmsActive: false };
+
+  it("ends employment when the gate honours WMS (Elina Uceta: Active here, terminated in WMS)", () => {
+    expect(employmentEnded(wmsTerminated, TODAY, null, true)).toBe(true);
+  });
+
+  it("is ignored where WMS is not honoured: the time clock keeps CloudTime's answer", () => {
+    expect(employmentEnded(wmsTerminated, TODAY, null, false)).toBe(false);
+  });
+
+  it("is not undone by a reactivation in CloudTime: either system ending it is enough", () => {
+    expect(employmentEnded(wmsTerminated, TODAY, d("2026-10-12T14:40:00Z"), true)).toBe(true);
+  });
+
+  it("not seen by the sync yet, or employed in WMS: CloudTime alone decides", () => {
+    expect(employmentEnded({ isActive: true, terminatedAt: null, wmsActive: null }, TODAY, null, true)).toBe(false);
+    expect(employmentEnded({ isActive: true, terminatedAt: null }, TODAY, null, true)).toBe(false);
+    expect(employmentEnded({ isActive: true, terminatedAt: null, wmsActive: true }, TODAY, null, true)).toBe(false);
+  });
+
+  it("employed in WMS does not bring back someone CloudTime has ended", () => {
+    expect(employmentEnded({ isActive: false, terminatedAt: null, wmsActive: true }, TODAY, null, true)).toBe(true);
+    expect(
+      employmentEnded({ isActive: true, terminatedAt: d("2023-01-04T00:00:00Z"), wmsActive: true }, TODAY, null, true),
+    ).toBe(true);
+  });
+
+  it("follows the switch when a caller does not say", () => {
+    expect(employmentEnded(wmsTerminated, TODAY, null)).toBe(WMS_TERMINATION_ENDS_EMPLOYMENT);
+  });
+});
 
 describe("employmentEnded", () => {
   it("inactive is ended, with or without a date", () => {

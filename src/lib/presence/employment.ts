@@ -25,13 +25,33 @@ import { db } from "@/lib/db";
  *
  * The last case is what still stops the people who left long ago but whose
  * record was never set Inactive: nothing since their date says they came back.
+ *
+ * <p><b>And WMS's word, at security only.</b> A person is turned away at the
+ * gate when either system has ended their employment: CloudTime by the rules
+ * above, or WMS by the roster sync's employees.wmsActive (false = terminated
+ * there, null = not seen, which counts as employed). WMS terminations often
+ * never reach CloudTime, and HR confirmed on 2026-10-30 that most of the
+ * people in that state should indeed be stopped. Nothing else asks: the time
+ * clock, timecards and payroll go by isActive, so a WMS record that is wrong
+ * costs a person the door, never their pay.
  */
+
+/**
+ * Whether the gate and loss prevention's screens honour a WMS termination.
+ * On since 2026-10-30, once the ten Active people HR said to keep had been
+ * corrected in WMS and the bridge read a returning person's current record
+ * rather than their oldest one. Turning it off puts the gate back on
+ * CloudTime's answer alone; nothing is stored differently either way.
+ */
+export const WMS_TERMINATION_ENDS_EMPLOYMENT = true;
 
 export type EmploymentFacts = {
   isActive: boolean;
   terminatedAt: Date | null;
   hireDate?: Date | null;
   adjustedHireDate?: Date | null;
+  /** employees.wmsActive. Read only when honourWms is true. */
+  wmsActive?: boolean | null;
 };
 
 /** The calendar day a stored date stands for. Dates are kept at or near midnight UTC. */
@@ -43,9 +63,17 @@ function dayOf(d: Date): string {
  * @param today the person's own calendar date, YYYY-MM-DD
  * @param madeActiveAt the latest audited change of this person's status to
  *   Active, or null when there is none
+ * @param honourWms whether a WMS termination ends employment too: true for
+ *   the gate and loss prevention, false for anything else
  */
-export function employmentEnded(f: EmploymentFacts, today: string, madeActiveAt: Date | null): boolean {
+export function employmentEnded(
+  f: EmploymentFacts,
+  today: string,
+  madeActiveAt: Date | null,
+  honourWms = WMS_TERMINATION_ENDS_EMPLOYMENT,
+): boolean {
   if (!f.isActive) return true;
+  if (honourWms && f.wmsActive === false) return true;
   if (!f.terminatedAt) return false;
   const lastDay = dayOf(f.terminatedAt);
   if (lastDay >= today) return false;
@@ -92,7 +120,10 @@ export async function madeActiveAt(
 export async function endedAmong(
   people: Array<EmploymentFacts & { id: string }>,
   today: string,
+  honourWms = WMS_TERMINATION_ENDS_EMPLOYMENT,
 ): Promise<Set<string>> {
   const active = await madeActiveAt(people);
-  return new Set(people.filter((p) => employmentEnded(p, today, active.get(p.id) ?? null)).map((p) => p.id));
+  return new Set(
+    people.filter((p) => employmentEnded(p, today, active.get(p.id) ?? null, honourWms)).map((p) => p.id),
+  );
 }

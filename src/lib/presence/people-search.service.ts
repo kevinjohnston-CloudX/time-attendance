@@ -62,6 +62,7 @@ const SELECT = {
   terminatedAt: true,
   hireDate: true,
   adjustedHireDate: true,
+  wmsActive: true,
   wmsName: true,
   user: { select: { name: true } },
   department: { select: { name: true } },
