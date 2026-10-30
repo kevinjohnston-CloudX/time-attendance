@@ -69,4 +69,21 @@ describe("New Employee", () => {
     // The pay and schedule fields are switched off.
     expect((form.querySelector('select[name="ruleSetId"]') as HTMLSelectElement).closest("fieldset")!.disabled).toBe(true);
   });
+
+  it("switches to Visitor and back with the department picked first, without React's controlled-input warning", () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    render(<CreateEmployeeForm {...props} />);
+    fireEvent.click(screen.getByText("Add Employee"));
+    fireEvent.change(field("Site"), { target: { value: "s1" } });
+    fireEvent.change(field("Department"), { target: { value: "d1" } });
+    const role = field("Role") as HTMLSelectElement;
+    for (const value of ["custom:visitor", "EMPLOYEE", "custom:visitor"]) {
+      fireEvent.change(role, { target: { value } });
+      fireEvent.change(role.form!, {});
+    }
+    const warned = errors.mock.calls.some((c) => /uncontrolled input to be controlled|controlled input to be uncontrolled/.test(String(c[0])));
+    errors.mockRestore();
+    expect(warned).toBe(false);
+    expect(field("Hire Date").disabled).toBe(true);
+  });
 });

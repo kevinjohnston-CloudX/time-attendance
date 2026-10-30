@@ -633,19 +633,72 @@ export const createEmployee = withRBAC(
   }
 );
 
+/**
+ * A visitor keeps only what New Employee gives one (sign-in-only.ts): the
+ * Visitors department, UNASSIGNED, a visitor badge, and no email, supervisor,
+ * job title, agency, schedule or pay. A record moved onto the Visitor role
+ * (set up on the wrong role first), or edited while on it, is saved that way
+ * whatever the form sent. Changes `input` in place.
+ */
+async function keepVisitorShape(tenantId: string, input: ReturnType<typeof updateEmployeeSchema.parse>) {
+  const current = await db.employee.findFirst({
+    where: { id: input.employeeId, tenantId },
+    select: { customRoleId: true, wmsId: true },
+  });
+  if (!current) return;
+  const roleId = input.customRoleId !== undefined ? input.customRoleId : current.customRoleId;
+  if (!roleId) return;
+  const role = await db.customRole.findFirst({
+    where: { id: roleId, tenantId },
+    select: { isSystem: true, permissions: { select: { resource: true, action: true, scope: true } } },
+  });
+  if (!role || !isVisitorRole(role)) return;
+
+  const [dept, unassigned] = await Promise.all([
+    db.department.findFirst({ where: { tenantId, name: VISITOR_DEPARTMENT, isActive: true }, select: { id: true } }),
+    db.ruleSet.findFirst({ where: { tenantId, name: SIGN_IN_ONLY_RULE_SET }, select: { id: true } }),
+  ]);
+  if (!dept) throw new Error(`Visitors are filed in the department named ${VISITOR_DEPARTMENT}, and this company has none. Add it, then try again.`);
+  if (!unassigned) throw new Error(`Visitors go on the rule set named ${SIGN_IN_ONLY_RULE_SET}, and this company has none. Add it in Rules Setup with no overtime, then try again.`);
+
+  // "CL" asks the save for the next visitor badge, unless they hold one
+  // already. The old badge's barcode goes with it.
+  const badge = input.wmsId !== undefined ? input.wmsId : current.wmsId;
+  const needsBadge = !isClientBadge(badge) && !asksForClientBadge(badge);
+  Object.assign(input, {
+    departmentId: dept.id,
+    ruleSetId: unassigned.id,
+    email: "",
+    workEmail: "",
+    supervisorId: null,
+    jobTitleId: null,
+    agencyId: null,
+    shiftId: null,
+    holidayRuleId: null,
+    payCategoryId: null,
+    payTypeId: null,
+    adpWorkerId: null,
+    payType: null,
+    payRate: null,
+    ...(needsBadge && { wmsId: "CL", barcode: "" }),
+  });
+}
+
 export const updateEmployee = withRBAC(
   "EMPLOYEE_MANAGE",
   async (actor, input: UpdateEmployeeInput) => {
     const { employeeId: actorId, tenantId } = actor;
+    if (!tenantId) throw new Error("Tenant context required");
+    const parsed = updateEmployeeSchema.parse(input);
+    await keepVisitorShape(tenantId, parsed);
     const {
       employeeId, name, email, workEmail, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, shiftId, holidayRuleId, payCategoryId, payTypeId, isActive, onLeave, webPunchEnabled, wmsId, barcode, adpWorkerId,
       adjustedHireDate, jobTitle, jobTitleId, agencyId, terminationReason, terminatedAt: terminatedAtInput, timeZone, payType, payRate, chargeRate, holidayRate, overtimeRate,
       phone, phone2, gender, maritalStatus,
       emergencyContact, emergencyPhone, emergencyRelationship,
       address1, address2, city, state, country, zipCode, preferredLanguage,
-    } = updateEmployeeSchema.parse(input);
+    } = parsed;
 
-    if (!tenantId) throw new Error("Tenant context required");
     await assertRecordInReach(actor, employeeId);
     const current = await db.employee.findFirst({
       where: { id: employeeId, tenantId },

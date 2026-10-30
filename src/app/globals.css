@@ -668,6 +668,15 @@ textarea {
   border-color: var(--ring);
   box-shadow: var(--focus-ring);
 }
+/* Switched off, by its own prop or by a disabled fieldset around it: greyed,
+   so it reads as not editable. The fields draw their colours inline, hence
+   !important. A toolbar's selects keep their own look. */
+select.ta-field:disabled:not(.ta-tools *),
+.wms-input:has(> input:disabled, > textarea:disabled) {
+  background: var(--fill-disabled) !important;
+  color: var(--text-disabled) !important;
+  cursor: not-allowed !important;
+}
 
 /* Table rows. Hover only — the design system's tables are explicitly
    zebra-free, so the row under the cursor is the only one that lifts.

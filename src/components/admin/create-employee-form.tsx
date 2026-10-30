@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition, type ReactNode, type SelectHTMLAttributes } from "react";
+import { Fragment, useEffect, useRef, useState, useTransition, type ReactNode, type SelectHTMLAttributes } from "react";
 import { useRouter } from "next/navigation";
 import { format, parseISO } from "date-fns";
 import { createEmployee, getSupervisorOptions } from "@/actions/admin.actions";
@@ -574,13 +574,15 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                           // A visitor: today, and the next visitor badge, filled in
                           // and not editable. "CL" asks the save for that badge
                           // (client-badge.ts); the number shown is its preview.
-                          <>
+                          // Keyed apart from the editable pair below: the same
+                          // field in both places would be held one way, then the other.
+                          <Fragment key="visitor">
                             <Input label="Hire Date" type="date" value={todayIso()} disabled readOnly />
                             <input type="hidden" name="wmsId" value="CL" />
                             <Input label="Badge ID (WMS)" value={nextVisitorBadge ?? "CL"} disabled readOnly />
-                          </>
+                          </Fragment>
                         ) : (
-                          <>
+                          <Fragment key="person">
                             <Input label="Hire Date" name="hireDate" type="date" required={!snap.signIn} />
                             <Input
                               label="Badge ID (WMS)"
@@ -589,7 +591,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                               required={!snap.signIn}
                               autoComplete="off"
                             />
-                          </>
+                          </Fragment>
                         )}
                       </Row>
                     </Block>
