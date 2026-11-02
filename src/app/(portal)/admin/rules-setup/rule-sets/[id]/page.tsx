@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { userHasPermission } from "@/lib/rbac/check-permission";
+import { manageOrView } from "@/lib/rbac/check-permission";
+import { ViewOnly } from "@/components/admin/setup/view-only";
 import { getRuleSet } from "@/actions/admin.actions";
 import { getAllPayCodes } from "@/actions/pay-code.actions";
 import { RuleSetEditor } from "@/components/admin/rule-set-editor";
@@ -12,7 +13,9 @@ import { RuleSetEditor } from "@/components/admin/rule-set-editor";
 export default async function RuleSetPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!(await userHasPermission(session.user, "RULES_MANAGE"))) redirect("/dashboard");
+  // Rule Sets on Read opens it to look at, with nothing to change.
+  const access = await manageOrView(session.user, "RULES_MANAGE", "RULES_VIEW");
+  if (!access) redirect("/dashboard");
 
   const { id } = await params;
   const [ruleSet, payCodes] = await Promise.all([getRuleSet({ ruleSetId: id }), getAllPayCodes()]);
@@ -20,5 +23,9 @@ export default async function RuleSetPage({ params }: { params: Promise<{ id: st
 
   // Dates and JSON columns cross to the client as plain values.
   const plain = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
-  return <RuleSetEditor ruleSet={plain(ruleSet.data)} payCodes={plain(payCodes.success ? payCodes.data : [])} />;
+  return (
+    <ViewOnly on={access === "view"}>
+      <RuleSetEditor ruleSet={plain(ruleSet.data)} payCodes={plain(payCodes.success ? payCodes.data : [])} />
+    </ViewOnly>
+  );
 }

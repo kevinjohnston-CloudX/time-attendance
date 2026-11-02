@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { findScanDiscrepancies } from "@/lib/services/scan-event.service";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 
 /**
  * Ad-hoc view of tablet-vs-timecard discrepancies, for IT and payroll to query
@@ -33,8 +34,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "No employee record" }, { status: 403 });
   }
 
+  // Supervisors and up, or a custom role that approves timesheets (Payroll Admin NL).
   const allowed = ["SUPERVISOR", "PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN", "SUPER_ADMIN"];
-  if (!allowed.includes(employee.role)) {
+  if (!allowed.includes(employee.role) && !(await userHasPermission(session.user, "TIMESHEET_APPROVE_TEAM"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

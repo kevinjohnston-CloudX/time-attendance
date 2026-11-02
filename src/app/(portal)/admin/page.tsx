@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { hasPermission } from "@/lib/rbac/permissions";
-import { getEffectiveRole } from "@/lib/rbac/check-permission";
+import type { Permission } from "@/lib/rbac/permissions";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import {
   IdCard,
   Network,
@@ -76,14 +76,23 @@ export default async function AdminPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const effectiveRole = await getEffectiveRole(session.user);
+  // Read from the person's own role, a custom one included, as the menu is.
+  // The built-in role alone listed nothing for someone on a custom role.
+  const permissions = [...new Set(ADMIN_GROUPS.flatMap((g) => g.items.flatMap((i) => i.permission)))];
+  const granted = new Set<string>();
+  await Promise.all(
+    permissions.map(async (p) => {
+      if (await userHasPermission(session.user, p as Permission)) granted.add(p);
+    }),
+  );
+  const may = (p: string | string[]) => (Array.isArray(p) ? p : [p]).some((one) => granted.has(one));
 
   const groups: HubGroup[] = ADMIN_GROUPS.map((g) => ({
     label: g.label,
     hint: g.hint,
     icon: GROUP_ICONS[g.label] ?? <Settings className="h-[18px] w-[18px]" />,
     items: g.items
-      .filter((i) => hasPermission(effectiveRole, i.permission as Parameters<typeof hasPermission>[1]))
+      .filter((i) => may(i.permission))
       .map((i) => ({
         label: i.label,
         detail: i.detail,

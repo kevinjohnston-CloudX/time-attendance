@@ -6,6 +6,7 @@ import { useRouter } from "@/components/layout/navigation-progress";
 import { CalendarCheck, Plus } from "lucide-react";
 import { Button, EmptyState, LinkButton, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
 import { AreaPanel, FactTiles, StatusBadge, countLine, hoursText, matches, useFacts, useStatusView } from "./setup/setup-ui";
+import { useViewOnly } from "./setup/view-only";
 import type { HolidayRuleRow } from "./holiday-rule-editor";
 
 /**
@@ -52,7 +53,9 @@ export function HolidayRulesManager({ rules, payCodes = [] }: { rules: HolidayRu
   const shown = facts.kept.filter((r) => matches(query, r.name, r.number));
   const payCode = new Map(payCodes.map((p) => [p.id, p]));
 
-  const addButton = (
+  // Looking only (view-only.tsx): nothing to add.
+  const viewOnly = useViewOnly();
+  const addButton = viewOnly ? undefined : (
     <LinkButton href="/admin/rules-setup/holiday-rules/new" hierarchy="primary" leadingIcon={<Plus className="h-4 w-4" />}>
       Add holiday rule
     </LinkButton>

@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { userHasPermission } from "@/lib/rbac/check-permission";
+import { manageOrView } from "@/lib/rbac/check-permission";
+import { ViewOnly } from "@/components/admin/setup/view-only";
 import { getHolidayRule } from "@/actions/holiday-rule.actions";
 import { getAllPayCodes } from "@/actions/pay-code.actions";
 import { HolidayRuleEditor } from "@/components/admin/holiday-rule-editor";
@@ -12,7 +13,9 @@ import { HolidayRuleEditor } from "@/components/admin/holiday-rule-editor";
 export default async function HolidayRulePage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  if (!(await userHasPermission(session.user, "RULES_MANAGE"))) redirect("/dashboard");
+  // Rule Sets on Read opens it to look at, with nothing to change.
+  const access = await manageOrView(session.user, "RULES_MANAGE", "RULES_VIEW");
+  if (!access) redirect("/dashboard");
 
   const { id } = await params;
   const [rule, payCodes] = await Promise.all([getHolidayRule({ ruleId: id }), getAllPayCodes()]);
@@ -20,5 +23,9 @@ export default async function HolidayRulePage({ params }: { params: Promise<{ id
 
   // Dates, decimals and JSON columns cross to the client as plain values.
   const plain = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
-  return <HolidayRuleEditor rule={plain(rule.data)} payCodes={plain(payCodes.success ? payCodes.data : [])} />;
+  return (
+    <ViewOnly on={access === "view"}>
+      <HolidayRuleEditor rule={plain(rule.data)} payCodes={plain(payCodes.success ? payCodes.data : [])} />
+    </ViewOnly>
+  );
 }

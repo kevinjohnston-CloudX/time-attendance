@@ -20,6 +20,7 @@ import {
   useStatusView,
   useOpenFromLink,
 } from "./setup/setup-ui";
+import { useViewOnly } from "./setup/view-only";
 import { timeZoneLabel, timeZoneOptions } from "./setup/time-zones";
 import { LANGUAGES, languageName } from "@/lib/languages";
 
@@ -71,7 +72,9 @@ export function SitesManager({ sites }: { sites: Site[] }) {
     });
   }
 
-  const addButton = (
+  // Looking only (view-only.tsx): nothing to add.
+  const viewOnly = useViewOnly();
+  const addButton = viewOnly ? undefined : (
     <Button onClick={() => open("new")} leadingIcon={<Plus className="h-4 w-4" />}>
       Add site
     </Button>

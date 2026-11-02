@@ -7,6 +7,7 @@ import { Plus, SlidersHorizontal } from "lucide-react";
 import type { RuleSet } from "@prisma/client";
 import { Badge, Button, EmptyState, LinkButton, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
 import { AreaPanel, FactTiles, StatusBadge, countLine, hoursText, matches, useFacts, useStatusView, type StatusView } from "./setup/setup-ui";
+import { useViewOnly } from "./setup/view-only";
 import { PAY_FREQUENCIES, type RuleSetRow } from "./rule-set-editor";
 
 /** `?view=` on arrival, which the hub's "1 inactive" link uses; Active otherwise. */
@@ -89,7 +90,9 @@ export function RuleSetsManager({ ruleSets, initialView }: { ruleSets: RuleSetRo
   ]);
   const shown = facts.kept.filter((rs) => matches(query, rs.name, rs.number));
 
-  const addButton = (
+  // Looking only (view-only.tsx): nothing to add.
+  const viewOnly = useViewOnly();
+  const addButton = viewOnly ? undefined : (
     <LinkButton href="/admin/rules-setup/rule-sets/new" hierarchy="primary" leadingIcon={<Plus className="h-4 w-4" />}>
       Add rule set
     </LinkButton>

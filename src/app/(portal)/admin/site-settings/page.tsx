@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { userHasPermission } from "@/lib/rbac/check-permission";
+import { manageOrView, userHasPermission } from "@/lib/rbac/check-permission";
 import { getSites, getDepartments, getLeaveTypesAdmin } from "@/actions/admin.actions";
 import { getHolidays } from "@/actions/holiday.actions";
 import { getAllPayCodes } from "@/actions/pay-code.actions";
@@ -21,13 +21,15 @@ export default async function SiteSettingsPage({
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const [hasSiteManage, hasRulesManage, hasPayPeriodManage] = await Promise.all([
-    userHasPermission(session.user, "SITE_MANAGE"),
-    userHasPermission(session.user, "RULES_MANAGE"),
+  // Sites or Rule Sets on Read opens their areas to look at, with nothing to change.
+  const [siteAccess, rulesAccess, hasPayPeriodManage] = await Promise.all([
+    manageOrView(session.user, "SITE_MANAGE", "SITE_VIEW"),
+    manageOrView(session.user, "RULES_MANAGE", "RULES_VIEW"),
     userHasPermission(session.user, "PAY_PERIOD_MANAGE"),
   ]);
 
-  if (!hasSiteManage && !hasRulesManage && !hasPayPeriodManage) redirect("/admin");
+  if (!siteAccess && !rulesAccess && !hasPayPeriodManage) redirect("/admin");
+  const hasRules = rulesAccess !== null;
 
   const { tab } = (await searchParams) ?? {};
 
@@ -42,12 +44,12 @@ export default async function SiteSettingsPage({
     getLeaveTypesAdmin(),
     getAllPayCodes(),
     getReasonCodes(),
-    hasRulesManage ? getPtoPolicies() : Promise.resolve({ success: true as const, data: [] }),
-    hasRulesManage ? getHolidayRules() : Promise.resolve({ success: true as const, data: [] }),
-    hasRulesManage ? getPayCategories() : Promise.resolve({ success: true as const, data: [] }),
-    hasRulesManage ? getPayTypes() : Promise.resolve({ success: true as const, data: [] }),
-    hasRulesManage ? getJobTitles() : Promise.resolve({ success: true as const, data: [] }),
-    hasRulesManage ? getAgencies() : Promise.resolve({ success: true as const, data: [] }),
+    hasRules ? getPtoPolicies() : Promise.resolve({ success: true as const, data: [] }),
+    hasRules ? getHolidayRules() : Promise.resolve({ success: true as const, data: [] }),
+    hasRules ? getPayCategories() : Promise.resolve({ success: true as const, data: [] }),
+    hasRules ? getPayTypes() : Promise.resolve({ success: true as const, data: [] }),
+    hasRules ? getJobTitles() : Promise.resolve({ success: true as const, data: [] }),
+    hasRules ? getAgencies() : Promise.resolve({ success: true as const, data: [] }),
   ]);
 
   // Serialize Prisma Decimal/Date objects so they cross the server→client boundary as plain values
@@ -70,8 +72,8 @@ export default async function SiteSettingsPage({
       payTypes={serialize(payTypesResult.success ? payTypesResult.data : [])}
       jobTitles={serialize(jobTitlesResult.success ? jobTitlesResult.data : [])}
       agencies={serialize(agenciesResult.success ? agenciesResult.data : [])}
-      hasSiteManage={hasSiteManage}
-      hasRulesManage={hasRulesManage}
+      siteAccess={siteAccess}
+      rulesAccess={rulesAccess}
       hasPayPeriodManage={hasPayPeriodManage}
       initialTab={tab}
     />

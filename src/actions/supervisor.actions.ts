@@ -7,7 +7,7 @@ import { withRBAC } from "@/lib/rbac/guard";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { createCorrectionPunch } from "@/lib/utils/punch-correction";
-import { assertEditable, punchInScope, timesheetInScope } from "@/lib/rbac/scope";
+import { assertEditable, punchInScope, reachesCompany, timesheetInScope } from "@/lib/rbac/scope";
 import { computeRoundedTime } from "@/lib/utils/date";
 import {
   resolveExceptionSchema,
@@ -19,15 +19,16 @@ import {
 } from "@/lib/validators/supervisor.schema";
 import { z } from "zod";
 import { ExceptionType } from "@prisma/client";
-import type { Role } from "@/lib/rbac/roles";
 import { getSubordinateIds } from "@/lib/get-subordinate-ids";
 import { dayRange, readOpenExceptions } from "@/lib/exceptions/read-open-exceptions";
 import type { PunchState, PunchType } from "@prisma/client";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 
-// A super admin sees the whole company too. They only reach these with a
-// company: their own, as their employee record there (see auth.ts).
-const PAYROLL_ROLES: Role[] = ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN", "SUPER_ADMIN"];
+// Payroll, HR and the admins see the whole company, as does a custom role
+// with the company-wide permission (reachesCompany): Payroll Admin NL, made
+// from Payroll Admin, reaches what Payroll Admin does. A super admin only
+// reaches these with a company: their own, as their employee record there
+// (see auth.ts).
 
 /** Pay periods are stored at UTC midnight, so one day is that whole UTC day. */
 
@@ -62,7 +63,7 @@ export const getTeamExceptions = withRBAC(
       payPeriodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     }).parse(input ?? {});
 
-    const isPayroll = PAYROLL_ROLES.includes(role);
+    const isPayroll = await reachesCompany({ employeeId, role, tenantId }, "TIMESHEET_APPROVE_ANY");
     const t = tenantId ?? undefined;
 
     let idFilter: { id?: { in: string[] } } = {};
@@ -96,7 +97,7 @@ export const getExceptionTypeCounts = withRBAC(
       payPeriodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     }).parse(input ?? {});
 
-    const isPayroll = PAYROLL_ROLES.includes(role);
+    const isPayroll = await reachesCompany({ employeeId, role, tenantId }, "TIMESHEET_APPROVE_ANY");
 
     let idFilter: { id?: { in: string[] } } = {};
     if (!isPayroll) {
@@ -141,7 +142,7 @@ export const getExceptionPunches = withRBAC(
   "TIMESHEET_APPROVE_TEAM",
   async ({ employeeId, role, tenantId }, input: unknown) => {
     const { timesheetId } = z.object({ timesheetId: z.string() }).parse(input);
-    const isPayroll = PAYROLL_ROLES.includes(role);
+    const isPayroll = await reachesCompany({ employeeId, role, tenantId }, "TIMESHEET_APPROVE_ANY");
 
     let idFilter: { id?: { in: string[] } } = {};
     if (!isPayroll) {
@@ -329,7 +330,7 @@ export const getTeamLeaveRequests = withRBAC(
       shiftId: z.string().optional(),
     }).parse(input ?? {});
 
-    const isPayroll = PAYROLL_ROLES.includes(role);
+    const isPayroll = await reachesCompany({ employeeId, role, tenantId }, "LEAVE_APPROVE_ANY");
     const t = tenantId ?? undefined;
 
     let employeeFilter;
@@ -386,7 +387,7 @@ export const getTeamHeadcount = withRBAC(
       shiftId: z.string().optional(),
     }).parse(input ?? {});
 
-    const isPayroll = PAYROLL_ROLES.includes(role);
+    const isPayroll = await reachesCompany({ employeeId, role, tenantId }, "LEAVE_APPROVE_ANY");
     const t = tenantId ?? undefined;
 
     let employeeFilter;
@@ -441,7 +442,7 @@ export const getHrPendingLeave = withRBAC(
       shiftId: z.string().optional(),
     }).parse(input ?? {});
 
-    const isPayroll = PAYROLL_ROLES.includes(role);
+    const isPayroll = await reachesCompany({ employeeId, role, tenantId }, "LEAVE_APPROVE_ANY");
     const t = tenantId ?? undefined;
 
     let employeeFilter;
@@ -489,7 +490,7 @@ export const getUpcomingTeamLeave = withRBAC(
       shiftId: z.string().optional(),
     }).parse(input ?? {});
 
-    const isPayroll = PAYROLL_ROLES.includes(role);
+    const isPayroll = await reachesCompany({ employeeId, role, tenantId }, "LEAVE_APPROVE_ANY");
     const t = tenantId ?? undefined;
     const today = new Date();
     today.setHours(0, 0, 0, 0);

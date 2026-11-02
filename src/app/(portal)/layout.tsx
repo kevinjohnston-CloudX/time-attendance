@@ -182,12 +182,9 @@ export default async function PortalLayout({
    * sidebar shows them.
    *
    * <p>Uses `userPermissions`, the same list the sidebar is given, which is
-   * resolved from a custom role where one exists. Worth knowing: the
-   * Administration hub filters with `hasPermission(effectiveRole, …)` instead,
-   * which reads the built-in role only — so for a user on a custom role the
-   * two can disagree about which admin pages to list. That is pre-existing and
-   * I have not changed it; the destination pages enforce their own access
-   * either way.
+   * resolved from a custom role where one exists. The Administration hub
+   * reads the same permissions (admin/page.tsx); the destination pages
+   * enforce their own access either way.
    */
   const can = (permission?: string | string[], href?: string) => {
     if (liveAttendanceOnly) return !!href && LIVE_ATTENDANCE_ONLY_HREFS.includes(href);

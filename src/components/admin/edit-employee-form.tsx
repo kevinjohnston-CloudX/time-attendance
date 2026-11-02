@@ -52,6 +52,7 @@ import { Overlay } from "@/components/ui/overlay";
 import { languageName } from "@/lib/languages";
 import { LanguagePicker } from "@/components/ui/language-picker";
 import { SIGN_IN_ONLY_RULE_SET } from "@/lib/sign-in-only";
+import { ROLE_RANK } from "@/lib/rbac/roles";
 
 /**
  * The employee record. It opens to read: every section shows its values as
@@ -453,8 +454,12 @@ export function EditEmployeeForm({
   // An account on a role limited to Live Attendance gets the same section: its
   // ticked buildings are the ones its Live Attendance can switch between.
   // Read off the role in the form, so picking that role shows it at once.
-  const limitedToLiveAttendance = customRoles.find((r) => r.id === v.customRoleId)?.liveAttendanceOnly ?? false;
-  const showsSiteAccess = employeeIsHrOrSysAdmin || limitedToLiveAttendance;
+  const pickedRole = customRoles.find((r) => r.id === v.customRoleId);
+  const limitedToLiveAttendance = pickedRole?.liveAttendanceOnly ?? false;
+  // A custom role at Payroll Admin's rank or above, such as Payroll Admin NL,
+  // is held to its sites as Payroll Admin is (site-limit.ts).
+  const adminCustomRole = !!pickedRole && !pickedRole.isSystem && pickedRole.rank >= ROLE_RANK.PAYROLL_ADMIN;
+  const showsSiteAccess = employeeIsHrOrSysAdmin || limitedToLiveAttendance || adminCustomRole;
 
   const changed = (Object.keys(saved) as Key[]).filter((k) => draft[k] !== saved[k]);
   const accessChanged =

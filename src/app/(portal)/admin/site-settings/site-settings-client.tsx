@@ -13,6 +13,7 @@ import { PayCategoriesManager } from "@/components/admin/pay-categories-manager"
 import { PayTypesManager } from "@/components/admin/pay-types-manager";
 import { JobTitlesManager } from "@/components/admin/job-titles-manager";
 import { AgenciesManager } from "@/components/admin/agencies-manager";
+import { ViewOnly } from "@/components/admin/setup/view-only";
 import type { Site, Department } from "@prisma/client";
 
 /**
@@ -20,7 +21,8 @@ import type { Site, Department } from "@prisma/client";
  * Rules Setup (see SetupShell). The server component above loads all eight
  * in one round, so switching areas never refetches. Which areas show is
  * decided by the permissions the page was given; each area's actions check
- * them again.
+ * them again. An area the person may only look at (Sites or Rule Sets on
+ * Read) opens view only.
  */
 
 type DepartmentWithSites = Department & { sites: { site: Site }[] };
@@ -77,16 +79,18 @@ interface Props {
   jobTitles: any[];
   agencies: any[];
   /* eslint-enable @typescript-eslint/no-explicit-any */
-  hasSiteManage: boolean;
-  hasRulesManage: boolean;
+  siteAccess: "manage" | "view" | null;
+  rulesAccess: "manage" | "view" | null;
   hasPayPeriodManage: boolean;
   initialTab?: string;
 }
 
 export function SiteSettingsClient(props: Props) {
-  const { hasSiteManage, hasRulesManage, hasPayPeriodManage, initialTab } = props;
+  const { siteAccess, rulesAccess, hasPayPeriodManage, initialTab } = props;
   const allowed = (r: AreaDef["requires"]) =>
-    (r === "site" && hasSiteManage) || (r === "rules" && hasRulesManage) || (r === "payroll" && hasPayPeriodManage);
+    (r === "site" && !!siteAccess) || (r === "rules" && !!rulesAccess) || (r === "payroll" && hasPayPeriodManage);
+  const viewOnly = (r: AreaDef["requires"]) =>
+    (r === "site" && siteAccess === "view") || (r === "rules" && rulesAccess === "view");
 
   const activeCount: Record<Tab, number> = {
     sites: props.sites.filter((x) => x.isActive).length,
@@ -111,6 +115,7 @@ export function SiteSettingsClient(props: Props) {
   const [active, setActive] = useState<Tab>(() =>
     areas.some((a) => a.id === initialTab) ? (initialTab as Tab) : (areas[0]?.id ?? "sites"),
   );
+  const requires = areas.find((a) => a.id === active)?.requires;
 
   return (
     <SetupShell
@@ -122,7 +127,9 @@ export function SiteSettingsClient(props: Props) {
       active={active}
       onPick={setActive}
     >
-      <AreaBody tab={active} {...props} />
+      <ViewOnly on={!!requires && viewOnly(requires)}>
+        <AreaBody tab={active} {...props} />
+      </ViewOnly>
     </SetupShell>
   );
 }

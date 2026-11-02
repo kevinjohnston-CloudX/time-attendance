@@ -18,6 +18,7 @@ import {
   useOpenFromLink,
   useStatusView,
 } from "./setup/setup-ui";
+import { useViewOnly } from "./setup/view-only";
 
 /**
  * Job titles: the titles an employee record picks from, each with the code
@@ -84,7 +85,9 @@ export function JobTitlesManager({ jobTitles }: { jobTitles: JobTitle[] }) {
     });
   }
 
-  const addButton = (
+  // Looking only (view-only.tsx): nothing to add.
+  const viewOnly = useViewOnly();
+  const addButton = viewOnly ? undefined : (
     <Button onClick={() => open("new")} leadingIcon={<Plus className="h-4 w-4" />}>
       Add job title
     </Button>

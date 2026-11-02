@@ -18,6 +18,7 @@ import {
   useOpenFromLink,
   useStatusView,
 } from "./setup/setup-ui";
+import { useViewOnly } from "./setup/view-only";
 import { parseUtcDate } from "@/lib/utils/date";
 
 /**
@@ -115,7 +116,9 @@ export function AgenciesManager({ agencies }: { agencies: Agency[] }) {
     });
   }
 
-  const addButton = (
+  // Looking only (view-only.tsx): nothing to add.
+  const viewOnly = useViewOnly();
+  const addButton = viewOnly ? undefined : (
     <Button onClick={() => open("new")} leadingIcon={<Plus className="h-4 w-4" />}>
       Add agency
     </Button>

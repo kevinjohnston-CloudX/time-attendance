@@ -2,10 +2,11 @@
 
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
+import { RULES_READERS } from "@/lib/rbac/permissions";
 import { z } from "zod";
 
 export const getHolidays = withRBAC(
-  "RULES_MANAGE",
+  RULES_READERS,
   async (ctx, _input: void) => {
     const tenantId = ctx.tenantId;
     if (!tenantId) return [];

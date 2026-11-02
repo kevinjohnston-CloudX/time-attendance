@@ -18,6 +18,7 @@ import {
   useStatusView,
   useOpenFromLink,
 } from "./setup/setup-ui";
+import { useViewOnly } from "./setup/view-only";
 
 /**
  * Departments: the groups people work in, and the sites each one exists at.
@@ -77,7 +78,9 @@ export function DepartmentsManager({ departments, sites }: { departments: Depart
     });
   }
 
-  const addButton = (
+  // Looking only (view-only.tsx): nothing to add.
+  const viewOnly = useViewOnly();
+  const addButton = viewOnly ? undefined : (
     <Button onClick={() => open("new")} leadingIcon={<Plus className="h-4 w-4" />}>
       Add department
     </Button>

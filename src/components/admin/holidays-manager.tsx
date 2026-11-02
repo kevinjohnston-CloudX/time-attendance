@@ -21,6 +21,7 @@ import {
   useStatusView,
   useOpenFromLink,
 } from "./setup/setup-ui";
+import { useViewOnly } from "./setup/view-only";
 
 /**
  * Holidays: the dates the company marks, and which holiday rules pay them.
@@ -124,7 +125,9 @@ export function HolidaysManager({ holidays, holidayRules }: { holidays: HolidayW
     });
   }
 
-  const addButton = (
+  // Looking only (view-only.tsx): nothing to add.
+  const viewOnly = useViewOnly();
+  const addButton = viewOnly ? undefined : (
     <Button onClick={() => open("new")} leadingIcon={<Plus className="h-4 w-4" />}>
       Add holiday
     </Button>

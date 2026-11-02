@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { cleanEmail, emailHolders } from "@/lib/login-email";
 import { Prisma, type AuditEntityType, type Role } from "@prisma/client";
 import { publicError, withRBAC } from "@/lib/rbac/guard";
+import { SITE_READERS, RULES_READERS } from "@/lib/rbac/permissions";
 import { zodMessage } from "@/lib/zod-message";
 import { photoUrls } from "@/lib/presence/photos";
 import { badgeWhere } from "@/lib/utils/badge-lookup";
@@ -272,15 +273,9 @@ export const getAdminRefData = withRBAC(
 
 const PAGE_SIZE = 100;
 
-/** Returns the site IDs an HR_ADMIN or PAYROLL_ADMIN is restricted to, or null if unrestricted. */
+/** The site IDs the person is restricted to, or null if unrestricted (siteLimit). */
 async function getActorSiteRestrictions(employeeId: string, role: string): Promise<string[] | null> {
-  if (role !== "HR_ADMIN" && role !== "PAYROLL_ADMIN") return null;
-  const rows = await db.hrSiteAccess.findMany({
-    where: { employeeId },
-    select: { siteId: true },
-  });
-  if (rows.length === 0) return null; // empty = unrestricted
-  return rows.map((r) => r.siteId);
+  return siteLimit({ employeeId, role });
 }
 
 export const getEmployees = withRBAC(
@@ -472,6 +467,9 @@ export const createEmployee = withRBAC(
     let resolvedRole = parsed.role;
     // The role by the name people see, for the audit log.
     let roleName: string | null = null;
+    // A custom role at Payroll Admin's rank or above (Payroll Admin NL) starts
+    // able to punch from the web, as the built-in admins do.
+    let adminCustomRole = false;
     if (!resolvedCustomRoleId) {
       const systemName = Object.entries(SYSTEM_ROLE_NAME_TO_ENUM).find(([, v]) => v === parsed.role)?.[0];
       if (systemName) {
@@ -484,9 +482,10 @@ export const createEmployee = withRBAC(
       }
     } else {
       // Derive role enum from the provided customRoleId
-      const cr = await db.customRole.findFirst({ where: { id: resolvedCustomRoleId, tenantId }, select: { isSystem: true, name: true } });
+      const cr = await db.customRole.findFirst({ where: { id: resolvedCustomRoleId, tenantId }, select: { isSystem: true, name: true, rank: true } });
       resolvedRole = (cr?.isSystem ? (SYSTEM_ROLE_NAME_TO_ENUM[cr.name] ?? "EMPLOYEE") : "EMPLOYEE") as typeof parsed.role;
       roleName = cr?.name ?? null;
+      adminCustomRole = !!cr && !cr.isSystem && cr.rank >= ROLE_RANK.PAYROLL_ADMIN;
     }
 
     // A sign in only account or a visitor (sign-in-only.ts): only for the role
@@ -582,7 +581,7 @@ export const createEmployee = withRBAC(
           role: resolvedRole,
           customRoleId: resolvedCustomRoleId,
           // Admins start able to punch from the web; everyone else at the time clock.
-          webPunchEnabled: webPunchByDefault(resolvedRole),
+          webPunchEnabled: webPunchByDefault(resolvedRole) || adminCustomRole,
           siteId: parsed.siteId,
           departmentId: visitorDepartmentId ?? parsed.departmentId,
           ruleSetId,
@@ -1406,7 +1405,7 @@ export const getEmployeeLeaveLog = withRBAC(
 
 // ─── Sites ────────────────────────────────────────────────────────────────────
 
-export const getSites = withRBAC("SITE_MANAGE", async ({ tenantId }, _input: void) => {
+export const getSites = withRBAC(SITE_READERS, async ({ tenantId }, _input: void) => {
   return db.site.findMany({ where: { tenantId: tenantId ?? undefined }, orderBy: { name: "asc" } });
 });
 
@@ -1481,7 +1480,7 @@ async function assertOwnSites(tenantId: string, siteIds: string[]) {
 }
 
 export const getDepartments = withRBAC(
-  "SITE_MANAGE",
+  SITE_READERS,
   async ({ tenantId }, _input: void) => {
     return db.department.findMany({
       where: { tenantId: tenantId ?? undefined },
@@ -1557,7 +1556,7 @@ async function assertOwnPayCode(tenantId: string, payCodeId: string | null | und
 }
 
 export const getLeaveTypesAdmin = withRBAC(
-  "RULES_MANAGE",
+  RULES_READERS,
   async ({ tenantId }, _input: void) => {
     if (!tenantId) return [];
     return db.leaveType.findMany({ where: { tenantId }, orderBy: { name: "asc" } });
@@ -1620,7 +1619,7 @@ export const updateLeaveType = withRBAC(
 // ─── Rule Sets ────────────────────────────────────────────────────────────────
 
 export const getRuleSets = withRBAC(
-  "RULES_MANAGE",
+  RULES_READERS,
   async ({ tenantId }, _input: void) => {
     // With no company it used to drop the filter and return every company's.
     if (!tenantId) return [];
@@ -1634,7 +1633,7 @@ export const getRuleSets = withRBAC(
 
 /** One rule set, for its editor page. Only the caller's company's. */
 export const getRuleSet = withRBAC(
-  "RULES_MANAGE",
+  RULES_READERS,
   async ({ tenantId }, input: { ruleSetId: string }) => {
     if (!tenantId) throw new Error("NOT_FOUND");
     const rs = await db.ruleSet.findFirst({

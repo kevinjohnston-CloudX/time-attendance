@@ -4,7 +4,7 @@ import { parseUtcDate } from "@/lib/utils/date";
 import { ArrowLeft } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { LinkButton, PageHeader } from "@/components/ui";
-import { userHasPermission } from "@/lib/rbac/check-permission";
+import { manageOrView, userHasPermission } from "@/lib/rbac/check-permission";
 import { getTenantSettings } from "@/actions/pay-period.actions";
 import { CompanySettings } from "@/components/admin/company-settings";
 
@@ -23,7 +23,7 @@ export default async function CompanySettingsPage() {
 
   const [result, canOpenRules] = await Promise.all([
     getTenantSettings(),
-    userHasPermission(session.user, "RULES_MANAGE"),
+    manageOrView(session.user, "RULES_MANAGE", "RULES_VIEW").then((access) => access !== null),
   ]);
   if (!result.success) redirect("/admin");
   const { payFrequency, payPeriodAnchorDate, name, nextPeriod, defaultRuleSets } = result.data;

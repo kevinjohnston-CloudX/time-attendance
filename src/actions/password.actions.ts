@@ -9,11 +9,11 @@ import { sendPasswordInviteEmail } from "@/lib/email/send-invite";
 import { mailAddress } from "@/lib/login-email";
 import { employeeRank } from "@/lib/rbac/identity";
 import { currentIdentity } from "@/lib/rbac/current";
-import { getEffectiveRole } from "@/lib/rbac/check-permission";
+import { checkPermission, getEffectiveRole } from "@/lib/rbac/check-permission";
 import { forgetIdentity } from "@/lib/rbac/identity";
 import { revokeAllUserTokens } from "@/lib/mobile-auth";
 import { zodMessage } from "@/lib/zod-message";
-import { editsPeers } from "@/lib/rbac/roles";
+import { ROLE_RANK, editsPeers } from "@/lib/rbac/roles";
 
 const LOGIN_MANAGERS = ["SYSTEM_ADMIN", "HR_ADMIN", "PAYROLL_ADMIN", "SUPER_ADMIN"];
 
@@ -31,7 +31,13 @@ async function manageableLogin(employeeId: string) {
   // Rank and role as View as sets them, so viewing as a junior role cannot reset logins it could not.
   const caller = await currentIdentity();
   const viewedRole = await getEffectiveRole(session.user);
-  if (!caller || !caller.isActive || !LOGIN_MANAGERS.includes(caller.role) || !LOGIN_MANAGERS.includes(viewedRole)) {
+  // Or a custom role at an admin's rank that manages employees, such as Payroll
+  // Admin NL, which leaves the built-in role at Employee.
+  const managesLogins =
+    !!caller &&
+    ((LOGIN_MANAGERS.includes(caller.role) && LOGIN_MANAGERS.includes(viewedRole)) ||
+      (caller.rank >= ROLE_RANK.PAYROLL_ADMIN && (await checkPermission("EMPLOYEE_MANAGE"))));
+  if (!caller || !caller.isActive || !managesLogins) {
     return { error: "You don't have permission to manage sign-ins." } as const;
   }
   const target = await db.employee.findFirst({

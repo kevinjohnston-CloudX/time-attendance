@@ -3,7 +3,7 @@ import { getSubordinateIds } from "@/lib/get-subordinate-ids";
 import { siteLimit } from "@/lib/rbac/scope";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
-import { userHasPermission } from "@/lib/rbac/check-permission";
+import { userHasPermission, manageOrView } from "@/lib/rbac/check-permission";
 import { getEmployeeById } from "@/actions/admin.actions";
 import { LeaveBalancesPanel } from "@/components/admin/leave-balances-panel";
 import { Card, LinkButton, PageHeader } from "@/components/ui";
@@ -62,7 +62,8 @@ export default async function EmployeeAccrualsPage({
   }
 
   const canManageEmployee = await userHasPermission(session.user, "EMPLOYEE_MANAGE");
-  const canManageRules = await userHasPermission(session.user, "RULES_MANAGE");
+  // A link to the rule or policy: to change it, or with Rule Sets on Read to look at it.
+  const canManageRules = (await manageOrView(session.user, "RULES_MANAGE", "RULES_VIEW")) !== null;
 
   const year = new Date().getFullYear();
   const yearStart = new Date(`${year}-01-01T00:00:00Z`);
@@ -568,7 +569,7 @@ export default async function EmployeeAccrualsPage({
       border: "1px solid var(--stroke-secondary)",
       background: "var(--surface-card)",
     };
-    // Only somebody who can edit the policy (RULES_MANAGE) gets a link to it. For everyone
+    // Only somebody who can open the policy (Rule Sets, Write or Read) gets a link to it. For everyone
     // else the tile is still the answer to "why is this leave type earning
     // nothing" — it just does not pretend to be a way in.
     return canManageRules && policyId ? (

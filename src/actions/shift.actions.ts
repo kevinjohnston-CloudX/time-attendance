@@ -2,13 +2,14 @@
 
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
+import { RULES_READERS } from "@/lib/rbac/permissions";
 import { z } from "zod";
 import type { Shift } from "@prisma/client";
 
 // ─── List shifts for tenant ──────────────────────────────────────────────────
 
 export const getShifts = withRBAC(
-  "RULES_MANAGE",
+  RULES_READERS,
   async (ctx, _input: void) => {
     const tenantId = ctx.tenantId;
     if (!tenantId) return [] as Shift[];
@@ -24,7 +25,7 @@ export const getShifts = withRBAC(
 // ─── One shift, for its editor page ──────────────────────────────────────────
 
 export const getShift = withRBAC(
-  "RULES_MANAGE",
+  RULES_READERS,
   async (ctx, input: { shiftId: string }) => {
     if (!ctx.tenantId) throw new Error("NOT_FOUND");
     const shift = await db.shift.findFirst({

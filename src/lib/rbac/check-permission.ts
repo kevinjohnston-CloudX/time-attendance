@@ -193,6 +193,19 @@ export async function userHasPermission(
 }
 
 /**
+ * What a setup screen lets this person do: change it ("manage"), only look
+ * ("view"), or neither (null). For a pair such as RULES_MANAGE and RULES_VIEW.
+ */
+export async function manageOrView(
+  user: Parameters<typeof userHasPermission>[0],
+  manage: Permission,
+  view: Permission,
+): Promise<"manage" | "view" | null> {
+  if (await userHasPermission(user, manage)) return "manage";
+  return (await userHasPermission(user, view)) ? "view" : null;
+}
+
+/**
  * Whether the person has time of their own: can punch, or has a timesheet to
  * submit. A sign in only login (an agency viewer, Loss Prevention) has
  * neither, so no Today or Pay Period, My Timesheet or Punch History.

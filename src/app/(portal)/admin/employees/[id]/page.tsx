@@ -1,6 +1,6 @@
 import { redirect, notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { userHasPermission } from "@/lib/rbac/check-permission";
+import { userHasPermission, manageOrView } from "@/lib/rbac/check-permission";
 import { getEmployeeById, getAdminRefData, getEmployeeAuditLogs, getHrSiteAccess, getAdditionalSupervisors } from "@/actions/admin.actions";
 import { EditEmployeeForm } from "@/components/admin/edit-employee-form";
 import { getPayRates } from "@/actions/pay-rate.actions";
@@ -22,7 +22,8 @@ export default async function EditEmployeePage({
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "EMPLOYEE_MANAGE")) redirect("/admin");
 
-  const canManageRules = await userHasPermission(session.user, "RULES_MANAGE");
+  // A link to the rule or policy: to change it, or with Rule Sets on Read to look at it.
+  const canManageRules = (await manageOrView(session.user, "RULES_MANAGE", "RULES_VIEW")) !== null;
 
   const [empResult, refResult, logsResult, siteAccessResult, payRatesResult, extraResult] = await Promise.all([
     getEmployeeById({ employeeId: id }),
