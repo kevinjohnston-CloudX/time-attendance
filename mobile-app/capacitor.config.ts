@@ -45,6 +45,10 @@ const config: CapacitorConfig = {
       backgroundColor: "#0860AA",
       showSpinner: false,
     },
+    PushNotifications: {
+      // Banner, sound and badge while the app is open too.
+      presentationOptions: ["badge", "sound", "alert"],
+    },
     SystemBars: {
       // The page runs edge to edge and pads itself with env(safe-area-inset-*),
       // as it already does in a phone's browser.
