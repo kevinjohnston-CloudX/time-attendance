@@ -28,6 +28,9 @@ type CapacitorBridge = {
       addListener(event: "appUrlOpen", cb: (e: { url: string }) => void): Promise<Listener> | Listener;
       getLaunchUrl(): Promise<{ url: string } | undefined> | { url: string } | undefined;
     };
+    SplashScreen?: { hide(): Promise<void> | void };
+    // Capacitor's own: the colour of the clock, battery and signal icons.
+    SystemBars?: { setStyle(options: { style: "LIGHT" | "DARK" }): Promise<void> | void };
     Browser?: {
       open(options: { url: string; presentationStyle?: "fullscreen" | "popover" }): Promise<void> | void;
       close(): Promise<void> | void;
@@ -114,4 +117,18 @@ export function onAppSigninReturn(cb: (code: string, verifier: string) => void):
     done = true;
     void settle(() => listener?.remove());
   };
+}
+
+/** Lifts the app's launch screen once the page has drawn, so nothing flashes white in between. */
+export function hideLaunchScreen(): void {
+  void settle(() => bridge()?.Plugins.SplashScreen?.hide());
+}
+
+/**
+ * Matches the phone's status bar icons to the page: dark icons over the light
+ * theme, light icons over the dark one. The app cannot tell which theme the
+ * person chose here, so the page says.
+ */
+export function matchSystemBars(darkPage: boolean): void {
+  void settle(() => bridge()?.Plugins.SystemBars?.setStyle({ style: darkPage ? "DARK" : "LIGHT" }));
 }
