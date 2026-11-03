@@ -31,7 +31,7 @@ import { webPunchByDefault } from "@/lib/web-punch";
 import { isSignInOnlyRole, isVisitorRole, seesTeam, SIGN_IN_ONLY_RULE_SET, VISITOR_DEPARTMENT } from "@/lib/sign-in-only";
 import { cleanLanguages, languageName } from "@/lib/languages";
 import { hoursToSeconds, secondsToMinutes } from "@/lib/leave-time";
-import { assertBalanceChangeAllowed, assertNotSenior, assertRecordInReach, assertSiteInReach, siteInReach, siteLimit } from "@/lib/rbac/scope";
+import { NotFoundError, assertBalanceChangeAllowed, assertNotSenior, assertRecordInReach, assertSiteInReach, siteInReach, siteLimit } from "@/lib/rbac/scope";
 
 // Maps system custom role names to their legacy enum values
 /**
@@ -2725,12 +2725,17 @@ export type LedgerDetailEntry = {
 
 export const getLeaveTypeLedgerDetail = withRBAC(
   "EMPLOYEE_MANAGE",
-  async (_ctx, input: { employeeId: string; leaveTypeId: string; year: number }) => {
+  async (actor, input: { employeeId: string; leaveTypeId: string; year: number }) => {
     const { employeeId, leaveTypeId, year } = z.object({
       employeeId: z.string(),
       leaveTypeId: z.string(),
       year: z.number().int(),
     }).parse(input);
+    // Someone in the caller's company and sites, and a leave type of that
+    // company. Read by ids alone, it showed another company's leave history.
+    await assertRecordInReach(actor, employeeId);
+    const ownType = await db.leaveType.findFirst({ where: { id: leaveTypeId, tenantId: actor.tenantId ?? "__no_company__" }, select: { id: true } });
+    if (!ownType) throw new NotFoundError("This leave type isn't available. Reload the page and try again.");
 
     const yearStart = new Date(`${year}-01-01T00:00:00Z`);
     const yearEnd   = new Date(`${year + 1}-01-01T00:00:00Z`);
