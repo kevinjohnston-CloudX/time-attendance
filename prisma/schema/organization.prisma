@@ -3,6 +3,10 @@ model Tenant {
   name      String
   slug      String   @unique
   isActive  Boolean  @default(true)
+  /// Data protection settings for EU companies, as JSON (see
+  /// src/lib/privacy/data-protection.ts). Null for every existing company,
+  /// which means every switch is off.
+  dataProtection Json?
 
   // Pay period configuration
   payFrequency        PayFrequency @default(BIWEEKLY)

@@ -9,7 +9,7 @@ import { Button } from "@/components/ui";
 import { Overlay } from "@/components/ui/overlay";
 
 interface Props {
-  leaveTypes: { id: string; name: string }[];
+  leaveTypes: { id: string; name: string; noNote?: boolean }[];
   shift: ShiftInfo | null;
 }
 

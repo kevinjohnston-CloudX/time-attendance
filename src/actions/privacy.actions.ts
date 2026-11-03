@@ -6,6 +6,9 @@ import { writeAuditLog } from "@/lib/audit/logger";
 import { photoUrls } from "@/lib/presence/photos";
 import { db } from "@/lib/db";
 import { buildPersonWorkbook, collectPersonData, type PersonExport } from "@/lib/privacy/person-export";
+import { companyDataProtection, type DataProtection } from "@/lib/privacy/data-protection";
+import { revalidatePath } from "next/cache";
+import type { Prisma } from "@prisma/client";
 
 /**
  * A person's data export, for a data access request.
@@ -82,5 +85,40 @@ export const exportPersonData = withRBAC(
 
     const stem = `${data.name} personal data ${exportedAt.toISOString().slice(0, 10)}`.replace(/[^\p{L}\p{N} ._-]/gu, "").trim();
     return { file, fileName: `${stem}.xlsx` };
+  }
+);
+
+// ─── Company data protection settings (EU companies) ─────────────────────────
+
+/** The company's data protection settings, for Company Settings. */
+export const getDataProtection = withRBAC("EMPLOYEE_MANAGE", async (ctx, _input: void) => {
+  return companyDataProtection(ctx.tenantId);
+});
+
+/**
+ * Switches one data protection setting for the caller's company. Who: the
+ * people who manage employee records (HR Admins, System Admins), since these
+ * decide what employee records may hold. Written to the audit log.
+ */
+export const updateDataProtection = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async (ctx, input: { noMedicalNotes: boolean }) => {
+    if (!ctx.tenantId) throw new NotFoundError("This company isn't available to you.");
+    if (typeof input?.noMedicalNotes !== "boolean") throw new Error("Choose on or off.");
+    const before = await companyDataProtection(ctx.tenantId);
+    const after: DataProtection = { ...before, noMedicalNotes: input.noMedicalNotes };
+    await db.tenant.update({ where: { id: ctx.tenantId }, data: { dataProtection: after as unknown as Prisma.InputJsonValue } });
+    await writeAuditLog({
+      tenantId: ctx.tenantId,
+      actorId: ctx.employeeId,
+      action: "SETTINGS_UPDATE",
+      // Company settings are filed under pay periods with the company as the
+      // record, as updateTenantSettings does: the log has no company type.
+      entityType: "PAY_PERIOD",
+      entityId: ctx.tenantId,
+      changes: { before: { dataProtection: before }, after: { dataProtection: after } },
+    });
+    revalidatePath("/admin/settings");
+    return after;
   }
 );

@@ -16,6 +16,7 @@ import {
 } from "@/lib/validators/timecard-entry.schema";
 import { z } from "zod";
 import { changeReasonSchema } from "@/lib/validators/punch.schema";
+import { noteKeptOut } from "@/lib/privacy/data-protection";
 import type { LeaveType } from "@prisma/client";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { placeEnteredHours } from "@/lib/entered-hours";
@@ -44,7 +45,10 @@ async function createTimecardLeave(
       ? (await tx.leaveType.findMany({ where: { id: { in: pieces.map((p) => p.leaveTypeId) } }, select: { id: true, name: true } })).map((t) => [t.id, t.name] as const)
       : [],
   );
-  const note = splitNote(o.note, pieces, names, policyName);
+  // A company keeping medical details out stores no typed note on sick leave;
+  // the split explanation is CloudTime's own and stays.
+  const typed = (await noteKeptOut(o.employeeId, o.leaveTypeId)) ? null : o.note;
+  const note = splitNote(typed, pieces, names, policyName);
   const now = new Date();
   const created = [];
   for (const piece of pieces) {

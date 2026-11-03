@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { db } from "@/lib/db";
+import { companyDataProtection, leaveTypeTakesNoNote } from "@/lib/privacy/data-protection";
 import { auth } from "@/lib/auth";
 import { withRBAC } from "@/lib/rbac/guard";
 import { userHasPermission } from "@/lib/rbac/check-permission";
@@ -143,11 +144,15 @@ export const getTeamMembersForLeave = withRBAC(
       orderBy: { user: { name: "asc" } },
     });
 
-    const leaveTypes = await db.leaveType.findMany({
-      where: { isActive: true, tenantId: ownCompany(tenantId) },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    });
+    const [types, protection] = await Promise.all([
+      db.leaveType.findMany({
+        where: { isActive: true, tenantId: ownCompany(tenantId) },
+        select: { id: true, name: true, category: true },
+        orderBy: { name: "asc" },
+      }),
+      companyDataProtection(tenantId),
+    ]);
+    const leaveTypes = types.map((t) => ({ id: t.id, name: t.name, noNote: leaveTypeTakesNoNote(protection, t.category) }));
 
     return { employees, leaveTypes };
   }

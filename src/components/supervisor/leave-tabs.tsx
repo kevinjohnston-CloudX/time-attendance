@@ -284,7 +284,7 @@ export function LeaveTabs({
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [teamEmployees, setTeamEmployees] = useState<TeamEmployee[]>([]);
-  const [leaveTypes, setLeaveTypes] = useState<{ id: string; name: string }[]>([]);
+  const [leaveTypes, setLeaveTypes] = useState<{ id: string; name: string; noNote?: boolean }[]>([]);
   const [loadingTeam, setLoadingTeam] = useState(false);
 
   // Form state
@@ -346,7 +346,7 @@ export function LeaveTabs({
           targetEmployeeId,
           leaveTypeId,
           selectedDays,
-          note: note || undefined,
+          note: leaveTypes.find((t) => t.id === leaveTypeId)?.noNote ? undefined : note || undefined,
         });
         if (result.success) {
           setSubmitSuccess(true);
@@ -1385,14 +1385,20 @@ export function LeaveTabs({
                   </div>
                 </FieldGroup>
 
-                <Textarea
-                  label="Note"
-                  hint="Optional. The employee can see this note."
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  rows={2}
-                  placeholder="Reason or additional context…"
-                />
+                {leaveTypes.find((t) => t.id === leaveTypeId)?.noNote ? (
+                  <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                    No note for this leave. Do not record medical details. Only the dates are needed.
+                  </p>
+                ) : (
+                  <Textarea
+                    label="Note"
+                    hint="Optional. The employee can see this note."
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    rows={2}
+                    placeholder="Reason or additional context…"
+                  />
+                )}
 
                 {submitError && <Banner tone="error" body={submitError} />}
 
