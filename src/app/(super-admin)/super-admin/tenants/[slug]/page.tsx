@@ -137,7 +137,7 @@ export default async function TenantDetailPage({
           <div className="flex flex-col gap-3">
             {([
               ["ADP", tenant.adpConnected, toggleAdp, "Employee sync from ADP and the payroll push to ADP."],
-              ["WMS", tenant.wmsConnected, toggleWms, "Roster, schedules and gate status from Oracle, through the bridge."],
+              ["WMS", tenant.wmsConnected, toggleWms, "Roster, schedules and gate status from Oracle, and its time clocks and gates. Off, the tablets stop finding this company's badges."],
             ] as const).map(([name, on, toggle, line]) => (
               <div key={name} className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex min-w-0 flex-col">

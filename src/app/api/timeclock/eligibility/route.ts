@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
+import { timeclockKeyValid } from "@/lib/api/timeclock-auth";
 import { db } from "@/lib/db";
-import { badgeWhere } from "@/lib/utils/badge-lookup";
+import { deviceBadgeWhere } from "@/lib/utils/badge-lookup";
 import { shownNameOrNull } from "@/lib/utils/shown-name";
 import { recordGateRefusal } from "@/lib/presence/gate-refusals.service";
 import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
@@ -77,10 +78,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // without having to find one and read its code.
     params: [...new Set(q.keys())].sort().join(",").slice(0, 200) || undefined,
   };
-  const apiKey = req.headers.get("x-api-key");
-  const expectedKey = process.env.TIMECLOCK_API_KEY;
-  if (!expectedKey || !apiKey || apiKey !== expectedKey) {
-    gateLog("failed", { at: "check", error: expectedKey ? "BAD_KEY" : "NO_KEY_SET", ...from }, "warn");
+  if (!timeclockKeyValid(req)) {
+    gateLog("failed", { at: "check", error: process.env.TIMECLOCK_API_KEY ? "BAD_KEY" : "NO_KEY_SET", ...from }, "warn");
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
@@ -93,7 +92,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // the lookup the legacy API cannot do, and the reason typing an employee
   // number at the kiosk fails today for anyone on a 10-digit card.
   const employee = await db.employee.findFirst({
-    where: badgeWhere(badge),
+    where: deviceBadgeWhere(badge),
     select: {
       id: true,
       tenantId: true,
