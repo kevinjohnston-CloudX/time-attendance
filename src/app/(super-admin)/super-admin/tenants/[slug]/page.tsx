@@ -109,7 +109,7 @@ export default async function TenantDetailPage({
           <Banner
             tone="warning"
             title="This tenant is deactivated"
-            body="Its records are all still here and this page still opens them, but nobody at this company can sign in until it is activated again."
+            body="Its records are all still here and this page still opens them. Until it is activated again nobody at this company can sign in, and its API keys, time clocks, webhooks and scheduled reports stop."
           />
         )}
 

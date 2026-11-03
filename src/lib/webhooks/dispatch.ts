@@ -34,7 +34,8 @@ export async function drainWebhookQueue(opts: { ids?: string[] } = {}): Promise<
   const check = currentKeyCheck();
   if (!check || (opts.ids && !opts.ids.length)) return none;
 
-  const mine = await db.webhookEndpoint.findMany({ where: { keyCheck: check, isActive: true }, select: { id: true, url: true } });
+  // A switched-off company's webhooks wait, unsent, until it is switched on.
+  const mine = await db.webhookEndpoint.findMany({ where: { keyCheck: check, isActive: true, tenant: { isActive: true } }, select: { id: true, url: true } });
   const sendable = mine.filter((e) => deliveryRule(new URL(e.url).hostname).deliverable).map((e) => e.id);
   if (!sendable.length) return none;
 

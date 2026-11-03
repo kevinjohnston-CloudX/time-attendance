@@ -64,6 +64,7 @@ export async function liveIdentity(userId: string): Promise<LiveIdentity | null>
           customRoleId: true,
           isActive: true,
           customRole: { select: { rank: true, canViewAs: true, tenantId: true, isActive: true } },
+          tenant: { select: { isActive: true } },
         },
       },
     },
@@ -86,6 +87,10 @@ export async function liveIdentity(userId: string): Promise<LiveIdentity | null>
       ownEmployeeId: user.employee?.isActive ? user.employee.id : null,
       ownTenantId: user.employee?.isActive ? user.employee.tenantId : null,
     };
+  } else if (user && user.employee && !user.employee.tenant.isActive) {
+    // A switched-off company: nobody in it is signed in, and a session in
+    // progress ends at the next click (security audit 2026-11, M2).
+    value = null;
   } else if (user) {
     const e = user.employee;
     const role: Role = e && isValidRole(e.role) ? e.role : "EMPLOYEE";

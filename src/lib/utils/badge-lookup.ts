@@ -65,7 +65,7 @@ export function badgeWhere(code: string): Prisma.EmployeeWhereInput {
  * badge number alone found anyone in any company, so a key copied off one
  * tablet read and punched people everywhere (security audit 2026-11, H1).
  */
-export const DEVICE_SCOPE = { tenant: { wmsConnected: true } } satisfies Prisma.EmployeeWhereInput;
+export const DEVICE_SCOPE = { tenant: { wmsConnected: true, isActive: true } } satisfies Prisma.EmployeeWhereInput;
 
 /** A badge, as a tablet or the bridge may look it up. */
 export function deviceBadgeWhere(code: string): Prisma.EmployeeWhereInput {

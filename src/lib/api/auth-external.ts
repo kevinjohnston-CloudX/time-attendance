@@ -13,10 +13,11 @@ export async function authenticateApiKey(req: NextRequest): Promise<ExternalAuth
   const keyHash = crypto.createHash("sha256").update(token).digest("hex");
   const key = await db.apiKey.findUnique({
     where: { keyHash },
-    select: { id: true, tenantId: true, isActive: true, scopes: true },
+    select: { id: true, tenantId: true, isActive: true, scopes: true, tenant: { select: { isActive: true } } },
   });
 
-  if (!key || !key.isActive) return null;
+  // A switched-off company's keys stop with it.
+  if (!key || !key.isActive || !key.tenant.isActive) return null;
 
   // Fire-and-forget lastUsedAt update
   db.apiKey.update({ where: { id: key.id }, data: { lastUsedAt: new Date() } }).catch(() => {});

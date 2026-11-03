@@ -33,7 +33,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const now = new Date();
   const due = await db.reportSchedule.findMany({
-    where: { isActive: true, nextRunAt: { lte: now } },
+    // A switched-off company's reports are not sent (security audit 2026-11, M2).
+    where: { isActive: true, nextRunAt: { lte: now }, report: { tenant: { isActive: true } } },
     include: { report: true },
     orderBy: { nextRunAt: "asc" },
     take: BATCH,
