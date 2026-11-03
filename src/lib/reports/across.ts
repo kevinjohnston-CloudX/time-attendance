@@ -26,6 +26,7 @@ interface Column {
   exportLabel?: string;
   total?: boolean;
   groupOrder?: string;
+  varies?: boolean;
 }
 
 const SHORT_DAY = (day: string) =>
@@ -35,13 +36,19 @@ export function spreadAcross(
   result: { columns: Column[]; rows: Record<string, unknown>[] },
   defColumns: Column[],
   spec: AcrossSpec
-): { columns: Column[]; rows: Record<string, unknown>[] } | null {
+): { columns: Column[]; rows: Record<string, unknown>[]; leftOut: string[] } | null {
   const across = defColumns.find((c) => c.id === spec.field);
   const value = defColumns.find((c) => c.id === spec.value && c.type === "number");
   if (!across || !value) return null;
 
-  const keys = result.columns.filter((c) => c.type !== "number" && c.id !== across.id);
-  const others = result.columns.filter((c) => c.type === "number" && c.id !== value.id);
+  // A clock time or a note differs every day, so as part of the key it would
+  // give each day its own line: 3,641 one-day lines where 832 weeks were
+  // asked for (ticket 72637). Those columns are left out, and said so.
+  const varies = new Set(defColumns.filter((c) => c.varies).map((c) => c.id));
+  const shown = result.columns.filter((c) => c.id === across.id || !varies.has(c.id));
+  const leftOut = result.columns.filter((c) => c.id !== across.id && varies.has(c.id)).map((c) => c.label);
+  const keys = shown.filter((c) => c.type !== "number" && c.id !== across.id);
+  const others = shown.filter((c) => c.type === "number" && c.id !== value.id);
   const blank = `No ${across.label.toLowerCase()}`;
   const valueOf = (row: Record<string, unknown>) => {
     const v = row[across.id];
@@ -113,5 +120,6 @@ export function spreadAcross(
       ...others,
     ],
     rows: [...out.values()],
+    leftOut,
   };
 }

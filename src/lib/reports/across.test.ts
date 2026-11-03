@@ -14,6 +14,21 @@ const def = [
 const cols = (ids: string[]) => ids.map((id) => def.find((c) => c.id === id)!);
 
 describe("spreadAcross", () => {
+  it("leaves out a column that changes every day, rather than giving each day its own line", () => {
+    // Ticket 72637: Clock in and Clock out on a days side by side report.
+    const withClock = [...def, { id: "clockIn", label: "Clock in", type: "string", varies: true }];
+    const rows = [
+      { employeeName: "Ana", employeeCode: "1", week: "W1", weekday: "Mon", weekdayOrder: 1, clockIn: "7:00 AM", totalMinutes: 480 },
+      { employeeName: "Ana", employeeCode: "1", week: "W1", weekday: "Tue", weekdayOrder: 2, clockIn: "7:05 AM", totalMinutes: 470 },
+    ];
+    const columns = ["employeeName", "week", "clockIn", "totalMinutes"].map((id) => withClock.find((c) => c.id === id)!);
+    const out = spreadAcross({ columns, rows }, withClock, { field: "weekday", value: "totalMinutes" })!;
+    expect(out.rows).toHaveLength(1);
+    expect(out.rows[0]).toMatchObject({ total_totalMinutes: 950 });
+    expect(out.columns.map((c) => c.id)).not.toContain("clockIn");
+    expect(out.leftOut).toEqual(["Clock in"]);
+  });
+
   it("puts each day of the week in a column, in the company's order, with a total", () => {
     const rows = [
       { employeeName: "Ana", employeeCode: "1", week: "W1", weekday: "Mon", weekdayOrder: 1, totalMinutes: 480, regMinutes: 480 },

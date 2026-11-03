@@ -18,6 +18,7 @@ import { AcrossConfig } from "./across-config";
 import { LayoutPresets } from "./layout-presets";
 import type { AcrossSpec } from "@/lib/reports/across";
 import { ResultsTable } from "../report-results/results-table";
+import { leftOutSentence } from "@/lib/reports/left-out";
 import { dataSourceDescription, dataSourceLabel, isScanReport } from "../data-source-label";
 import { runReport, createReport, updateReport } from "@/actions/report.actions";
 import type { DataSourceId, FilterDef, SortDef, DateRange, ReportConfig } from "@/lib/validators/report.schema";
@@ -576,6 +577,11 @@ export function ReportBuilder({
               transition: "opacity 140ms ease",
             }}
           >
+            {previewResult?.leftOut?.length ? (
+              <p className="px-4 pt-3" style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                {leftOutSentence(previewResult.leftOut)}
+              </p>
+            ) : null}
             {previewResult || isRunning ? (
               <ResultsTable
                 columns={previewResult?.columns ?? []}
