@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">CloudTime</string>
+    <string name="title_activity_main">CloudTime</string>
+    <string name="package_name">net.cloudxsystems.cloudtime</string>
+    <string name="custom_url_scheme">net.cloudxsystems.cloudtime</string>
+</resources>

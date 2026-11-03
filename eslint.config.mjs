@@ -30,6 +30,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // The store app shell has its own packages and is not part of the site.
+    "mobile-app/**",
   ]),
 ]);
 

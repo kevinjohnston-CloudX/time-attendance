@@ -1,0 +1,24 @@
+{
+  "name": "cloudtime-mobile-app",
+  "private": true,
+  "description": "CloudTime for iPhone and Android: a thin native shell that opens the live CloudTime site. Screens live in the web app, not here.",
+  "scripts": {
+    "sync": "cap sync",
+    "ios": "cap run ios",
+    "android": "cap run android",
+    "icons": "capacitor-assets generate --iconBackgroundColor '#0860AA' --splashBackgroundColor '#0860AA'"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/ios": "^8.6.0",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.4"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^4.0.0",
+    "@capacitor/cli": "^8.6.0",
+    "typescript": "~5.9"
+  }
+}
