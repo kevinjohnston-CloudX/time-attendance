@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma migrate deploy && prisma generate && next build",
+    "build": "node scripts/check-company-scope.mjs && prisma migrate deploy && prisma generate && next build",
+    "check:security": "node scripts/check-company-scope.mjs",
     "start": "next start",
     "postinstall": "prisma generate",
     "lint": "eslint",
