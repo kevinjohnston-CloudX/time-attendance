@@ -12,10 +12,26 @@ export const requestMissedPunchSchema = z.object({
   note: z.string().min(1, "A note is required for missed punches").max(500),
 });
 
+/**
+ * Why a punch was changed or removed. Required: a working time record is only
+ * reliable when every change to it says why, so a correction or a removal with
+ * no reason is refused here rather than saved as an unexplained edit.
+ */
+export const changeReasonSchema = z
+  .string({ error: "Give a reason for the change." })
+  .trim()
+  .min(1, "Give a reason for the change.")
+  .max(500, "Keep the reason under 500 characters.");
+
 export const correctPunchSchema = z.object({
   originalPunchId: z.string().cuid(),
   newPunchTime: z.string().datetime({ offset: true }),
-  reason: z.string().max(500).optional(),
+  reason: changeReasonSchema,
+});
+
+export const deletePunchSchema = z.object({
+  punchId: z.string().min(1),
+  reason: changeReasonSchema,
 });
 
 export const approveMissedPunchSchema = z.object({

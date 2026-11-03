@@ -15,6 +15,7 @@ import { recordPunchCore } from "@/lib/services/punch.service";
 import {
   requestMissedPunchSchema,
   correctPunchSchema,
+  deletePunchSchema,
   approveMissedPunchSchema,
   type RecordPunchInput,
   type RequestMissedPunchInput,
@@ -188,9 +189,9 @@ export const approveMissedPunch = withRBAC(
 
 export const deletePunch = withRBAC(
   TIMECARD_EDITORS,
-  async (ctx, input: { punchId: string; reason?: string }): Promise<void> => {
+  async (ctx, input: { punchId: string; reason: string }): Promise<void> => {
     const { employeeId: actorId, tenantId } = ctx;
-    const { punchId, reason } = input;
+    const { punchId, reason } = deletePunchSchema.parse(input);
 
     // Only a punch of someone the caller manages, and never their own.
     const scoped = await punchInScope(ctx, punchId, TIMECARD_EDITORS_COMPANY);
@@ -225,7 +226,7 @@ export const deletePunch = withRBAC(
           isApproved: false,
           approvedById: actorId,
           approvedAt: new Date(),
-          note: reason ? `VOID: ${reason}` : "VOID",
+          note: `VOID: ${reason}`,
           correctsId: original.id,
         },
       });
@@ -241,7 +242,7 @@ export const deletePunch = withRBAC(
         entityId: original.id,
         changes: {
           before: { punchType: original.punchType, punchTime: original.punchTime },
-          after: { reason: reason ?? "removed" },
+          after: { reason },
         },
       });
       return t;

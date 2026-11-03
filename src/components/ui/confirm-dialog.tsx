@@ -22,6 +22,7 @@ export function ConfirmDialog({
   pendingLabel,
   tone = "danger",
   pending = false,
+  confirmDisabled = false,
   error,
   onConfirm,
   onCancel,
@@ -35,6 +36,8 @@ export function ConfirmDialog({
    *  what cannot be undone quietly, info (blue) for a routine bulk step. */
   tone?: "danger" | "warning" | "info";
   pending?: boolean;
+  /** Holds the action back until something in the body is filled in, such as a required reason. */
+  confirmDisabled?: boolean;
   error?: string | null;
   onConfirm: () => void;
   onCancel: () => void;
@@ -120,7 +123,7 @@ export function ConfirmDialog({
           <Button
             tone={tone === "danger" ? "error" : tone === "warning" ? "warning" : "regular"}
             onClick={onConfirm}
-            disabled={pending}
+            disabled={pending || confirmDisabled}
           >
             {pending ? (pendingLabel ?? confirmLabel) : confirmLabel}
           </Button>

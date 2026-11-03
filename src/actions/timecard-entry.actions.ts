@@ -15,6 +15,7 @@ import {
   payrollLeaveEntrySchema,
 } from "@/lib/validators/timecard-entry.schema";
 import { z } from "zod";
+import { changeReasonSchema } from "@/lib/validators/punch.schema";
 import type { LeaveType } from "@prisma/client";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { placeEnteredHours } from "@/lib/entered-hours";
@@ -461,10 +462,12 @@ export const removePayrollLeaveEntry = withRBAC(
 
 export const deleteManualPunchPair = withRBAC(
   "EMPLOYEE_MANAGE",
-  async (ctx, input: { punchIds: string[] }) => {
+  async (ctx, input: { punchIds: string[]; reason: string }) => {
     const { employeeId: actorId, tenantId } = ctx;
     const { punchIds } = input;
     if (!punchIds.length) throw new Error("No punch IDs provided.");
+    // Every removal says why, as a correction does.
+    const reason = changeReasonSchema.parse(input.reason);
 
     // Only punches in the caller's company, all on one timecard, never their own.
     const punches = await db.punch.findMany({
@@ -508,7 +511,7 @@ export const deleteManualPunchPair = withRBAC(
             isApproved: false,
             approvedById: actorId,
             approvedAt: new Date(),
-            note: "VOID: Manual entry deleted",
+            note: `VOID: ${reason}`,
             correctsId: punch.id,
           },
         });
@@ -524,7 +527,7 @@ export const deleteManualPunchPair = withRBAC(
         action: "MANUAL_PUNCH_DELETED",
         entityType: "TIMESHEET",
         entityId: timesheetId,
-        changes: { before: { punchIds } },
+        changes: { before: { punchIds }, after: { reason } },
       });
     });
 
