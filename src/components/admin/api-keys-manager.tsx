@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition, type CSSProperties, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Copy, EllipsisVertical, KeyRound, Users } from "lucide-react";
+import { CalendarClock, Check, Copy, EllipsisVertical, KeyRound, Users } from "lucide-react";
 import { format } from "date-fns";
 import { createApiKey, revokeApiKey, regenerateApiKey, setApiKeyScopes } from "@/actions/api-key.actions";
 import { SCOPE_LABEL } from "@/lib/api/scopes";
@@ -16,10 +16,10 @@ import { Overlay } from "@/components/ui/overlay";
  * on each live key, the New Key form, the Regenerate and Revoke confirms, and
  * the one-time reveal after the server makes a key.
  *
- * <p>Every active key reads leave types and sends time off requests. The
- * employee directory is extra and off by default: chosen when the key is made,
- * or allowed and removed later from the key's menu, always after a confirm
- * that says what it opens.
+ * <p>A key does only what it was given: time off requests, the employee
+ * directory, or both. Each is chosen when the key is made, or allowed and
+ * removed later from the key's menu, always after a confirm that says what it
+ * opens. Time off was open to every key until the security audit (2026-11).
  *
  * <p>Revoked keys stay in the list on purpose. A key that vanished on revoke
  * would leave no answer to "what was that key that stopped working on Tuesday",
@@ -42,17 +42,37 @@ export type KeyFilter = "all" | "active" | "revoked";
 const PANEL: CSSProperties = { background: "var(--surface-card)", borderRadius: 18, boxShadow: "var(--ta-shell-shadow)" };
 const COLS = "[grid-template-columns:minmax(120px,1.6fr)_minmax(104px,1fr)_minmax(84px,.8fr)_minmax(72px,.8fr)_80px_32px]";
 const DIRECTORY = "people:read";
+const TIME_OFF = "time-off:write";
+
+/** What a key may do, in one line for its row. */
+function accessLine(scopes: string[]): string {
+  const timeOff = scopes.includes(TIME_OFF);
+  const directory = scopes.includes(DIRECTORY);
+  if (timeOff && directory) return "Time off and directory";
+  if (timeOff) return "Time off only";
+  if (directory) return "Directory only";
+  return "No access";
+}
 const MONO = "var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)";
 
-type Confirm = { kind: "revoke" | "regen" | "allowDirectory" | "removeDirectory"; id: string; name: string; scopes: string[] };
+type Confirm = {
+  kind: "revoke" | "regen" | "allowDirectory" | "removeDirectory" | "allowTimeOff" | "removeTimeOff";
+  id: string;
+  name: string;
+  scopes: string[];
+};
 
 function RowMenu({
+  timeOff,
+  onTimeOff,
   directory,
   onDirectory,
   onRegenerate,
   onRevoke,
   disabled,
 }: {
+  timeOff: boolean;
+  onTimeOff: () => void;
   directory: boolean;
   onDirectory: () => void;
   onRegenerate: () => void;
@@ -95,6 +115,15 @@ function RowMenu({
             role="menuitem"
             className={item}
             style={{ border: 0, borderRadius: 8, background: "transparent", cursor: "pointer", font: "var(--type-body2)", color: "var(--text-primary)" }}
+            onClick={() => { setOpen(false); onTimeOff(); }}
+          >
+            {timeOff ? "Remove time off requests" : "Allow time off requests"}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className={item}
+            style={{ border: 0, borderRadius: 8, background: "transparent", cursor: "pointer", font: "var(--type-body2)", color: "var(--text-primary)" }}
             onClick={() => { setOpen(false); onDirectory(); }}
           >
             {directory ? "Remove directory access" : "Allow directory access"}
@@ -126,6 +155,7 @@ function RowMenu({
 /** New Key: one field, named after what will hold the key. */
 function NewKeyDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (name: string, key: string) => void }) {
   const [name, setName] = useState("");
+  const [timeOff, setTimeOff] = useState(false);
   const [directory, setDirectory] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -158,7 +188,7 @@ function NewKeyDialog({ onClose, onCreated }: { onClose: () => void; onCreated: 
     if (!trimmed || pending) return;
     setError(null);
     startTransition(async () => {
-      const result = await createApiKey({ name: trimmed, scopes: directory ? [DIRECTORY] : [] });
+      const result = await createApiKey({ name: trimmed, scopes: [...(timeOff ? [TIME_OFF] : []), ...(directory ? [DIRECTORY] : [])] });
       if (!result.success) {
         setError(result.error);
         return;
@@ -201,7 +231,20 @@ function NewKeyDialog({ onClose, onCreated }: { onClose: () => void; onCreated: 
         />
         <div className="mt-3 flex flex-col gap-1.5">
           <span style={{ font: "var(--weight-medium) 13px/18px var(--font-sans)", color: "var(--text-secondary)" }}>Access</span>
-          <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>Every key can read leave types and send time off requests.</span>
+          <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>A key can do only what is picked here. Pick at least one.</span>
+          <label className={styles.scopeChoice} data-on={timeOff}>
+            <input type="checkbox" checked={timeOff} disabled={pending} onChange={(e) => setTimeOff(e.target.checked)} className="sr-only" />
+            <span className={styles.scopeIcon}>
+              <CalendarClock aria-hidden />
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className={styles.scopeTitle}>{SCOPE_LABEL[TIME_OFF].title}</span>
+              <span className={styles.scopeBody}>{SCOPE_LABEL[TIME_OFF].line}</span>
+            </span>
+            <span className={styles.scopeMark} aria-hidden="true">
+              {timeOff && <Check />}
+            </span>
+          </label>
           <label className={styles.scopeChoice} data-on={directory}>
             <input type="checkbox" checked={directory} disabled={pending} onChange={(e) => setDirectory(e.target.checked)} className="sr-only" />
             <span className={styles.scopeIcon}>
@@ -225,7 +268,7 @@ function NewKeyDialog({ onClose, onCreated }: { onClose: () => void; onCreated: 
           <Button type="button" hierarchy="secondary" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
-          <Button type="submit" disabled={!name.trim() || pending}>
+          <Button type="submit" disabled={!name.trim() || (!timeOff && !directory) || pending}>
             {pending ? "Generating…" : "Generate"}
           </Button>
         </div>
@@ -339,7 +382,22 @@ const CONFIRM_COPY: Record<Confirm["kind"], { title: string; tone: "danger" | "w
     tone: "danger",
     confirm: "Remove access",
     pending: "Removing…",
-    body: (n) => `"${n}" will stop reading the employee directory right away. Time off requests keep working.`,
+    body: (n) => `"${n}" will stop reading the employee directory right away. Its other access is unchanged.`,
+  },
+  allowTimeOff: {
+    title: "Allow time off requests?",
+    tone: "warning",
+    confirm: "Allow requests",
+    pending: "Allowing…",
+    body: (n) =>
+      `Anything holding "${n}" will be able to read this company's leave types and send a time off request for any employee. Each request waits for approval like any other.`,
+  },
+  removeTimeOff: {
+    title: "Remove time off requests?",
+    tone: "danger",
+    confirm: "Remove access",
+    pending: "Removing…",
+    body: (n) => `"${n}" will stop sending time off requests right away. Its other access is unchanged.`,
   },
 };
 
@@ -378,15 +436,18 @@ export function ApiKeysManager({
         }
         setConfirm(null);
         flash(`"${c.name}" revoked. Anything using it has lost access.`);
-      } else if (c.kind === "allowDirectory" || c.kind === "removeDirectory") {
-        const scopes = c.kind === "allowDirectory" ? [...c.scopes.filter((s) => s !== DIRECTORY), DIRECTORY] : c.scopes.filter((s) => s !== DIRECTORY);
+      } else if (c.kind === "allowDirectory" || c.kind === "removeDirectory" || c.kind === "allowTimeOff" || c.kind === "removeTimeOff") {
+        const scope = c.kind.endsWith("Directory") ? DIRECTORY : TIME_OFF;
+        const allow = c.kind.startsWith("allow");
+        const scopes = allow ? [...c.scopes.filter((s) => s !== scope), scope] : c.scopes.filter((s) => s !== scope);
         const result = await setApiKeyScopes({ apiKeyId: c.id, scopes });
         if (!result.success) {
           setConfirmError(result.error);
           return;
         }
         setConfirm(null);
-        flash(c.kind === "allowDirectory" ? `"${c.name}" can now read the employee directory.` : `"${c.name}" can no longer read the employee directory.`);
+        const what = scope === DIRECTORY ? "read the employee directory" : "send time off requests";
+        flash(allow ? `"${c.name}" can now ${what}.` : `"${c.name}" can no longer ${what}.`);
       } else {
         const result = await regenerateApiKey({ apiKeyId: c.id });
         if (!result.success) {
@@ -473,15 +534,15 @@ export function ApiKeysManager({
                         >
                           {k.name}
                         </span>
-                        {/* What the key may read: every key has time off, the directory only when allowed. */}
+                        {/* What the key may do: only what it was given. */}
                         <span
                           className="min-w-0 truncate"
                           style={{
                             font: "var(--type-body2)",
-                            color: k.scopes.includes(DIRECTORY) && k.isActive ? "var(--text-accent)" : "var(--text-tertiary)",
+                            color: k.scopes.length > 0 && k.isActive ? "var(--text-accent)" : "var(--text-tertiary)",
                           }}
                         >
-                          {k.scopes.includes(DIRECTORY) ? "Time off and employee directory" : "Time off only"}
+                          {accessLine(k.scopes)}
                         </span>
                       </span>
                     </span>
@@ -507,6 +568,11 @@ export function ApiKeysManager({
                     {k.isActive ? (
                       <RowMenu
                         disabled={pending}
+                        timeOff={k.scopes.includes(TIME_OFF)}
+                        onTimeOff={() => {
+                          setConfirmError(null);
+                          setConfirm({ kind: k.scopes.includes(TIME_OFF) ? "removeTimeOff" : "allowTimeOff", id: k.id, name: k.name, scopes: k.scopes });
+                        }}
                         directory={k.scopes.includes(DIRECTORY)}
                         onDirectory={() => {
                           setConfirmError(null);

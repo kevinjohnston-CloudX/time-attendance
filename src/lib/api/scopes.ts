@@ -1,14 +1,19 @@
 /**
- * What an API key may read beyond the original external API. Leave types and
- * time off requests stay open to every active key, as they always were; each
- * scope here is off until a company admin turns it on for that key, so a new
- * endpoint never quietly widens what an existing key can reach.
+ * What an API key may do. Each scope is off until a company admin turns it on
+ * for that key, so a new endpoint never quietly widens what an existing key
+ * can reach. Time off was open to every key until the security audit
+ * (2026-11, M5): a key made only to read the directory could file time off
+ * for anyone in the company.
  */
 
-export const API_SCOPES = ["people:read"] as const;
+export const API_SCOPES = ["time-off:write", "people:read"] as const;
 export type ApiScope = (typeof API_SCOPES)[number];
 
 export const SCOPE_LABEL: Record<ApiScope, { title: string; line: string }> = {
+  "time-off:write": {
+    title: "Time off requests",
+    line: "Reads leave types and sends time off requests for anyone in the company.",
+  },
   "people:read": {
     title: "Employee directory",
     line: "Names, usernames, both emails, phone numbers, badge IDs, site, department and supervisor. Never pay, address or date of birth.",

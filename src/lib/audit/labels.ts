@@ -102,6 +102,7 @@ const NAMED: Record<string, string> = {
   ADP_PAYROLL_PUSHED: "Payroll sent to ADP",
   VIEW_AS_STARTED: "View as started",
   SUPER_ADMIN_ENTERED: "Super admin entered the company",
+  API_TIME_OFF_SENT: "Time off sent through an API key",
   REPORT_DOWNLOADED: "Report downloaded",
   PAY_PERIOD_EXPORTED: "Pay period exported",
   DOCUMENT_DOWNLOADED: "Document opened",
