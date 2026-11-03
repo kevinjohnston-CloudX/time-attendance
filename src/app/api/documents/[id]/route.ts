@@ -31,18 +31,19 @@ export async function GET(
     if (override) tenantId = override;
   }
 
+  // Every refusal reads as not found, so nobody learns a document exists.
   // Permission gate: the live check, so the custom role and an inactive
   // employee's limits apply. The built-in role alone ignored both.
   if (await userHasPermission(session.user, "DOCUMENT_VIEW_ANY")) {
     if (doc.employee.tenantId !== tenantId) {
-      return new NextResponse("Forbidden", { status: 403 });
+      return new NextResponse("Not found", { status: 404 });
     }
   } else if (await userHasPermission(session.user, "DOCUMENT_VIEW_OWN")) {
     if (doc.employeeId !== session.user.employeeId) {
-      return new NextResponse("Forbidden", { status: 403 });
+      return new NextResponse("Not found", { status: 404 });
     }
   } else {
-    return new NextResponse("Forbidden", { status: 403 });
+    return new NextResponse("Not found", { status: 404 });
   }
 
   try {

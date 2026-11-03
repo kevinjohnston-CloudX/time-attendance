@@ -166,13 +166,12 @@ export const deleteDocument = withRBAC(
   async ({ employeeId: actorId, tenantId }, input: DeleteDocumentInput) => {
     const { documentId } = deleteDocumentSchema.parse(input);
 
-    const doc = await db.document.findUniqueOrThrow({
-      where: { id: documentId },
+    // Found only inside the caller's company: another company's reads as not found.
+    const doc = await db.document.findFirst({
+      where: { id: documentId, employee: { tenantId: ownCompany(tenantId) } },
       include: { employee: { select: { tenantId: true } } },
     });
-
-    // Tenant-scope guard
-    if (doc.employee.tenantId !== tenantId) throw new Error("FORBIDDEN");
+    if (!doc) throw new Error("NOT_FOUND");
 
     // DB delete first, then storage (orphaned file is lower risk than phantom DB record)
     await db.document.delete({ where: { id: documentId } });
