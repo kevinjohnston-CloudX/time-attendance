@@ -3,6 +3,7 @@ import { csvCell } from "@/lib/csv-cell";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { EXPORT_ROW_CAP, loadPunchExport } from "@/lib/punch-history/punch-history-data";
+import { recordDownload } from "@/lib/audit/downloads";
 
 /**
  * Team Punch History, as a spreadsheet.
@@ -79,6 +80,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   const filename = `team-punch-history-${result.startDate}-to-${result.endDate}.csv`;
+  await recordDownload({
+    action: "REPORT_DOWNLOADED",
+    entityType: "REPORT",
+    entityId: "team-punch-history",
+    details: { report: "team-punch-history", format: "csv", rows: Math.max(lines.length - 1, 0) },
+  });
   return new NextResponse(`${lines.join("\n")}\n`, {
     headers: {
       "content-type": "text/csv; charset=utf-8",

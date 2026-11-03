@@ -8,6 +8,7 @@ import { parseUtcDate } from "@/lib/utils/date";
 import { ownCompany } from "@/lib/rbac/company";
 import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
 import { cookies } from "next/headers";
+import { recordDownload } from "@/lib/audit/downloads";
 
 // Text that would run as a formula in Excel is made plain (see csvCell).
 const esc = csvCell;
@@ -157,6 +158,13 @@ export async function GET(
   } else {
     return new NextResponse("Invalid format", { status: 400 });
   }
+
+  await recordDownload({
+    action: "PAY_PERIOD_EXPORTED",
+    entityType: "PAY_PERIOD",
+    entityId: payPeriod.id,
+    details: { format: exportFormat, file: filename, rows: Math.max(csv.split("\n").filter(Boolean).length - 1, 0) },
+  });
 
   return new NextResponse(csv, {
     headers: {

@@ -15,6 +15,8 @@ import { markGateRefusalScheduled, turnedAwayHereToday } from "@/lib/presence/ga
 import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { employmentEnded, madeActiveAt } from "@/lib/presence/employment";
+import { recordDownload } from "@/lib/audit/downloads";
+import { z } from "zod";
 
 /**
  * On Site: who is in the building right now.
@@ -47,6 +49,24 @@ async function assertSite(tenantId: string, viewer: { employeeId: string; role: 
  * The sites this viewer may open, and which one to open first: their own
  * building when they are allowed to see it, otherwise the first by name.
  */
+/**
+ * Records a Live Attendance export (security audit 2026-11, M6). The file is
+ * made in the browser from lists the viewer already has, so the browser
+ * reports it; the site must be one they may see.
+ */
+export const recordLiveAttendanceExport = withRBAC(
+  "PRESENCE_VIEW_ANY",
+  async ({ tenantId, employeeId, role }, input: { siteId: string; list: string; format: string; rows: number }) => {
+    if (!tenantId) throw new Error("NOT_FOUND");
+    const { siteId, list, format, rows } = z
+      .object({ siteId: z.string().min(1), list: z.string().max(60), format: z.enum(["xlsx", "csv", "print"]), rows: z.number().int().min(0).max(1_000_000) })
+      .parse(input);
+    await assertSite(tenantId, { employeeId, role }, siteId);
+    await recordDownload({ action: "LIVE_ATTENDANCE_EXPORTED", entityType: "REPORT", entityId: `live-attendance:${siteId}`, details: { list, format, rows } });
+    return null;
+  },
+);
+
 export const getOnSiteSites = withRBAC(
   "PRESENCE_VIEW_ANY",
   async ({ tenantId, employeeId, role }) => {

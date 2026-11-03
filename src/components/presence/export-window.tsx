@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Clock, DoorOpen, Download, FileSpreadsheet, FileText, Footprints, Monitor, Printer, ScanLine, Users, X, type LucideIcon } from "lucide-react";
 import { Banner, Button, Checkbox, SegmentedControl, Select } from "@/components/ui";
 import { getOnSiteMovements, getOnSiteScanLog } from "@/lib/presence/reads";
+import { recordLiveAttendanceExport } from "@/actions/presence.actions";
 import type { PresencePerson } from "@/lib/presence/types";
 import { buildSiteDay } from "@/lib/presence/movements";
 import { recentDays } from "@/lib/presence/days";
@@ -176,6 +177,9 @@ export function ExportWindow({
       if (format === "print") printSheet(printHtml(table));
       else if (format === "xlsx") saveFile(await toXlsx(table), `${table.fileStem}.xlsx`);
       else saveFile(new Blob([toCsv(table)], { type: "text/csv;charset=utf-8" }), `${table.fileStem}.csv`);
+      // Recorded on the company's activity log: who exported which list. A
+      // record that fails to save never undoes the file.
+      void recordLiveAttendanceExport({ siteId: site.id, list: table.title, format, rows: table.rows.length }).catch(() => {});
       onClose();
     } catch {
       setFailure(

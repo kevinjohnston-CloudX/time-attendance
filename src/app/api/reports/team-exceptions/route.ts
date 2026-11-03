@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
 import { getTeamExceptions } from "@/actions/supervisor.actions";
 import { formatTimeOfDay } from "@/lib/utils/date";
+import { recordDownload } from "@/lib/audit/downloads";
 
 /**
  * The open exceptions, as a spreadsheet.
@@ -109,6 +110,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const filename = `exceptions-${format(new Date(), "yyyy-MM-dd")}.csv`;
 
+  await recordDownload({
+    action: "REPORT_DOWNLOADED",
+    entityType: "REPORT",
+    entityId: "team-exceptions",
+    details: { report: "team-exceptions", format: "csv", rows: Math.max(lines.length - 1, 0) },
+  });
   return new NextResponse(`${lines.join("\n")}\n`, {
     headers: {
       "content-type": "text/csv; charset=utf-8",

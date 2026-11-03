@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { createSignedUrl } from "@/lib/supabase-storage";
 import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
+import { recordDownload } from "@/lib/audit/downloads";
 
 export async function GET(
   _req: NextRequest,
@@ -48,6 +49,7 @@ export async function GET(
 
   try {
     const signedUrl = await createSignedUrl(doc.fileUrl);
+    await recordDownload({ action: "DOCUMENT_DOWNLOADED", entityType: "DOCUMENT", entityId: doc.id, details: { employee: doc.employeeId } });
     return NextResponse.redirect(signedUrl, 302);
   } catch {
     return new NextResponse("Failed to generate download link", { status: 500 });
