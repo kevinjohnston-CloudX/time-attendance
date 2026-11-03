@@ -35,6 +35,10 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- Notifications show the one-colour dial, not the full-colour app icon. -->
+        <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_stat_cloudtime" />
+        <meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/notification_tint" />
     </application>
 
     <!-- Permissions -->
