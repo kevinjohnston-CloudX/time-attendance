@@ -18,5 +18,7 @@
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash</item>
+        <!-- Android 12+ draws its own launch screen: CloudTime blue, as on iPhone. -->
+        <item name="windowSplashScreenBackground">#0860AA</item>
     </style>
 </resources>

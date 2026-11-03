@@ -75,6 +75,10 @@
     <script>
       // Same address as server.url in capacitor.config.ts.
       var LIVE = "https://time-attendance-txzz.vercel.app/dashboard";
+      // The site never loaded, so it cannot lift the launch screen. This page does.
+      try {
+        window.Capacitor.Plugins.SplashScreen.hide();
+      } catch (e) {}
       document.getElementById("retry").addEventListener("click", function () {
         this.disabled = true;
         this.textContent = "Connecting…";
