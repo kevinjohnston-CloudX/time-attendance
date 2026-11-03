@@ -9,6 +9,7 @@ import { ChevronLeft, ChevronRight, Eye, LogOut, Menu as MenuIcon, Search, X } f
 import { useRouter } from "@/components/layout/navigation-progress";
 import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
 import { SegmentedControl } from "@/components/ui";
+import { inPhoneApp, pushAllowedByPhone, pushChosen, resumePushNotifications, stopPushNotifications } from "@/lib/native-app";
 import type { WaitingItem } from "@/lib/dashboard/dashboard-data";
 import { LIVE_ATTENDANCE_ONLY_HREFS } from "@/lib/constants";
 import { BrandTile, CloudTimeWordmark } from "./cloudtime-logo";
@@ -338,7 +339,15 @@ function PhoneMenu({
               )}
             </>
           )}
-          <button type="button" className={styles.row} onClick={() => signOut({ callbackUrl: "/login" })}>
+          <button
+            type="button"
+            className={styles.row}
+            onClick={async () => {
+              // In the app, this phone stops getting this person's notifications first.
+              if (inPhoneApp()) await stopPushNotifications(false);
+              await signOut({ callbackUrl: "/login" });
+            }}
+          >
             <LogOut className={styles.rowIcon} aria-hidden="true" />
             <span className={styles.rowLabel}>Sign out</span>
           </button>
@@ -382,8 +391,55 @@ function PhoneMenu({
             <ThemeChoice />
           </div>
         </section>
+
+        <NotificationsChoice />
       </div>
     </div>
+  );
+}
+
+/**
+ * The phone app only: notifications on this phone, on or off. Off also
+ * removes the phone from the server, so nothing is sent to it at all. When
+ * the phone itself blocks them, one line says where to turn them back on.
+ */
+function NotificationsChoice() {
+  const router = useRouter();
+  const hydrated = useHydrated();
+  // Drawn only after hydration (below), so reading this phone's choice here is safe.
+  const [on, setOn] = useState(() => typeof window === "undefined" || pushChosen());
+  const [blocked, setBlocked] = useState(false);
+
+  useEffect(() => {
+    if (!inPhoneApp()) return;
+    void pushAllowedByPhone().then((allowed) => setBlocked(allowed === false));
+  }, []);
+
+  if (!hydrated || !inPhoneApp()) return null;
+  return (
+    <section aria-label="Notifications">
+      <h2 className={styles.groupLabel}>Notifications</h2>
+      <div className={`${styles.card} ${styles.cardPadded}`}>
+        <SegmentedControl
+          ariaLabel="Notifications on this phone"
+          fullWidth
+          value={on ? "on" : "off"}
+          onChange={(v) => {
+            const next = v === "on";
+            setOn(next);
+            if (next) void resumePushNotifications((href) => router.push(href)).then(() => pushAllowedByPhone()).then((allowed) => setBlocked(allowed === false));
+            else void stopPushNotifications(true);
+          }}
+          items={[
+            { value: "on", label: "On" },
+            { value: "off", label: "Off" },
+          ]}
+        />
+        <p className={styles.choiceNote}>
+          {blocked && on ? "Turned off in your phone's settings. Turn them on there to get them." : "Time off requests and decisions, on this phone."}
+        </p>
+      </div>
+    </section>
   );
 }
 

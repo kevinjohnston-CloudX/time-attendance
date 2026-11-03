@@ -1,0 +1,22 @@
+/// A phone that gets CloudTime's notifications in the phone app (src/lib/push).
+/// One row per app install, holding the address Firebase delivers to. Gone
+/// when the person turns notifications off or signs out on that phone, when
+/// another person signs in on it, and when Firebase says the address no
+/// longer works.
+model PushDevice {
+  id         String   @id @default(cuid())
+  userId     String
+  /// Firebase's address for this install. Not a secret, but only ever read
+  /// by the server.
+  token      String   @unique
+  /// IOS or ANDROID.
+  platform   String
+  createdAt  DateTime @default(now())
+  /// Refreshed each time the app opens signed in, so stale phones can be told apart.
+  lastSeenAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_devices")
+}

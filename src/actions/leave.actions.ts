@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { withRBAC } from "@/lib/rbac/guard";
@@ -31,6 +32,7 @@ import {
   type SubmitLeaveForEmployeeInput,
 } from "@/lib/validators/leave.schema";
 import { ownCompany } from "@/lib/rbac/company";
+import { alertLeaveDecided, alertLeaveSubmitted, alertLeaveWaitingOnHr } from "@/lib/push/leave-alerts";
 
 // ─── Employee actions ─────────────────────────────────────────────────────────
 
@@ -75,6 +77,8 @@ export const submitLeaveRequest = withRBAC(
   async ({ employeeId, tenantId }, input: LeaveRequestIdInput) => {
     const { leaveRequestId } = leaveRequestIdSchema.parse(input);
     const updated = await submitLeaveRequestCore(employeeId, tenantId, leaveRequestId);
+    // After the response: a phone notification never slows or fails the submit.
+    after(() => alertLeaveSubmitted(leaveRequestId));
     revalidatePath("/leave");
     return updated;
   }
@@ -193,6 +197,7 @@ export const createLeaveRequestForEmployee = withRBAC(
       action: "CREATED",
       changes: { note: `Submitted on behalf of employee by supervisor` },
     });
+    after(() => alertLeaveWaitingOnHr(request.id, actorId));
 
     revalidatePath("/supervisor/leave");
     revalidatePath("/leave");
@@ -262,6 +267,7 @@ export const approveLeaveRequest = withRBAC(
       action: "APPROVED",
       changes: { before: request.status, after: transition.newStatus },
     });
+    after(() => alertLeaveWaitingOnHr(leaveRequestId, reviewerId));
 
     revalidatePath("/supervisor/leave");
     revalidatePath("/leave");
@@ -317,6 +323,7 @@ export const hrApproveLeaveRequest = withRBAC(
       action: "APPROVED",
       changes: { before: request.status, after: transition.newStatus },
     });
+    after(() => alertLeaveDecided(leaveRequestId));
 
     revalidatePath("/supervisor/leave");
     revalidatePath("/leave");
@@ -358,6 +365,7 @@ export const rejectLeaveRequest = withRBAC(
     });
 
     await syncLeaveSegments(leaveRequestId);
+    after(() => alertLeaveDecided(leaveRequestId));
 
     revalidatePath("/supervisor/leave");
     revalidatePath("/leave");

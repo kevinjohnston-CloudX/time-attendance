@@ -227,6 +227,12 @@
 .cardPadded {
   padding: 12px;
 }
+/* One quiet line under a choice in the menu. */
+.choiceNote {
+  margin: 8px 4px 0;
+  font: var(--type-body2);
+  color: var(--text-secondary);
+}
 .groupLabel {
   margin: 0 0 8px;
   padding: 0 4px;

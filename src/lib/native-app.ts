@@ -21,14 +21,28 @@ function settle<T>(call: () => T | Promise<T>): Promise<T | undefined> {
   }
 }
 
+type PermissionState = "granted" | "denied" | "prompt" | "prompt-with-rationale";
+
 type CapacitorBridge = {
   isNativePlatform?(): boolean;
+  getPlatform?(): string;
   Plugins: {
     App?: {
       addListener(event: "appUrlOpen", cb: (e: { url: string }) => void): Promise<Listener> | Listener;
       getLaunchUrl(): Promise<{ url: string } | undefined> | { url: string } | undefined;
     };
     SplashScreen?: { hide(): Promise<void> | void };
+    PushNotifications?: {
+      checkPermissions(): Promise<{ receive: PermissionState }> | { receive: PermissionState };
+      requestPermissions(): Promise<{ receive: PermissionState }> | { receive: PermissionState };
+      register(): Promise<void> | void;
+      unregister(): Promise<void> | void;
+      addListener(event: "registration", cb: (t: { value: string }) => void): Promise<Listener> | Listener;
+      addListener(
+        event: "pushNotificationActionPerformed",
+        cb: (a: { notification?: { data?: { href?: unknown } } }) => void,
+      ): Promise<Listener> | Listener;
+    };
     // Capacitor's own: the colour of the clock, battery and signal icons.
     SystemBars?: { setStyle(options: { style: "LIGHT" | "DARK" }): Promise<void> | void };
     Browser?: {
@@ -130,5 +144,117 @@ export function hideLaunchScreen(): void {
  * person chose here, so the page says.
  */
 export function matchSystemBars(darkPage: boolean): void {
-  void settle(() => bridge()?.Plugins.SystemBars?.setStyle({ style: darkPage ? "DARK" : "LIGHT" }));
+  const cap = bridge();
+  if (!cap) return;
+  let dark = darkPage;
+  // Android with a WebView older than 140 does not let the page draw under
+  // the status bar: Android paints that strip itself, in the phone's own
+  // theme, and Capacitor reports a top inset of 0. The icons then follow the
+  // phone, or they would be white on white when the page and phone differ.
+  if (cap.getPlatform?.() === "android") {
+    const inset = getComputedStyle(document.documentElement).getPropertyValue("--safe-area-inset-top").trim();
+    if (inset === "" || inset === "0px") dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+  void settle(() => cap.Plugins.SystemBars?.setStyle({ style: dark ? "DARK" : "LIGHT" }));
+}
+
+// ─── Notifications ──────────────────────────────────────────────────────────
+
+const PUSH_CHOICE_KEY = "cloudtime.push";
+const PUSH_TOKEN_KEY = "cloudtime.push-token";
+
+function stored(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function store(key: string, value: string | null) {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {}
+}
+
+/** The person's own choice on this phone, from the menu. On until they turn it off. */
+export function pushChosen(): boolean {
+  return stored(PUSH_CHOICE_KEY) !== "off";
+}
+
+/** Whether the phone itself lets this app notify (it can be turned off in the phone's settings). */
+export async function pushAllowedByPhone(): Promise<boolean | null> {
+  const push = bridge()?.Plugins.PushNotifications;
+  if (!push) return null;
+  const state = await settle(() => push.checkPermissions());
+  return state ? state.receive === "granted" : null;
+}
+
+function sendToken(method: "POST" | "DELETE", token: string) {
+  const platform = bridge()?.getPlatform?.() === "ios" ? "IOS" : "ANDROID";
+  return fetch("/api/push/devices", {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, platform }),
+  }).catch(() => undefined);
+}
+
+let pushStarted = false;
+// Listeners are added once per page load; turning notifications off and on again must not double them.
+let pushListening = false;
+let openPage: (href: string) => void = () => {};
+
+/**
+ * Signed in, inside the app: asks the phone's permission once, registers this
+ * phone for the signed in person, and opens the page a tapped notification
+ * points to. Does nothing in a browser or when the person turned
+ * notifications off in the menu. `open` navigates inside CloudTime.
+ */
+export async function startPushNotifications(open: (href: string) => void): Promise<void> {
+  const push = bridge()?.Plugins.PushNotifications;
+  openPage = open;
+  if (!push || pushStarted || !pushChosen()) return;
+  pushStarted = true;
+
+  if (!pushListening) {
+    pushListening = true;
+    await settle(() =>
+      push.addListener("registration", (t) => {
+        if (!t?.value) return;
+        store(PUSH_TOKEN_KEY, t.value);
+        void sendToken("POST", t.value);
+      }),
+    );
+    await settle(() =>
+      push.addListener("pushNotificationActionPerformed", (a) => {
+        const href = a?.notification?.data?.href;
+        // Only a page of this site, never an address from outside it.
+        if (typeof href === "string" && href.startsWith("/") && !href.startsWith("//")) openPage(href);
+      }),
+    );
+  }
+
+  let state = (await settle(() => push.checkPermissions()))?.receive;
+  if (state === "prompt" || state === "prompt-with-rationale") state = (await settle(() => push.requestPermissions()))?.receive;
+  if (state === "granted") await settle(() => push.register());
+}
+
+/**
+ * Stops notifications on this phone for whoever is signed in: on sign out,
+ * and when the person turns them off. `remember` keeps them off next time.
+ */
+export async function stopPushNotifications(remember: boolean): Promise<void> {
+  if (remember) store(PUSH_CHOICE_KEY, "off");
+  const token = stored(PUSH_TOKEN_KEY);
+  if (token) await sendToken("DELETE", token);
+  store(PUSH_TOKEN_KEY, null);
+  pushStarted = false;
+  await settle(() => bridge()?.Plugins.PushNotifications?.unregister());
+}
+
+/** The person turned notifications back on in the menu. */
+export async function resumePushNotifications(open: (href: string) => void): Promise<void> {
+  store(PUSH_CHOICE_KEY, null);
+  await startPushNotifications(open);
 }
