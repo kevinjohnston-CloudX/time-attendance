@@ -53,6 +53,9 @@ const KIND_LABELS: Record<string, { kind: SyncKind; label: string; cadence: stri
   "roster.sync": { kind: "ROSTER", label: "Roster", cadence: "every 5 min" },
   "schedule.pull": { kind: "SCHEDULE_PULL", label: "Schedule", cadence: "every 5 min" },
   "gatestate.pull": { kind: "GATE_STATE", label: "Gate baseline", cadence: "daily" },
+  // Recorded as a gate run too (bridge.service). Without a line here the page
+  // threw on this kind and sent everyone back to Administration.
+  "gatescan.recon": { kind: "GATE_STATE", label: "Gate crossings", cadence: "hourly" },
 };
 
 export const getWmsSyncStatus = withRBAC("EMPLOYEE_MANAGE", async ({ tenantId }) => {
