@@ -5,6 +5,7 @@ import { endOfDayInTz, snapToLocalTime } from "@/lib/utils/date";
 import { photoUrls } from "@/lib/presence/photos";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { directReportsOf } from "@/lib/get-subordinate-ids";
+import { ownCompany } from "@/lib/rbac/company";
 
 /**
  * Everything the Team Punch History screen and its export read, in one place,
@@ -235,7 +236,7 @@ function attentionWhere(startDate: string, endDate: string, from: Date, to: Date
  * the screen and the export, so the two cannot drift apart on it.
  */
 async function resolveScope(viewer: Viewer, params: PunchHistoryParams) {
-  const tenantId = viewer.tenantId ?? undefined;
+  const tenantId = ownCompany(viewer.tenantId);
   const [isPayroll, canResolveExceptions] = await Promise.all([
     userHasPermission(viewer, "PAY_PERIOD_MANAGE"),
     userHasPermission(viewer, "TIMESHEET_APPROVE_TEAM"),
@@ -245,8 +246,8 @@ async function resolveScope(viewer: Viewer, params: PunchHistoryParams) {
   // has nobody reporting to them. Scoping by an undefined supervisorId would
   // drop the condition and hand them the whole company.
   const scope: Prisma.EmployeeWhereInput = isPayroll
-    ? { isActive: true, ...(tenantId ? { tenantId } : {}) }
-    : { isActive: true, ...directReportsOf(viewer.employeeId ?? "__none__"), ...(tenantId ? { tenantId } : {}) };
+    ? { isActive: true, tenantId }
+    : { isActive: true, ...directReportsOf(viewer.employeeId ?? "__none__"), tenantId };
 
   const selectedSiteId = isPayroll ? (params.siteId || null) : null;
   const selectedDepartmentId = isPayroll ? (params.departmentId || null) : null;
@@ -286,7 +287,7 @@ async function resolveRange(tenantId: string | undefined, params: PunchHistoryPa
   // Pay periods for the picker: the three most recent that have started, with
   // any duplicates from rule sets that share dates folded into one.
   const periodRows = await db.payPeriod.findMany({
-    where: { ...(tenantId ? { tenantId } : {}), startDate: { lte: new Date() } },
+    where: { tenantId, startDate: { lte: new Date() } },
     orderBy: { startDate: "desc" },
     take: 12,
     select: { startDate: true, endDate: true, status: true },
@@ -347,7 +348,7 @@ export async function loadTeamPunchHistory(
   const [sites, departments, firstSite, named] = await Promise.all([
     isPayroll
       ? db.site.findMany({
-          where: { isActive: true, ...(tenantId ? { tenantId } : {}) },
+          where: { isActive: true, tenantId },
           orderBy: { name: "asc" },
           select: { id: true, name: true },
         })
@@ -356,7 +357,7 @@ export async function loadTeamPunchHistory(
       ? db.department.findMany({
           where: {
             isActive: true,
-            ...(tenantId ? { tenantId } : {}),
+            tenantId,
             ...(selectedSiteId ? { sites: { some: { siteId: selectedSiteId } } } : {}),
           },
           orderBy: { name: "asc" },
@@ -364,7 +365,7 @@ export async function loadTeamPunchHistory(
         })
       : Promise.resolve([]),
     db.site.findFirst({
-      where: { isActive: true, ...(tenantId ? { tenantId } : {}) },
+      where: { isActive: true, tenantId },
       orderBy: { name: "asc" },
       select: { timezone: true },
     }),
@@ -519,7 +520,7 @@ export async function loadTeamPunchHistory(
     ];
     const actors = actorIds.length
       ? await db.employee.findMany({
-          where: { id: { in: actorIds }, ...(tenantId ? { tenantId } : {}) },
+          where: { id: { in: actorIds }, tenantId },
           select: { id: true, employeeCode: true, user: { select: { name: true } } },
         })
       : [];
@@ -648,7 +649,7 @@ export type PunchExport =
 export async function loadPunchExport(viewer: Viewer, params: PunchHistoryParams): Promise<PunchExport> {
   const { tenantId, matching } = await resolveScope(viewer, params);
   const firstSite = await db.site.findFirst({
-    where: { isActive: true, ...(tenantId ? { tenantId } : {}) },
+    where: { isActive: true, tenantId },
     orderBy: { name: "asc" },
     select: { timezone: true },
   });

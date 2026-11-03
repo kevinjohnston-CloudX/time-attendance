@@ -29,6 +29,8 @@ vi.mock("@/lib/db", () => ({
           ? { user: { name: `Person ${where.id}` }, payCategory: { description: "NJ Non Exempt 8" } }
           : { tenantId: "t1", payCategoryId: people[where.id].payCategoryId },
       ),
+      // The company check: everyone here is in t1.
+      findUnique: vi.fn(async () => ({ tenantId: "t1" })),
     },
     ptoPolicyRule: { findMany: vi.fn(async () => rules) },
     payCategoryPtoPolicy: {
@@ -36,8 +38,15 @@ vi.mock("@/lib/db", () => ({
         (categories[where.payCategoryId] ?? []).map((ptoPolicyId) => ({ ptoPolicyId })),
       ),
     },
-    payCode: { findUniqueOrThrow: vi.fn(async () => ({ label: "CA Sick " })) },
-    leaveType: { findUniqueOrThrow: vi.fn(async () => ({ name: "Floating Holiday" })) },
+    // Codes and types of t1 are found; "other-*" belongs to another company.
+    payCode: {
+      findUniqueOrThrow: vi.fn(async () => ({ label: "CA Sick " })),
+      findFirst: vi.fn(async ({ where }: { where: { id: string; tenantId: string } }) => (where.tenantId === "t1" && !where.id.startsWith("other") ? { id: where.id } : null)),
+    },
+    leaveType: {
+      findUniqueOrThrow: vi.fn(async () => ({ name: "Floating Holiday" })),
+      findFirst: vi.fn(async ({ where }: { where: { id: string; tenantId: string } }) => (where.tenantId === "t1" && !where.id.startsWith("other") ? { id: where.id } : null)),
+    },
   },
 }));
 
@@ -86,5 +95,12 @@ describe("pay codes from leave policies", () => {
     );
     await expect(assertPayCodeAllowed("nj", "nj-sick")).resolves.toBeUndefined();
     await expect(assertLeaveTypeAllowed("ca", "float")).rejects.toThrow("Floating Holiday isn't on Person ca's leave policies");
+  });
+});
+
+describe("pay codes and leave types of another company", () => {
+  it("are refused as not found, before any policy is read", async () => {
+    await expect(assertPayCodeAllowed("nj", "other-overtime")).rejects.toThrow("This pay code isn't available");
+    await expect(assertLeaveTypeAllowed("nj", "other-pto")).rejects.toThrow("This leave type isn't available");
   });
 });

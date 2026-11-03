@@ -23,6 +23,7 @@ import { getSubordinateIds } from "@/lib/get-subordinate-ids";
 import { dayRange, readOpenExceptions } from "@/lib/exceptions/read-open-exceptions";
 import type { PunchState, PunchType } from "@prisma/client";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { ownCompany } from "@/lib/rbac/company";
 
 // Payroll, HR and the admins see the whole company, as does a custom role
 // with the company-wide permission (reachesCompany): Payroll Admin NL, made
@@ -64,7 +65,7 @@ export const getTeamExceptions = withRBAC(
     }).parse(input ?? {});
 
     const isPayroll = await reachesCompany({ employeeId, role, tenantId }, "TIMESHEET_APPROVE_ANY");
-    const t = tenantId ?? undefined;
+    const t = ownCompany(tenantId);
 
     let idFilter: { id?: { in: string[] } } = {};
     if (!isPayroll) {
@@ -113,7 +114,7 @@ export const getExceptionTypeCounts = withRBAC(
         timesheet: {
           ...(payPeriodStart ? { payPeriod: { startDate: dayRange(payPeriodStart) } } : {}),
           employee: {
-            tenantId: tenantId ?? undefined,
+            tenantId: ownCompany(tenantId),
             ...idFilter,
             ...(siteId ? { siteId } : {}),
             ...(departmentId ? { departmentId } : {}),
@@ -155,7 +156,7 @@ export const getExceptionPunches = withRBAC(
       where: {
         id: timesheetId,
         employee: {
-          tenantId: tenantId ?? undefined,
+          tenantId: ownCompany(tenantId),
           ...idFilter,
         },
       },
@@ -331,7 +332,7 @@ export const getTeamLeaveRequests = withRBAC(
     }).parse(input ?? {});
 
     const isPayroll = await reachesCompany({ employeeId, role, tenantId }, "LEAVE_APPROVE_ANY");
-    const t = tenantId ?? undefined;
+    const t = ownCompany(tenantId);
 
     let employeeFilter;
     if (isPayroll) {
@@ -388,7 +389,7 @@ export const getTeamHeadcount = withRBAC(
     }).parse(input ?? {});
 
     const isPayroll = await reachesCompany({ employeeId, role, tenantId }, "LEAVE_APPROVE_ANY");
-    const t = tenantId ?? undefined;
+    const t = ownCompany(tenantId);
 
     let employeeFilter;
     if (isPayroll) {
@@ -443,7 +444,7 @@ export const getHrPendingLeave = withRBAC(
     }).parse(input ?? {});
 
     const isPayroll = await reachesCompany({ employeeId, role, tenantId }, "LEAVE_APPROVE_ANY");
-    const t = tenantId ?? undefined;
+    const t = ownCompany(tenantId);
 
     let employeeFilter;
     if (isPayroll) {
@@ -491,7 +492,7 @@ export const getUpcomingTeamLeave = withRBAC(
     }).parse(input ?? {});
 
     const isPayroll = await reachesCompany({ employeeId, role, tenantId }, "LEAVE_APPROVE_ANY");
-    const t = tenantId ?? undefined;
+    const t = ownCompany(tenantId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 

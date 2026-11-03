@@ -30,6 +30,7 @@ import {
   type ReviewLeaveInput,
   type SubmitLeaveForEmployeeInput,
 } from "@/lib/validators/leave.schema";
+import { ownCompany } from "@/lib/rbac/company";
 
 // ─── Employee actions ─────────────────────────────────────────────────────────
 
@@ -121,7 +122,7 @@ export const getTeamMembersForLeave = withRBAC(
     }
 
     const employees = await db.employee.findMany({
-      where: { isActive: true, tenantId: tenantId ?? undefined, ...idFilter },
+      where: { isActive: true, tenantId: ownCompany(tenantId), ...idFilter },
       select: {
         id: true,
         wmsId: true,
@@ -139,7 +140,7 @@ export const getTeamMembersForLeave = withRBAC(
     });
 
     const leaveTypes = await db.leaveType.findMany({
-      where: { isActive: true, tenantId: tenantId ?? undefined },
+      where: { isActive: true, tenantId: ownCompany(tenantId) },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     });

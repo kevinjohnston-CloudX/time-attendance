@@ -8,6 +8,7 @@ import { format } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
 import { AccrualsEmployeeList } from "@/components/admin/accruals-employee-list";
 import { LinkButton, PageHeader } from "@/components/ui";
+import { ownCompany } from "@/lib/rbac/company";
 
 /**
  * Accruals, on the design's list template: toolbar, applied-filter chips, then
@@ -75,7 +76,7 @@ export default async function AccrualsPage({
   // as on Timecards.
   const siteIds = canViewAny ? await siteLimit({ employeeId: session.user.employeeId ?? "", role: session.user.role ?? "" }) : null;
   const employeeScope = {
-    tenantId: session.user.tenantId ?? undefined,
+    tenantId: ownCompany(session.user.tenantId),
     ...(teamIds ? { id: { in: teamIds } } : {}),
     ...(siteIds ? { siteId: { in: siteIds } } : {}),
   };
@@ -125,7 +126,7 @@ export default async function AccrualsPage({
       orderBy: { user: { name: "asc" } },
     }),
     db.site.findMany({
-      where: { isActive: true, tenantId: session.user.tenantId ?? undefined, ...(siteIds ? { id: { in: siteIds } } : {}) },
+      where: { isActive: true, tenantId: ownCompany(session.user.tenantId), ...(siteIds ? { id: { in: siteIds } } : {}) },
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),

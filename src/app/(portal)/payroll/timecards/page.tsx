@@ -17,6 +17,7 @@ import { Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { Users } from "lucide-react";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { directReportsOf } from "@/lib/get-subordinate-ids";
+import { ownCompany } from "@/lib/rbac/company";
 
 /**
  * Timecards, as the portal design lays it out: the list template for choosing
@@ -66,7 +67,7 @@ export default async function TimecardsPage({
   // read-only team viewer (an agency) sees hours only.
   const canSeePay = canEdit || canRunPayroll || isAllScope;
 
-  const t = session.user.tenantId ?? undefined;
+  const t = ownCompany(session.user.tenantId);
 
   // Load employees + sites + departments in parallel
   // A Payroll Admin held to some sites is offered those sites only, as the

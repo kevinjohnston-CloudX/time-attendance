@@ -19,6 +19,7 @@ import {
   MAX_FILE_SIZE_BYTES,
   type DeleteDocumentInput,
 } from "@/lib/validators/document.schema";
+import { ownCompany } from "@/lib/rbac/company";
 
 // ─── uploadDocument ───────────────────────────────────────────────────────────
 // Uses manual auth because withRBAC cannot handle File/FormData inputs.
@@ -133,7 +134,7 @@ export const getAllDocuments = withRBAC(
   async ({ tenantId }, _input: void) => {
     return db.document.findMany({
       where: {
-        employee: { tenantId: tenantId ?? undefined },
+        employee: { tenantId: ownCompany(tenantId) },
       },
       include: {
         employee: {
@@ -151,7 +152,7 @@ export const getEmployeesForDocumentUpload = withRBAC(
   "DOCUMENT_UPLOAD",
   async ({ tenantId }, _input: void) => {
     return db.employee.findMany({
-      where: { isActive: true, tenantId: tenantId ?? undefined },
+      where: { isActive: true, tenantId: ownCompany(tenantId) },
       include: { user: { select: { name: true } } },
       orderBy: { user: { name: "asc" } },
     });

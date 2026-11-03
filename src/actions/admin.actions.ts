@@ -32,6 +32,7 @@ import { isSignInOnlyRole, isVisitorRole, seesTeam, SIGN_IN_ONLY_RULE_SET, VISIT
 import { cleanLanguages, languageName } from "@/lib/languages";
 import { hoursToSeconds, secondsToMinutes } from "@/lib/leave-time";
 import { NotFoundError, assertBalanceChangeAllowed, assertNotSenior, assertRecordInReach, assertSiteInReach, siteInReach, siteLimit } from "@/lib/rbac/scope";
+import { assertOwn, ownCompany } from "@/lib/rbac/company";
 
 // Maps system custom role names to their legacy enum values
 /**
@@ -162,7 +163,7 @@ export const getSupervisorOptions = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ tenantId }, _input: void) => {
     return db.employee.findMany({
-      where: { isActive: true, tenantId: tenantId ?? undefined },
+      where: { isActive: true, tenantId: ownCompany(tenantId) },
       select: { id: true, user: { select: { name: true } } },
       orderBy: { user: { name: "asc" } },
     });
@@ -172,7 +173,7 @@ export const getSupervisorOptions = withRBAC(
 export const getAdminRefData = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ tenantId, employeeId: actorEmpId, role: actorRole }, input: { withEmployees?: boolean } | void) => {
-    const t = tenantId ?? undefined;
+    const t = ownCompany(tenantId);
     // A Payroll or HR Admin held to some sites is offered only those, on the
     // Create window and the employee record (createEmployee and updateEmployee
     // refuse the rest: assertSiteInReach).
@@ -298,7 +299,7 @@ export const getEmployees = withRBAC(
 
     const allowedSiteIds = await getActorSiteRestrictions(actorEmpId, actorRole);
 
-    const where: Prisma.EmployeeWhereInput = { tenantId: tenantId ?? undefined };
+    const where: Prisma.EmployeeWhereInput = { tenantId: ownCompany(tenantId) };
     // No status picked means current employees (active or on leave), as the
     // list has opened since Job Titles; "Everyone" brings the inactive back.
     if (!status) where.isActive = true;
@@ -461,6 +462,10 @@ export const createEmployee = withRBAC(
     await assertSiteInReach(actor, parsed.siteId);
     await assertAssignable(await currentIdentity(), tenantId, parsed.role, parsed.customRoleId);
     await assertOwnAssignments(tenantId, parsed.jobTitleId, parsed.agencyId);
+    await assertOwn(tenantId, {
+      site: parsed.siteId, department: parsed.departmentId, ruleSet: parsed.ruleSetId, shift: parsed.shiftId,
+      holidayRule: parsed.holidayRuleId, payCategory: parsed.payCategoryId, payType: parsed.payTypeId, employee: parsed.supervisorId,
+    });
 
     // Auto-assign the system custom role when only a role enum is provided
     let resolvedCustomRoleId = parsed.customRoleId ?? null;
@@ -705,6 +710,10 @@ export const updateEmployee = withRBAC(
     });
     await assertOwnAssignments(tenantId, jobTitleId, agencyId);
     if (!current) throw new Error("NOT_FOUND");
+    await assertOwn(tenantId, {
+      site: siteId, department: departmentId, ruleSet: ruleSetId, shift: shiftId,
+      holidayRule: holidayRuleId, payCategory: payCategoryId, payType: payTypeId, employee: supervisorId,
+    });
     if (siteId !== undefined && siteId !== current.siteId) await assertSiteInReach(actor, siteId);
 
     // The termination date follows the status. Made inactive: the date given,
@@ -1406,7 +1415,7 @@ export const getEmployeeLeaveLog = withRBAC(
 // ─── Sites ────────────────────────────────────────────────────────────────────
 
 export const getSites = withRBAC(SITE_READERS, async ({ tenantId }, _input: void) => {
-  return db.site.findMany({ where: { tenantId: tenantId ?? undefined }, orderBy: { name: "asc" } });
+  return db.site.findMany({ where: { tenantId: ownCompany(tenantId) }, orderBy: { name: "asc" } });
 });
 
 export const createSite = withRBAC(
@@ -1483,7 +1492,7 @@ export const getDepartments = withRBAC(
   SITE_READERS,
   async ({ tenantId }, _input: void) => {
     return db.department.findMany({
-      where: { tenantId: tenantId ?? undefined },
+      where: { tenantId: ownCompany(tenantId) },
       include: { sites: { include: { site: true } } },
       orderBy: { name: "asc" },
     });
@@ -1764,7 +1773,7 @@ export const getEmployeeLeaveBalances = withRBAC(
     await assertRecordInReach(actor, input.employeeId);
     const year = input.year ?? new Date().getFullYear();
     const [leaveTypes, balances] = await Promise.all([
-      db.leaveType.findMany({ where: { isActive: true, tenantId: tenantId ?? undefined }, orderBy: { name: "asc" } }),
+      db.leaveType.findMany({ where: { isActive: true, tenantId: ownCompany(tenantId) }, orderBy: { name: "asc" } }),
       db.leaveBalance.findMany({ where: { employeeId: input.employeeId, accrualYear: year } }),
     ]);
     return leaveTypes.map((lt) => {
@@ -1990,7 +1999,7 @@ export const getAuditLogs = withRBAC(
     const page = Math.max(1, Math.floor(Number(input.page) || 1));
     const take = 50;
     const skip = (page - 1) * take;
-    const tenantFilter = tenantId ? { tenantId } : {};
+    const tenantFilter = { tenantId: ownCompany(tenantId) };
 
     const entityType = ENTITY_TYPES.includes(input.entityType as never) ? (input.entityType as AuditEntityType) : undefined;
     const q = (input.q ?? "").trim().slice(0, 100);
@@ -2111,7 +2120,7 @@ export const getAuditLogs = withRBAC(
 export const getAuditActors = withRBAC("AUDIT_VIEW", async ({ tenantId }, _input: void) => {
   const grouped = await db.auditLog.groupBy({
     by: ["actorId"],
-    where: { ...(tenantId ? { tenantId } : {}), actorId: { not: null } },
+    where: { tenantId: ownCompany(tenantId), actorId: { not: null } },
     _count: { _all: true },
     orderBy: { _count: { actorId: "desc" } },
     take: 200,
@@ -2119,7 +2128,7 @@ export const getAuditActors = withRBAC("AUDIT_VIEW", async ({ tenantId }, _input
   const ids = grouped.map((g) => g.actorId).filter((id): id is string => !!id);
   const people = ids.length
     ? await db.employee.findMany({
-        where: { id: { in: ids }, ...(tenantId ? { tenantId } : {}) },
+        where: { id: { in: ids }, tenantId: ownCompany(tenantId) },
         select: { id: true, user: { select: { name: true } } },
       })
     : [];

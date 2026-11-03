@@ -12,6 +12,7 @@ import {
   scheduleWindow,
 } from "@/lib/services/bridge.service";
 import type { SyncKind } from "@prisma/client";
+import { ownCompany } from "@/lib/rbac/company";
 
 /**
  * Status of the Oracle sync, for the admin page.
@@ -61,7 +62,7 @@ const KIND_LABELS: Record<string, { kind: SyncKind; label: string; cadence: stri
 export const getWmsSyncStatus = withRBAC("EMPLOYEE_MANAGE", async ({ tenantId }) => {
   // The bridge belongs to one company; any other sees that, and nothing of it.
   if (!(await integrationConnected(tenantId, "wms"))) return { connected: false as const };
-  const t = tenantId ?? undefined;
+  const t = ownCompany(tenantId);
   const now = Date.now();
   const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60_000);
 

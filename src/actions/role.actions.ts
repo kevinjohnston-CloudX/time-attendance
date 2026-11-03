@@ -13,6 +13,7 @@ import {
   type CreateRoleInput,
   type UpdateRoleInput,
 } from "@/lib/validators/role.schema";
+import { ownCompany } from "@/lib/rbac/company";
 
 /**
  * A role limited to Live Attendance never also gets View As: previewing other
@@ -51,7 +52,7 @@ async function assertRankAllowed(rank: number, existing?: { rank: number }) {
 export const getRoles = withRBAC(
   "ROLE_MANAGE",
   async ({ tenantId }, _input: void) => {
-    const t = tenantId ?? undefined;
+    const t = ownCompany(tenantId);
     return db.customRole.findMany({
       where: { tenantId: t },
       include: {
@@ -66,7 +67,7 @@ export const getRoleById = withRBAC(
   "ROLE_MANAGE",
   async ({ tenantId }, input: { id: string }) => {
     const role = await db.customRole.findFirst({
-      where: { id: input.id, tenantId: tenantId ?? undefined },
+      where: { id: input.id, tenantId: ownCompany(tenantId) },
       include: {
         permissions: true,
         _count: { select: { employees: true } },

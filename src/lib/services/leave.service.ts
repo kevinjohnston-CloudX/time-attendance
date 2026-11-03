@@ -9,6 +9,7 @@ import { hoursToSeconds, secondsToHours } from "@/lib/leave-time";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { assertLeaveTypeAllowed } from "@/lib/pay-code-availability";
 import { requestLeaveSchema, type DaySelectionInput } from "@/lib/validators/leave.schema";
+import { ownCompany } from "@/lib/rbac/company";
 
 // ─── Queries ────────────────────────────────────────────────────────────────
 
@@ -22,7 +23,7 @@ export async function getLeaveRequestsCore(employeeId: string) {
 
 export async function getLeaveTypesCore(tenantId: string | null) {
   return db.leaveType.findMany({
-    where: { isActive: true, tenantId: tenantId ?? undefined },
+    where: { isActive: true, tenantId: ownCompany(tenantId) },
     orderBy: { name: "asc" },
   });
 }

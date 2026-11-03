@@ -636,7 +636,7 @@ export async function findScanDiscrepancies(
     where: {
       stream: "TIME_CLOCK",
       scanTime: { gte: from, lt: to },
-      ...(tenantId ? { tenantId } : {}),
+      ...(tenantId ? { tenantId } : {}), // company-scope-ok: no company only from the nightly job, which checks every company
     },
     orderBy: { scanTime: "asc" },
     include: { employee: { select: { user: { select: { name: true } } } } },
@@ -719,7 +719,7 @@ export async function findScanDiscrepancies(
       direction: { in: ["IN", "OUT"] },
       directionSource: { in: ["ALTERNATION", "REREAD"] },
       scanTime: { gte: from, lt: to },
-      ...(tenantId ? { tenantId } : {}),
+      ...(tenantId ? { tenantId } : {}), // company-scope-ok: no company only from the nightly job, which checks every company
     },
     orderBy: { scanTime: "asc" },
     select: {
