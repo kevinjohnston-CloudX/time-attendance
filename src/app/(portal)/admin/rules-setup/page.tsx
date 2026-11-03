@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { userHasPermission } from "@/lib/rbac/check-permission";
+import { manageOrView } from "@/lib/rbac/check-permission";
+import { ViewOnly } from "@/components/admin/setup/view-only";
 import { getRuleSets } from "@/actions/admin.actions";
 import { getAllPayCodes } from "@/actions/pay-code.actions";
 import { getPtoPolicies } from "@/actions/pto-policy.actions";
@@ -24,8 +25,9 @@ export default async function RulesSetupPage({
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const hasRulesManage = await userHasPermission(session.user, "RULES_MANAGE");
-  if (!hasRulesManage) redirect("/dashboard");
+  // Rule Sets on Read opens every area to look at, with nothing to change.
+  const access = await manageOrView(session.user, "RULES_MANAGE", "RULES_VIEW");
+  if (!access) redirect("/dashboard");
 
   const { tab, policy, view } = (await searchParams) ?? {};
   // An old link to one policy opens it on its own page now.
@@ -52,18 +54,20 @@ export default async function RulesSetupPage({
 
   // The header is drawn by the client, which pins it over the areas rail.
   return (
-    <RulesSetupClient
-      ruleSets={serialize(ruleSetsResult.success ? ruleSetsResult.data : [])}
-      shifts={serialize(shiftsResult.success ? shiftsResult.data : [])}
-      holidayRules={serialize(
-        holidayRulesResult.success ? holidayRulesResult.data : [],
-      )}
-      ptoPolicies={serialize(
-        ptoPoliciesResult.success ? ptoPoliciesResult.data : [],
-      )}
-      payCodes={serialize(payCodesResult.success ? payCodesResult.data : [])}
-      initialTab={tab}
-      initialRuleSetView={view}
-    />
+    <ViewOnly on={access === "view"}>
+      <RulesSetupClient
+        ruleSets={serialize(ruleSetsResult.success ? ruleSetsResult.data : [])}
+        shifts={serialize(shiftsResult.success ? shiftsResult.data : [])}
+        holidayRules={serialize(
+          holidayRulesResult.success ? holidayRulesResult.data : [],
+        )}
+        ptoPolicies={serialize(
+          ptoPoliciesResult.success ? ptoPoliciesResult.data : [],
+        )}
+        payCodes={serialize(payCodesResult.success ? payCodesResult.data : [])}
+        initialTab={tab}
+        initialRuleSetView={view}
+      />
+    </ViewOnly>
   );
 }

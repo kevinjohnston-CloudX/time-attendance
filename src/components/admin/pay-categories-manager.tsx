@@ -20,6 +20,7 @@ import {
   useStatusView,
   useOpenFromLink,
 } from "./setup/setup-ui";
+import { useViewOnly } from "./setup/view-only";
 
 /**
  * Pay categories: the number payroll classifies somebody by, the leave
@@ -125,7 +126,9 @@ export function PayCategoriesManager({
     });
   }
 
-  const addButton = (
+  // Looking only (view-only.tsx): nothing to add.
+  const viewOnly = useViewOnly();
+  const addButton = viewOnly ? undefined : (
     <Button onClick={() => open("new")} leadingIcon={<Plus className="h-4 w-4" />}>
       Add pay category
     </Button>

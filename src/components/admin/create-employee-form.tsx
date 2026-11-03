@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition, type ReactNode, type SelectHTMLAttributes } from "react";
+import { Fragment, useEffect, useRef, useState, useTransition, type ReactNode, type SelectHTMLAttributes } from "react";
 import { useRouter } from "next/navigation";
 import { format, parseISO } from "date-fns";
 import { createEmployee, getSupervisorOptions } from "@/actions/admin.actions";
 import type { CopyFromEmployee } from "@/lib/employee-copy";
+import { asksForClientBadge, isClientBadge } from "@/lib/utils/client-badge";
 import type { Site, Department, RuleSet } from "@prisma/client";
-import { Banner, Button, Input, SegmentedControl, Select } from "@/components/ui";
+import { Banner, Button, Input, LanguagePicker, SegmentedControl, Select } from "@/components/ui";
 import { Overlay } from "@/components/ui/overlay";
 import { Check, CircleCheck, Plus, UserPlus, X } from "lucide-react";
 import styles from "./new-employee-window.module.css";
@@ -58,15 +59,37 @@ type Snapshot = {
   email: string;
   departmentId: string;
   ruleSetId: string;
+  shiftId: string;
+  payCategoryId: string;
+  holidayRuleId: string;
+  agencyId: string;
+  /** The role chosen makes a login with no timecard (sign-in-only.ts). */
+  signIn: boolean;
+  /** ...and one that views a team: an agency viewer, who needs its agency. */
+  needsAgency: boolean;
+  /** The role chosen is a visitor's: a badge for the security gate and nothing else. */
+  visitor: boolean;
+  siteId: string;
 };
+
+/** A client badge (client-badge.ts) works no shift and keeps no timecard. */
+const forClient = (s: Snapshot) => asksForClientBadge(s.wmsId) || isClientBadge(s.wmsId);
+/** Needed of anyone with a timecard: not a sign in only account or a visitor. */
+const timecard = (s: Snapshot) => !s.signIn && !s.visitor;
 
 const NEEDED: { step: Step; label: string; missing: (s: Snapshot) => boolean }[] = [
   { step: "job", label: "full name", missing: (s) => !s.name.trim() },
-  { step: "job", label: "hire date", missing: (s) => !s.hireDate },
-  { step: "job", label: "badge ID", missing: (s) => !s.wmsId.trim() },
-  { step: "job", label: "a work or personal email", missing: (s) => !s.workEmail.trim() && !s.email.trim() },
+  { step: "job", label: "hire date", missing: (s) => !s.hireDate && timecard(s) },
+  { step: "job", label: "badge ID", missing: (s) => !s.wmsId.trim() && timecard(s) },
+  { step: "job", label: "site", missing: (s) => !s.siteId },
+  // A client badge and a visitor sign nobody in (client-badge.ts).
+  { step: "job", label: "a work or personal email", missing: (s) => !s.workEmail.trim() && !s.email.trim() && !forClient(s) && !s.visitor },
   { step: "job", label: "department", missing: (s) => !s.departmentId },
-  { step: "pay", label: "rule set", missing: (s) => !s.ruleSetId },
+  { step: "job", label: "agency", missing: (s) => !s.agencyId && s.needsAgency },
+  { step: "pay", label: "rule set", missing: (s) => !s.ruleSetId && timecard(s) },
+  { step: "pay", label: "holiday rule", missing: (s) => !s.holidayRuleId && !forClient(s) && timecard(s) },
+  { step: "pay", label: "shift", missing: (s) => !s.shiftId && !forClient(s) && timecard(s) },
+  { step: "pay", label: "pay category", missing: (s) => !s.payCategoryId && !forClient(s) && timecard(s) },
 ];
 
 interface Props {
@@ -78,7 +101,12 @@ interface Props {
    * when it opens, so the page does not carry every name in the company.
    */
   employees?: EmployeeOption[];
-  customRoles: { id: string; name: string }[];
+  /** signInOnly, seesTeam and visitor: see sign-in-only.ts. */
+  customRoles: { id: string; name: string; signInOnly?: boolean; seesTeam?: boolean; visitor?: boolean }[];
+  /** The badge the next visitor gets (a preview: it is taken at the save). */
+  nextVisitorBadge?: string | null;
+  /** The department every visitor is filed in. */
+  visitorDepartment?: { id: string; name: string } | null;
   shifts: { id: string; name: string; startTime: string; endTime: string }[];
   holidayRules: { id: string; name: string }[];
   payCategories: { id: string; number: number; description: string | null }[];
@@ -100,6 +128,11 @@ function initialsOf(name: string): string {
   const first = parts[0][0] ?? "";
   const last = parts.length > 1 ? parts[parts.length - 1][0] ?? "" : "";
   return (first + last).toUpperCase();
+}
+
+/** Today as the date field shows it (yyyy-MM-dd), on this computer's clock. */
+function todayIso(): string {
+  return format(new Date(), "yyyy-MM-dd");
 }
 
 /** "a", "a and b", "a, b and c". */
@@ -159,7 +192,7 @@ function Row({ cols = 2, children }: { cols?: 1 | 2 | 3 | 4; children: ReactNode
   );
 }
 
-export function CreateEmployeeForm({ sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies, copyFrom }: Props) {
+export function CreateEmployeeForm({ sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies, nextVisitorBadge, visitorDepartment, copyFrom }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -194,27 +227,39 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
     };
   }, [open, employees, loadedSupervisors]);
 
-  const defaultSiteId =
-    sites.find((s) => departments.some((d) => d.sites.some((ds) => ds.site.id === s.id)))?.id ?? sites[0]?.id ?? "";
   const [payType, setPayType] = useState<string>(copyFrom ? (copyFrom.payType ?? "") : "HOURLY");
-  const [selectedSiteId, setSelectedSiteId] = useState(copyFrom?.siteId ?? defaultSiteId);
+  const [preferredLanguage, setPreferredLanguage] = useState("");
+  // Blank unless copying, as the department and rule set: the building is chosen.
+  const [selectedSiteId, setSelectedSiteId] = useState(copyFrom?.siteId ?? "");
   const filteredDepts = departments.filter((d) => d.sites.some((ds) => ds.site.id === selectedSiteId));
   const activeAgencies = agencies.filter((a) => !a.inactiveOn || new Date(a.inactiveOn) > new Date());
 
   // What the header, the steps and the footer read. The fields stay
   // uncontrolled; this is read back from the form whenever one changes.
-  const blankSnapshot = (c: CopyFromEmployee | null, siteId: string): Snapshot => ({
+  /** What the role picked (its select value) makes of the account. */
+  const roleKind = (value: string | null | undefined) => {
+    const role = value?.startsWith("custom:") ? customRoles.find((r) => r.id === value.slice(7)) : undefined;
+    return { signIn: !!role?.signInOnly, needsAgency: !!role?.signInOnly && !!role?.seesTeam, visitor: !!role?.visitor };
+  };
+  const blankSnapshot = (c: CopyFromEmployee | null): Snapshot => ({
+    ...roleKind(c?.role),
+    agencyId: c?.agencyId ?? "",
+    siteId: c?.siteId ?? "",
     name: "",
     hireDate: "",
     wmsId: "",
     workEmail: "",
     email: "",
-    // A required select with no empty option shows, and sends, its first one.
-    departmentId:
-      c?.departmentId ?? departments.find((d) => d.sites.some((ds) => ds.site.id === siteId))?.id ?? "",
-    ruleSetId: c?.ruleSetId ?? ruleSets[0]?.id ?? "",
+    // Blank unless copying: each is chosen, never the first in its list. The
+    // Rule Set used to start on the first by name, "Ca Exempt - Punch", and a
+    // Georgia and a Rutherford hire were saved on it unseen (no overtime).
+    departmentId: c?.departmentId ?? "",
+    ruleSetId: c?.ruleSetId ?? "",
+    shiftId: c?.shiftId ?? "",
+    payCategoryId: c?.payCategoryId ?? "",
+    holidayRuleId: c?.holidayRuleId ?? "",
   });
-  const [snap, setSnap] = useState<Snapshot>(() => blankSnapshot(copyFrom ?? null, copyFrom?.siteId ?? defaultSiteId));
+  const [snap, setSnap] = useState<Snapshot>(() => blankSnapshot(copyFrom ?? null));
 
   function readForm() {
     const f = formRef.current;
@@ -229,6 +274,12 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
       email: v("email"),
       departmentId: v("departmentId"),
       ruleSetId: v("ruleSetId"),
+      shiftId: v("shiftId"),
+      payCategoryId: v("payCategoryId"),
+      holidayRuleId: v("holidayRuleId"),
+      agencyId: v("agencyId"),
+      siteId: v("siteId"),
+      ...roleKind(v("role")),
     };
     setSnap(next);
     if (next.workEmail.trim() || next.email.trim()) setEmailError(false);
@@ -240,19 +291,21 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
     setSupervisorsFailed(false);
     setStep("job");
     setVisited(new Set());
+    setPreferredLanguage("");
     setEmailError(false);
     setError(null);
     if (copy) {
       // The next Add Employee starts blank, and a refresh does not reopen the copy.
       setCopy(null);
-      setSelectedSiteId(defaultSiteId);
+      setSelectedSiteId("");
       setPayType("HOURLY");
-      setSnap(blankSnapshot(null, defaultSiteId));
+      setSnap(blankSnapshot(null));
       const url = new URL(window.location.href);
       url.searchParams.delete("copyFrom");
       router.replace(url.pathname + url.search);
     } else {
-      setSnap(blankSnapshot(null, selectedSiteId));
+      setSelectedSiteId("");
+      setSnap(blankSnapshot(null));
     }
   }
 
@@ -278,9 +331,11 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
     };
   }, [open]);
 
-  const stepIndex = STEPS.findIndex((s) => s.value === step);
-  const nextStep = STEPS[stepIndex + 1];
-  const prevStep = STEPS[stepIndex - 1];
+  // A sign in only account has no pay and schedule step: it keeps no timecard.
+  const steps = snap.signIn ? STEPS.filter((s) => s.value !== "pay") : STEPS;
+  const stepIndex = steps.findIndex((s) => s.value === step);
+  const nextStep = steps[stepIndex + 1];
+  const prevStep = steps[stepIndex - 1];
   const onLast = !nextStep;
 
   function goTo(target: Step) {
@@ -300,7 +355,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
       bad.reportValidity();
       return false;
     }
-    if (s === "job" && !snap.workEmail.trim() && !snap.email.trim()) {
+    if (s === "job" && !snap.workEmail.trim() && !snap.email.trim() && !forClient(snap) && !snap.visitor) {
       setEmailError(true);
       formRef.current?.querySelector<HTMLInputElement>('input[name="workEmail"]')?.focus();
       return false;
@@ -340,17 +395,22 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
 
       const result = await createEmployee({
         name: fd.get("name") as string,
-        email: fd.get("email") as string,
-        workEmail: fd.get("workEmail") as string,
+        // Switched off for a visitor, who never signs in: not sent.
+        email: (fd.get("email") as string | null) ?? "",
+        workEmail: (fd.get("workEmail") as string | null) ?? "",
         employeeCode: (fd.get("employeeCode") as string) || "",
         role,
         customRoleId,
         siteId: fd.get("siteId") as string,
         departmentId: fd.get("departmentId") as string,
-        ruleSetId: fd.get("ruleSetId") as string,
-        hireDate: fd.get("hireDate") as string,
+        // A sign in only account's pay and schedule fields are switched off,
+        // so not sent: the server puts it on UNASSIGNED.
+        ruleSetId: (fd.get("ruleSetId") as string | null) || undefined,
+        hireDate: (fd.get("hireDate") as string | null) || undefined,
         supervisorId: fd.get("supervisorId") as string,
-        wmsId: fd.get("wmsId") as string,
+        wmsId: (fd.get("wmsId") as string | null) || undefined,
+        signInOnly: snap.signIn,
+        visitor: snap.visitor,
         payType: (fd.get("payType") as "HOURLY" | "SALARY" | null) || null,
         payTypeId: (fd.get("payTypeId") as string) || null,
         payRate: payRateRaw ? Number(payRateRaw) : null,
@@ -374,6 +434,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
         state: fd.get("state") as string,
         country: fd.get("country") as string,
         zipCode: fd.get("zipCode") as string,
+        preferredLanguage: (fd.get("preferredLanguage") as string | null) || null,
       });
 
       if (!result.success) {
@@ -398,8 +459,9 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
   const panelStyle = (s: Step): React.CSSProperties => ({ display: step === s ? "block" : "none" });
 
   const missing = NEEDED.filter((n) => n.missing(snap));
+  const client = forClient(snap);
   const stepDone = (s: Step) =>
-    !STEPS.find((x) => x.value === s)?.optional && visited.has(s) && !missing.some((n) => n.step === s);
+    !steps.find((x) => x.value === s)?.optional && visited.has(s) && !missing.some((n) => n.step === s);
 
   const name = snap.name.trim();
   const initials = initialsOf(name);
@@ -452,7 +514,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
             </header>
 
             <ol className={styles.steps} aria-label="Steps">
-              {STEPS.map((s, i) => (
+              {steps.map((s, i) => (
                 <li key={s.value}>
                   <button
                     type="button"
@@ -508,8 +570,29 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                         <Input label="Full Name" name="name" required autoComplete="off" />
                       </Row>
                       <Row>
-                        <Input label="Hire Date" name="hireDate" type="date" required />
-                        <Input label="Badge ID (WMS)" name="wmsId" placeholder="The number on their QR badge" required autoComplete="off" />
+                        {snap.visitor ? (
+                          // A visitor: today, and the next visitor badge, filled in
+                          // and not editable. "CL" asks the save for that badge
+                          // (client-badge.ts); the number shown is its preview.
+                          // Keyed apart from the editable pair below: the same
+                          // field in both places would be held one way, then the other.
+                          <Fragment key="visitor">
+                            <Input label="Hire Date" type="date" value={todayIso()} disabled readOnly />
+                            <input type="hidden" name="wmsId" value="CL" />
+                            <Input label="Badge ID (WMS)" value={nextVisitorBadge ?? "CL"} disabled readOnly />
+                          </Fragment>
+                        ) : (
+                          <Fragment key="person">
+                            <Input label="Hire Date" name="hireDate" type="date" required={!snap.signIn} />
+                            <Input
+                              label="Badge ID (WMS)"
+                              name="wmsId"
+                              placeholder={snap.signIn ? "Not needed for a sign-in only account" : "The number on their QR badge"}
+                              required={!snap.signIn}
+                              autoComplete="off"
+                            />
+                          </Fragment>
+                        )}
                       </Row>
                     </Block>
 
@@ -517,21 +600,42 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                         least one is needed, which Continue and the save both say. */}
                     <Block
                       label="Sign in"
-                      note={emailError ? "Add a work or personal email so they can sign in." : "At least one email is needed. Invites go to the work email first."}
-                      noteTone={emailError ? "error" : undefined}
+                      note={
+                        snap.visitor
+                          ? "Visitors never sign in, so no email."
+                          : emailError
+                            ? "Add a work or personal email so they can sign in."
+                            : "At least one email is needed. Invites go to the work email first."
+                      }
+                      noteTone={emailError && !snap.visitor ? "error" : undefined}
                     >
                       <Row>
-                        <Input label="Work Email" name="workEmail" type="email" autoComplete="off" />
-                        <Input label="Personal Email" name="email" type="email" autoComplete="off" />
+                        <Input label="Work Email" name="workEmail" type="email" autoComplete="off" disabled={snap.visitor} />
+                        <Input label="Personal Email" name="email" type="email" autoComplete="off" disabled={snap.visitor} />
                       </Row>
                     </Block>
 
-                    <Block label="Placement">
+                    <Block
+                      label="Placement"
+                      note={
+                        snap.visitor
+                          ? visitorDepartment
+                            ? "A visitor: a badge for the security gate, and nothing else. No sign in, time clock, timecard or pay. Choose the site they are visiting."
+                            : "Visitors are filed in a department named Visitors, and there is none. Add it before adding a visitor."
+                          : snap.needsAgency
+                            ? "A sign-in only login: no badge, timecard or pay. They see everyone in the agency chosen below."
+                            : snap.signIn
+                              ? "A sign-in only login: no badge, timecard or pay, so there is no pay and schedule step."
+                              : undefined
+                      }
+                      noteTone={snap.visitor && !visitorDepartment ? "error" : undefined}
+                    >
                       <Row>
                         <SelectField
                           label="Site"
                           name="siteId"
                           value={selectedSiteId}
+                          required
                           onChange={(e) => {
                             setSelectedSiteId(e.target.value);
                             // The department list changes with the site; read it
@@ -539,18 +643,30 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                             requestAnimationFrame(readForm);
                           }}
                         >
+                          <option value="">Choose a site</option>
                           {sites.map((s) => (
                             <option key={s.id} value={s.id}>{s.name}</option>
                           ))}
                         </SelectField>
-                        <SelectField label="Department" name="departmentId" required defaultValue={copy?.departmentId}>
-                          {filteredDepts.map((d) => (
-                            <option key={d.id} value={d.id}>{d.name}</option>
-                          ))}
-                        </SelectField>
+                        {snap.visitor ? (
+                          // Every visitor is filed in Visitors, filled in and not editable.
+                          <>
+                            <input type="hidden" name="departmentId" value={visitorDepartment?.id ?? ""} />
+                            <SelectField label="Department" disabled value={visitorDepartment?.id ?? ""}>
+                              <option value={visitorDepartment?.id ?? ""}>{visitorDepartment?.name ?? "No Visitors department"}</option>
+                            </SelectField>
+                          </>
+                        ) : (
+                          <SelectField label="Department" name="departmentId" required defaultValue={copy?.departmentId ?? ""}>
+                            <option value="">{selectedSiteId ? "Choose a department" : "Choose a site first"}</option>
+                            {filteredDepts.map((d) => (
+                              <option key={d.id} value={d.id}>{d.name}</option>
+                            ))}
+                          </SelectField>
+                        )}
                       </Row>
                       <Row>
-                        <SelectField label="Job Title" name="jobTitleId" defaultValue={copy?.jobTitleId ?? ""}>
+                        <SelectField label="Job Title" name="jobTitleId" disabled={snap.visitor} defaultValue={copy?.jobTitleId ?? ""}>
                           <option value="">None</option>
                           {jobTitles.map((jt) => (
                             <option key={jt.id} value={jt.id}>
@@ -559,7 +675,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                           ))}
                         </SelectField>
                         {supervisors ? (
-                          <SelectField label="Supervisor" name="supervisorId" defaultValue={copy?.supervisorId ?? ""}>
+                          <SelectField label="Supervisor" name="supervisorId" disabled={snap.visitor} defaultValue={copy?.supervisorId ?? ""}>
                             <option value="">None</option>
                             {supervisors.map((emp) => (
                               <option key={emp.id} value={emp.id}>{emp.user.name}</option>
@@ -589,8 +705,8 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                         </SelectField>
                         {/* Agencies past their inactive date stay on file for the
                             people already in them, but are not offered for new hires. */}
-                        <SelectField label="Agency" name="agencyId" defaultValue={copy?.agencyId ?? ""}>
-                          <option value="">None</option>
+                        <SelectField label="Agency" name="agencyId" required={snap.needsAgency} disabled={snap.visitor} defaultValue={copy?.agencyId ?? ""}>
+                          <option value="">{snap.needsAgency ? "Choose the agency they view" : "None"}</option>
                           {activeAgencies.map((a) => (
                             <option key={a.id} value={a.id}>
                               {a.code} ({a.description})
@@ -603,23 +719,34 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
 
                   {/* ── 2. Pay and schedule ── */}
                   <div data-step="pay" style={panelStyle("pay")}>
+                    {/* Switched off for a sign in only account and a visitor: a
+                        disabled field is neither checked nor sent. */}
+                    {snap.visitor && (
+                      <div className={styles.banner}>
+                        <Banner tone="info" body="Visitors keep no timecard, so nothing here applies to them." />
+                      </div>
+                    )}
+                    <fieldset disabled={snap.signIn || snap.visitor} className={styles.plainFieldset}>
                     <Block label="Time rules" note="How their hours are counted.">
                       <Row>
-                        <SelectField label="Rule Set" name="ruleSetId" required defaultValue={copy?.ruleSetId}>
+                        <SelectField label="Rule Set" name="ruleSetId" required defaultValue={copy?.ruleSetId ?? ""}>
+                          <option value="">Choose a rule set</option>
                           {ruleSets.map((rs) => (
                             <option key={rs.id} value={rs.id}>{rs.name}</option>
                           ))}
                         </SelectField>
-                        <SelectField label="Holiday Rule" name="holidayRuleId" defaultValue={copy?.holidayRuleId ?? ""}>
-                          <option value="">None</option>
+                        {/* Required for a new hire (temps take "No Holiday"); not
+                            for a client badge, which keeps no timecard. */}
+                        <SelectField label="Holiday Rule" name="holidayRuleId" required={!client} defaultValue={copy?.holidayRuleId ?? ""}>
+                          <option value="">Choose a holiday rule</option>
                           {holidayRules.map((r) => (
                             <option key={r.id} value={r.id}>{r.name}</option>
                           ))}
                         </SelectField>
                       </Row>
                       <Row cols={1}>
-                        <SelectField label="Shift" name="shiftId" defaultValue={copy?.shiftId ?? ""}>
-                          <option value="">None</option>
+                        <SelectField label="Shift" name="shiftId" required={!client} defaultValue={copy?.shiftId ?? ""}>
+                          <option value="">Choose a shift</option>
                           {shifts.map((s) => (
                             <option key={s.id} value={s.id}>
                               {s.name} ({fmtTime(s.startTime)} – {fmtTime(s.endTime)})
@@ -660,8 +787,8 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
 
                     <Block label="Payroll" note="Used when their hours are sent to payroll.">
                       <Row cols={3}>
-                        <SelectField label="Pay Category" name="payCategoryId" defaultValue={copy?.payCategoryId ?? ""}>
-                          <option value="">None</option>
+                        <SelectField label="Pay Category" name="payCategoryId" required={!client} defaultValue={copy?.payCategoryId ?? ""}>
+                          <option value="">Choose a pay category</option>
                           {payCategories.map((c) => (
                             <option key={c.id} value={c.id}>
                               {c.number}{c.description ? ` (${c.description})` : ""}
@@ -679,6 +806,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                         <Input label="ADP Worker ID" name="adpWorkerId" autoComplete="off" />
                       </Row>
                     </Block>
+                    </fieldset>
                   </div>
 
                   {/* ── 3. Personal details ── */}
@@ -722,6 +850,21 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                           <option value="Widowed">Widowed</option>
                           <option value="Other">Other</option>
                         </SelectField>
+                      </Row>
+                      {/* Informational for now (lib/languages.ts). */}
+                      <Row>
+                        <div className={styles.field}>
+                          <label htmlFor="c-preferred-language" className={styles.fieldLabel}>
+                            Preferred Language
+                          </label>
+                          <LanguagePicker
+                            id="c-preferred-language"
+                            name="preferredLanguage"
+                            value={preferredLanguage}
+                            onChange={setPreferredLanguage}
+                            emptyLabel="Not specified"
+                          />
+                        </div>
                       </Row>
                     </Block>
                   </div>

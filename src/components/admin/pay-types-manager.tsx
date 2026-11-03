@@ -19,6 +19,7 @@ import {
   useStatusView,
   useOpenFromLink,
 } from "./setup/setup-ui";
+import { useViewOnly } from "./setup/view-only";
 
 /**
  * Pay types: how somebody is paid, such as Non Exempt or Exempt, by number.
@@ -87,7 +88,9 @@ export function PayTypesManager({ payTypes }: { payTypes: PayType[] }) {
     });
   }
 
-  const addButton = (
+  // Looking only (view-only.tsx): nothing to add.
+  const viewOnly = useViewOnly();
+  const addButton = viewOnly ? undefined : (
     <Button onClick={() => open("new")} leadingIcon={<Plus className="h-4 w-4" />}>
       Add pay type
     </Button>

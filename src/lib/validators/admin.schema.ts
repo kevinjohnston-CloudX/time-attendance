@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { PayFrequency } from "@prisma/client";
+import { asksForClientBadge, isClientBadge } from "@/lib/utils/client-badge";
+import { isLanguageCode, LANGUAGES } from "@/lib/languages";
 
 export const ROLES = [
   "EMPLOYEE",
@@ -22,6 +24,15 @@ const LEAVE_CATEGORIES = [
 
 const nullableStr = z.string().nullable().optional().transform((v) => v === undefined ? undefined : (v || null));
 
+/** A language code from lib/languages.ts; blank means none. */
+const languageCode = z
+  .string()
+  .nullable()
+  .optional()
+  .transform((v) => (v === undefined ? undefined : v || null))
+  .refine((v) => v == null || isLanguageCode(v), "Pick a language from the list");
+
+
 /** An optional email field: blank means none, anything else must be an address. */
 const optionalEmail = (message: string) =>
   z.string().trim().email(message).optional().or(z.literal("")).transform((v) => v || undefined);
@@ -43,10 +54,17 @@ export const createEmployeeSchema = z.object({
   customRoleId: z.string().optional(),
   siteId: z.string().min(1),
   departmentId: z.string().min(1),
-  ruleSetId: z.string().min(1),
-  hireDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be yyyy-MM-dd"),
+  // Required of everyone but a sign in only account (below).
+  ruleSetId: z.string().optional().transform((v) => v || undefined),
+  hireDate: z.union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be yyyy-MM-dd"), z.literal("")]).optional().transform((v) => v || undefined),
   supervisorId: z.string().optional().or(z.literal("")).transform((v) => v || undefined),
-  wmsId: z.string().min(1, "Badge ID is required"),
+  wmsId: z.string().optional().transform((v) => v?.trim() || undefined),
+  // A login with no timecard (sign-in-only.ts); createEmployee checks the role
+  // really is one.
+  signInOnly: z.boolean().optional(),
+  // A visitor (sign-in-only.ts): a badge for the security gate and nothing
+  // else. createEmployee checks the role and fills in the rest.
+  visitor: z.boolean().optional(),
   payType: z.enum(["HOURLY", "SALARY"]).nullable().optional(),
   payRate: z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().positive().nullable().optional()),
   // Work info
@@ -72,6 +90,22 @@ export const createEmployeeSchema = z.object({
   state: nullableStr,
   country: nullableStr,
   zipCode: nullableStr,
+  preferredLanguage: languageCode,
+}).superRefine((v, ctx) => {
+  // A new hire needs a shift, a pay category and a holiday rule: without a
+  // shift every day is a scheduled day (absences on weekends), without a pay
+  // category no leave policy and no leave codes, without a holiday rule no
+  // holiday pay. Several hires in October were saved without them. Not for a
+  // client badge, who works no shift and keeps no timecard, and none of it for
+  // a sign in only account, which keeps no timecard either.
+  if (v.signInOnly || v.visitor) return;
+  if (!v.wmsId) ctx.addIssue({ code: "custom", path: ["wmsId"], message: "Badge ID is required" });
+  if (!v.hireDate) ctx.addIssue({ code: "custom", path: ["hireDate"], message: "Hire date is required" });
+  if (!v.ruleSetId) ctx.addIssue({ code: "custom", path: ["ruleSetId"], message: "Choose a rule set" });
+  if (asksForClientBadge(v.wmsId) || isClientBadge(v.wmsId)) return;
+  if (!v.shiftId) ctx.addIssue({ code: "custom", path: ["shiftId"], message: "Choose a shift" });
+  if (!v.payCategoryId) ctx.addIssue({ code: "custom", path: ["payCategoryId"], message: "Choose a pay category" });
+  if (!v.holidayRuleId) ctx.addIssue({ code: "custom", path: ["holidayRuleId"], message: "Choose a holiday rule" });
 });
 
 export const updateEmployeeSchema = z.object({
@@ -144,12 +178,16 @@ export const updateEmployeeSchema = z.object({
   state: nullableStr,
   country: nullableStr,
   zipCode: nullableStr,
+  preferredLanguage: languageCode,
 });
 
 export const siteSchema = z.object({
   name: z.string().min(1),
   timezone: z.string().min(1).default("America/New_York"),
   address: z.string().optional(),
+  // Informational for now (lib/languages.ts).
+  primaryLanguage: languageCode,
+  additionalLanguages: z.array(z.string()).max(LANGUAGES.length).optional(),
 });
 
 export const updateSiteSchema = siteSchema.extend({
@@ -246,6 +284,7 @@ export const ruleSetSchema = z.object({
   autoPayPayCodeId: z.string().nullable().optional(),
   autoPayOverflowThresholdMinutes: z.number().int().min(0).default(0),
   autoPayOverflowPayCodeId: z.string().nullable().optional(),
+  mealLockoutMinutes: z.number().int().min(0).max(240).default(0),
   mealBreakPremiumEnabled: z.boolean().default(false),
   mealBreakPremiumMaxPerDay: z.number().int().min(1).default(2),
   mealBreakPremiumResetEnabled: z.boolean().default(false),

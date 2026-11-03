@@ -26,3 +26,4 @@ export { StatCard, type StatTone } from "./stat";
 export { Banner, type BannerTone } from "./banner";
 export { ConfirmDialog } from "./confirm-dialog";
 export { Overlay } from "./overlay";
+export { LanguagePicker } from "./language-picker";

@@ -2,13 +2,14 @@
 
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
+import { RULES_READERS } from "@/lib/rbac/permissions";
 import { z } from "zod";
 import type { HolidayRule } from "@prisma/client";
 
 // ─── List ────────────────────────────────────────────────────────────────────
 
 export const getHolidayRules = withRBAC(
-  "RULES_MANAGE",
+  RULES_READERS,
   async (ctx, _input: void) => {
     const tenantId = ctx.tenantId;
     if (!tenantId) return [] as HolidayRule[];
@@ -29,7 +30,7 @@ export const getHolidayRules = withRBAC(
 // ─── One rule, for its editor page ───────────────────────────────────────────
 
 export const getHolidayRule = withRBAC(
-  "RULES_MANAGE",
+  RULES_READERS,
   async (ctx, input: { ruleId: string }) => {
     if (!ctx.tenantId) throw new Error("NOT_FOUND");
     const rule = await db.holidayRule.findFirst({

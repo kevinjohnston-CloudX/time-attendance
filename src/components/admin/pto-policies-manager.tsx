@@ -6,6 +6,7 @@ import { useRouter } from "@/components/layout/navigation-progress";
 import { CalendarClock, Plus } from "lucide-react";
 import { Badge, Button, EmptyState, LinkButton, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
 import { AreaPanel, FactTiles, StatusBadge, countLine, matches, useFacts, useStatusView } from "./setup/setup-ui";
+import { useViewOnly } from "./setup/view-only";
 import { FREQ_LABEL, MONTHS, type PolicyRow } from "./leave-policy-editor";
 
 /**
@@ -45,7 +46,9 @@ export function PtoPoliciesManager({ policies }: { policies: PolicyRow[] }) {
       return al === bl ? a.name.localeCompare(b.name) : al.localeCompare(bl);
     });
 
-  const addButton = (
+  // Looking only (view-only.tsx): nothing to add.
+  const viewOnly = useViewOnly();
+  const addButton = viewOnly ? undefined : (
     <LinkButton href="/admin/rules-setup/leave-policies/new" hierarchy="primary" leadingIcon={<Plus className="h-4 w-4" />}>
       Add leave policy
     </LinkButton>

@@ -5,6 +5,7 @@ import { useRouter } from "@/components/layout/navigation-progress";
 import { Banner, Button, Checkbox, Input, Switch } from "@/components/ui";
 import { SetupShell } from "./setup-shell";
 import { NotCalculated } from "./setup-ui";
+import { useViewOnly } from "./view-only";
 import phone from "./setup-phone.module.css";
 import { Overlay } from "@/components/ui/overlay";
 
@@ -267,6 +268,11 @@ export function EditorPage({
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [localError, setLocalError] = useState<string | null>(null);
+  // Looking only: every field switched off, no Save, and no Delete in the rail.
+  const viewOnly = useViewOnly();
+  const railGroups = viewOnly
+    ? groups.map((g) => ({ ...g, areas: g.areas.filter((a) => a.id !== "delete") })).filter((g) => g.areas.length)
+    : groups;
 
   // The baseline is what the form sent when it opened, or when it was last
   // saved. Switches and checkboxes change hidden inputs, which fire no
@@ -331,6 +337,7 @@ export function EditorPage({
 
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (viewOnly) return;
     const form = e.currentTarget;
     if (form.querySelector('[aria-invalid="true"]')) {
       const section = (form.querySelector('[aria-invalid="true"]')?.closest("[data-editor-section]") as HTMLElement | null)?.dataset
@@ -352,24 +359,30 @@ export function EditorPage({
       subtitle={subtitle}
       back={back}
       actions={
-        <>
-          {status && (
-            <span
-              className="ta-phone-hide whitespace-nowrap"
-              style={{ font: "var(--type-body2)", color: dirty ? "var(--text-warning)" : "var(--text-tertiary)" }}
-              aria-live="polite"
-            >
-              {status}
-            </span>
-          )}
-          {/* On a phone, Save is the bar pinned under the form instead. */}
-          <Button type="submit" form={formId} className="ta-phone-hide" disabled={pending || (!isNew && !dirty)}>
-            {pending ? "Saving…" : submitLabel}
-          </Button>
-        </>
+        viewOnly ? (
+          <span className="whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+            View only
+          </span>
+        ) : (
+          <>
+            {status && (
+              <span
+                className="ta-phone-hide whitespace-nowrap"
+                style={{ font: "var(--type-body2)", color: dirty ? "var(--text-warning)" : "var(--text-tertiary)" }}
+                aria-live="polite"
+              >
+                {status}
+              </span>
+            )}
+            {/* On a phone, Save is the bar pinned under the form instead. */}
+            <Button type="submit" form={formId} className="ta-phone-hide" disabled={pending || (!isNew && !dirty)}>
+              {pending ? "Saving…" : submitLabel}
+            </Button>
+          </>
+        )
       }
       railLabel={`${noun.charAt(0).toUpperCase()}${noun.slice(1)} sections`}
-      groups={groups}
+      groups={railGroups}
       active={active}
       onPick={jump}
     >
@@ -383,23 +396,31 @@ export function EditorPage({
         className={`${phone.form} flex flex-col gap-4 pb-[40vh]`}
       >
         {shown && <Banner tone="error" title="Not saved" body={shown} />}
-        {children}
+        {viewOnly ? (
+          <fieldset disabled className="contents">
+            {children}
+          </fieldset>
+        ) : (
+          children
+        )}
         {/* On a phone the header scrolls away with the page, so Save stays
             at the bottom of the screen, where the thumb is after an edit. */}
-        <div className="ta-phone-only">
-          <div className={phone.saveBar}>
-            <span
-              className={phone.saveStatus}
-              style={{ color: dirty ? "var(--text-warning)" : "var(--text-tertiary)" }}
-              aria-hidden="true"
-            >
-              {status ?? (isNew ? "Not saved yet" : "No changes yet")}
-            </span>
-            <Button type="submit" disabled={pending || (!isNew && !dirty)}>
-              {pending ? "Saving…" : submitLabel}
-            </Button>
+        {!viewOnly && (
+          <div className="ta-phone-only">
+            <div className={phone.saveBar}>
+              <span
+                className={phone.saveStatus}
+                style={{ color: dirty ? "var(--text-warning)" : "var(--text-tertiary)" }}
+                aria-hidden="true"
+              >
+                {status ?? (isNew ? "Not saved yet" : "No changes yet")}
+              </span>
+              <Button type="submit" disabled={pending || (!isNew && !dirty)}>
+                {pending ? "Saving…" : submitLabel}
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
       </form>
       {leaveDialog}
     </SetupShell>
@@ -408,6 +429,7 @@ export function EditorPage({
 
 /** The last section of an editor: delete, or why it cannot be. */
 export function DeleteSection({ title, reason, children }: { title: string; reason: string; children?: ReactNode }) {
+  if (useViewOnly()) return null;
   return (
     <section
       id="sec-delete"

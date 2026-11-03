@@ -22,7 +22,10 @@ export default async function ApprovalsPage() {
 
   const tenantId = (session.user as { tenantId?: string }).tenantId;
   if (!tenantId) redirect("/dashboard");
-  const isPayroll = ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN", "SUPER_ADMIN"].includes(session.user.role);
+  // The whole company: Payroll, HR and the admins, or a custom role approving everyone's timesheets.
+  const isPayroll =
+    ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN", "SUPER_ADMIN"].includes(session.user.role) ||
+    (await userHasPermission(session.user, "TIMESHEET_APPROVE_ANY"));
 
   const queues = await getTeamQueues(tenantId, session.user.employeeId ?? null, isPayroll, new Date());
   const rows = workQueueRows(queues, isPayroll);

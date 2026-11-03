@@ -96,8 +96,10 @@ export const SECTIONS: NavSection[] = [
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { label: "Punch Clock", href: "/time/punch", icon: Clock, permission: "PUNCH_OWN" },
-      { label: "My Timesheet", href: "/time/timesheet", icon: ClipboardList },
-      { label: "Punch History", href: "/time/history", icon: History },
+      // Only for someone with time of their own: a sign in only login (an
+      // agency viewer, Loss Prevention) has no timesheet or punches.
+      { label: "My Timesheet", href: "/time/timesheet", icon: ClipboardList, permission: ["PUNCH_OWN", "TIMESHEET_SUBMIT_OWN"] },
+      { label: "Punch History", href: "/time/history", icon: History, permission: ["PUNCH_OWN", "TIMESHEET_SUBMIT_OWN"] },
       { label: "My Leave", href: "/leave", icon: CalendarDays, permission: "LEAVE_REQUEST_OWN" },
       { label: "My Documents", href: "/documents", icon: FileText, permission: ["DOCUMENT_VIEW_OWN", "DOCUMENT_VIEW_ANY"] },
       {
@@ -159,9 +161,9 @@ export const SECTIONS: NavSection[] = [
         label: "Company Setup",
         href: "/admin/site-settings",
         icon: Layers,
-        permission: ["SITE_MANAGE", "RULES_MANAGE", "PAY_PERIOD_MANAGE"],
+        permission: ["SITE_MANAGE", "SITE_VIEW", "RULES_MANAGE", "RULES_VIEW", "PAY_PERIOD_MANAGE"],
       },
-      { label: "Rules Setup", href: "/admin/rules-setup", icon: BookOpen, permission: "RULES_MANAGE" },
+      { label: "Rules Setup", href: "/admin/rules-setup", icon: BookOpen, permission: ["RULES_MANAGE", "RULES_VIEW"] },
       { label: "Roles & Permissions", href: "/admin/roles", icon: ShieldCheck, permission: "ROLE_MANAGE" },
       { label: "ADP Sync", href: "/admin/adp", icon: RefreshCw, permission: "EMPLOYEE_MANAGE" },
       { label: "Integrations", href: "/admin/api-keys", icon: KeyRound, permission: "SITE_MANAGE" },
@@ -185,14 +187,14 @@ export const SECTIONS: NavSection[] = [
 export const ADMIN_GROUPS: {
   label: string;
   hint: string;
-  items: { label: string; detail: string; href: string; permission: string }[];
+  items: { label: string; detail: string; href: string; permission: string | string[] }[];
 }[] = [
   {
     label: "People & HR",
     hint: "Who works here, and who can change what",
     items: [
       { label: "Employees", detail: "Profiles, badge numbers and shift assignments", href: "/admin/employees", permission: "EMPLOYEE_MANAGE" },
-      { label: "Departments", detail: "Cost centres and reporting lines", href: "/admin/site-settings?tab=departments", permission: "SITE_MANAGE" },
+      { label: "Departments", detail: "Cost centres and reporting lines", href: "/admin/site-settings?tab=departments", permission: ["SITE_MANAGE", "SITE_VIEW"] },
       { label: "Roles & Permissions", detail: "What each role can see and change", href: "/admin/roles", permission: "ROLE_MANAGE" },
       { label: "Audit Log", detail: "Every configuration and timecard change", href: "/admin/audit", permission: "AUDIT_VIEW" },
     ],
@@ -201,18 +203,18 @@ export const ADMIN_GROUPS: {
     label: "Organization",
     hint: "Where and when people are scheduled to work",
     items: [
-      { label: "Sites", detail: "Facilities, time zones and timeclocks", href: "/admin/site-settings?tab=sites", permission: "SITE_MANAGE" },
-      { label: "Shifts", detail: "Shift patterns and who they apply to", href: "/admin/rules-setup?tab=shifts", permission: "RULES_MANAGE" },
-      { label: "Holidays", detail: "Observed dates, per site", href: "/admin/site-settings?tab=holidays", permission: "RULES_MANAGE" },
+      { label: "Sites", detail: "Facilities, time zones and timeclocks", href: "/admin/site-settings?tab=sites", permission: ["SITE_MANAGE", "SITE_VIEW"] },
+      { label: "Shifts", detail: "Shift patterns and who they apply to", href: "/admin/rules-setup?tab=shifts", permission: ["RULES_MANAGE", "RULES_VIEW"] },
+      { label: "Holidays", detail: "Observed dates, per site", href: "/admin/site-settings?tab=holidays", permission: ["RULES_MANAGE", "RULES_VIEW"] },
     ],
   },
   {
     label: "Pay & Rules",
     hint: "How raw punches become payable hours",
     items: [
-      { label: "Pay Rules", detail: "Overtime, rounding, meal and grace rules", href: "/admin/rules-setup?tab=rule-sets", permission: "RULES_MANAGE" },
-      { label: "Pay Codes", detail: "How hours map to payroll earnings", href: "/admin/site-settings?tab=pay-codes", permission: "RULES_MANAGE" },
-      { label: "Reason Codes", detail: "Why a punch was edited, missed or excused", href: "/admin/site-settings?tab=reason-codes", permission: "RULES_MANAGE" },
+      { label: "Pay Rules", detail: "Overtime, rounding, meal and grace rules", href: "/admin/rules-setup?tab=rule-sets", permission: ["RULES_MANAGE", "RULES_VIEW"] },
+      { label: "Pay Codes", detail: "How hours map to payroll earnings", href: "/admin/site-settings?tab=pay-codes", permission: "PAY_PERIOD_MANAGE" },
+      { label: "Reason Codes", detail: "Why a punch was edited, missed or excused", href: "/admin/site-settings?tab=reason-codes", permission: "PAY_PERIOD_MANAGE" },
       { label: "Pay Periods", detail: "Period length and close schedule", href: "/payroll/pay-periods", permission: "PAY_PERIOD_MANAGE" },
     ],
   },
@@ -220,8 +222,8 @@ export const ADMIN_GROUPS: {
     label: "Leave & Absence",
     hint: "What time off exists and how it accrues",
     items: [
-      { label: "Leave Types", detail: "Paid and unpaid absence categories", href: "/admin/site-settings?tab=leave-types", permission: "RULES_MANAGE" },
-      { label: "PTO Policies", detail: "Accrual method, caps and eligibility", href: "/admin/rules-setup?tab=leave-policies", permission: "RULES_MANAGE" },
+      { label: "Leave Types", detail: "Paid and unpaid absence categories", href: "/admin/site-settings?tab=leave-types", permission: ["RULES_MANAGE", "RULES_VIEW"] },
+      { label: "PTO Policies", detail: "Accrual method, caps and eligibility", href: "/admin/rules-setup?tab=leave-policies", permission: ["RULES_MANAGE", "RULES_VIEW"] },
       { label: "Accrual Runs", detail: "Nightly accrual postings and their results", href: "/accruals", permission: "ACCRUAL_VIEW_ANY" },
     ],
   },

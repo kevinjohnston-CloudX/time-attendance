@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
+import { RULES_READERS, SITE_READERS } from "@/lib/rbac/permissions";
 import { writeAuditLog } from "@/lib/audit/logger";
 import {
   createPtoPolicySchema,
@@ -13,7 +14,7 @@ import {
 // ─── Get all PTO policies for the tenant ─────────────────────────────────────
 
 export const getPtoPolicies = withRBAC(
-  "RULES_MANAGE",
+  RULES_READERS,
   async ({ tenantId }, _input: void) => {
     // With no company, tenantId! dropped the filter and listed every company's.
     if (!tenantId) return [];
@@ -36,7 +37,7 @@ export const getPtoPolicies = withRBAC(
 // ─── One policy, for its editor page ─────────────────────────────────────────
 
 export const getPtoPolicy = withRBAC(
-  "RULES_MANAGE",
+  RULES_READERS,
   async ({ tenantId }, input: { ptoPolicyId: string }) => {
     if (!tenantId) throw new Error("NOT_FOUND");
     const policy = await db.ptoPolicy.findFirst({
@@ -319,7 +320,7 @@ export const deletePtoPolicy = withRBAC(
 // ─── Get site PTO policies ────────────────────────────────────────────────────
 
 export const getSitePtoPolicies = withRBAC(
-  "SITE_MANAGE",
+  SITE_READERS,
   async ({ tenantId }, input: { siteId: string }) => {
     if (!tenantId) throw new Error("Tenant context required");
     const { siteId } = input;
@@ -388,7 +389,7 @@ export const assignSitePtoPolicy = withRBAC(
  * person an empty list with no word why. Only the names come back.
  */
 export const getSitePolicySetup = withRBAC(
-  "SITE_MANAGE",
+  SITE_READERS,
   async ({ tenantId }, input: { siteId: string }) => {
     if (!tenantId) throw new Error("Tenant context required");
     const site = await db.site.findFirst({ where: { id: input.siteId, tenantId } });

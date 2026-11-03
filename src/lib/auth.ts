@@ -5,6 +5,7 @@ import Google from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { isClientBadge } from "@/lib/utils/client-badge";
 import { authConfig } from "@/lib/auth.config";
 import { liveIdentity } from "@/lib/rbac/identity";
 import { DUMMY_PASSWORD_HASH, clientAddress, isLockedOut, loginKey, recordFailedLogin } from "@/lib/login-limit";
@@ -85,6 +86,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           await recordFailedLogin(key, user?.employee?.tenantId, address, "web");
           return null;
         }
+        // A visitor holds a badge for the security gate and never signs in
+        // (client-badge.ts), even if an email and password were added later.
+        if (isClientBadge(user.employee?.wmsId)) return null;
 
         if (user.isSuperAdmin) {
           return {
@@ -127,6 +131,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // address lowercase, the record may not be.
         const existingId = await findLoginUserId(email, { email: true });
         if (!existingId) return false;
+        // A visitor never signs in (client-badge.ts).
+        const visitor = await db.employee.findFirst({ where: { userId: existingId }, select: { wmsId: true } });
+        if (isClientBadge(visitor?.wmsId)) return false;
 
         // If no Account row exists yet, create it now so NextAuth doesn't
         // throw OAuthAccountNotLinked for users provisioned outside OAuth

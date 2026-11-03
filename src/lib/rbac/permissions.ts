@@ -34,8 +34,12 @@ export const PERMISSIONS = [
   // See your own people's employee details (Team Members), read only
   "EMPLOYEE_VIEW_TEAM",
   "RULES_MANAGE",
+  // Rules Setup, and the Company Setup areas that need RULES_MANAGE, read only
+  "RULES_VIEW",
   "AUDIT_VIEW",
   "SITE_MANAGE",
+  // Sites and departments in Company Setup, and each site's page, read only
+  "SITE_VIEW",
   // Documents
   "DOCUMENT_UPLOAD",
   "DOCUMENT_VIEW_ANY",
@@ -64,6 +68,10 @@ export type Permission = (typeof PERMISSIONS)[number];
 export const TIMECARD_EDITORS: Permission[] = ["PAY_PERIOD_MANAGE", "PUNCH_EDIT_TEAM", "TIMECARD_EDIT_TEAM"];
 /** Of those, who reaches the whole company rather than their own team. */
 export const TIMECARD_EDITORS_COMPANY: Permission[] = ["PAY_PERIOD_MANAGE", "PUNCH_EDIT_ANY", "TIMECARD_EDIT_ANY"];
+/** Who may open Rules Setup and its Company Setup areas: to change them, or only to look. */
+export const RULES_READERS: Permission[] = ["RULES_MANAGE", "RULES_VIEW"];
+/** Who may open sites and departments: to change them, or only to look. */
+export const SITE_READERS: Permission[] = ["SITE_MANAGE", "SITE_VIEW"];
 
 const rolePermissions: Record<Role, Permission[]> = {
   EMPLOYEE: ["PUNCH_OWN", "TIMESHEET_SUBMIT_OWN", "LEAVE_REQUEST_OWN", "DOCUMENT_VIEW_OWN", "ACCRUAL_VIEW_OWN"],

@@ -86,6 +86,10 @@ model Site {
   /// turned away since then, never a morning's worth at once. Refusals are
   /// recorded either way. Starts off (no default).
   gateAlertsOnSince DateTime?
+  /// The language the building mostly works in, and the others spoken there,
+  /// as language codes (lib/languages.ts, "es"). Informational for now.
+  primaryLanguage     String?
+  additionalLanguages String[] @default([])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -140,6 +144,12 @@ model Employee {
   /// legal name from ADP and HR, which the sync never writes. Null until the
   /// sync has seen them; anything showing it falls back to the legal name.
   wmsName      String?
+  /// Whether WMS (Oracle) still employs this person, as of the last roster
+  /// sync. Kept beside isActive, never copied into it: timecards and payroll
+  /// go by isActive alone. The gate and the time clock read this to turn away
+  /// someone WMS has terminated (src/lib/presence/employment.ts).
+  /// Null until the sync has seen them, which counts as employed.
+  wmsActive    Boolean?
 
   /// The value physically encoded on the badge, when it differs from wmsId.
   ///
@@ -177,6 +187,9 @@ model Employee {
   /// who works in another zone than their site, such as a Rey 11 person in
   /// California. Null means the site's zone, which is everyone else.
   timeZone         String?
+  /// The language the person prefers, as a language code (lib/languages.ts).
+  /// Informational for now.
+  preferredLanguage String?
 
   // Work info
   jobTitle          String?

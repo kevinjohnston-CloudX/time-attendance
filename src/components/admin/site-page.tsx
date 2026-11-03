@@ -8,9 +8,10 @@ import type { Site } from "@prisma/client";
 import { Banner, Button, EmptyState, LinkButton, PageHeader, PinnedBar, Select } from "@/components/ui";
 import { updateSite } from "@/actions/admin.actions";
 import { assignSitePtoPolicy } from "@/actions/pto-policy.actions";
-import { SiteDialog } from "./sites-manager";
+import { SiteDialog, siteLanguages } from "./sites-manager";
 import { AreaPanel, LEAVE_CATEGORY_LABEL, StatusBadge, saveError } from "./setup/setup-ui";
 import { timeZoneLabel } from "./setup/time-zones";
+import { useViewOnly } from "./setup/view-only";
 
 /**
  * A site's own page: who it is in the header, with Edit site, and the leave
@@ -18,6 +19,7 @@ import { timeZoneLabel } from "./setup/time-zones";
  *
  * <p>A policy saves the moment it is picked, as before, and says so on its
  * row; picking No site policy clears it. Only that row waits while it saves.
+ * Someone with Sites on Read sees the same page with nothing to change.
  */
 export function SitePage({
   site,
@@ -31,6 +33,7 @@ export function SitePage({
   assignments: { leaveTypeId: string; ptoPolicyId: string }[];
 }) {
   const router = useRouter();
+  const viewOnly = useViewOnly();
   const [picked, setPicked] = useState(() => new Map(assignments.map((a) => [a.leaveTypeId, a.ptoPolicyId])));
   const [savingId, setSavingId] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
@@ -71,6 +74,7 @@ export function SitePage({
         name: String(form.get("name") ?? "").trim(),
         timezone: String(form.get("timezone") ?? "") || "America/New_York",
         address: String(form.get("address") ?? ""),
+        ...siteLanguages(form),
         isActive: form.get("isActive") === "true",
       });
       if (!result.success) return setEditError(saveError(result.error));
@@ -101,9 +105,11 @@ export function SitePage({
               >
                 Company Setup
               </LinkButton>
-              <Button hierarchy="secondary" leadingIcon={<Pencil className="h-4 w-4" />} onClick={() => setEditing(true)}>
-                Edit site
-              </Button>
+              {!viewOnly && (
+                <Button hierarchy="secondary" leadingIcon={<Pencil className="h-4 w-4" />} onClick={() => setEditing(true)}>
+                  Edit site
+                </Button>
+              )}
             </>
           }
         />
@@ -176,7 +182,7 @@ export function SitePage({
                       <Select
                         aria-label={`Leave policy for ${lt.name}`}
                         value={picked.get(lt.id) ?? ""}
-                        disabled={saving}
+                        disabled={saving || viewOnly}
                         onChange={(e) => assign(lt.id, e.target.value || null)}
                         style={{ width: "100%" }}
                       >
@@ -206,7 +212,7 @@ export function SitePage({
                 })}
               </ul>
               <p className="m-0 px-5 py-3" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
-                A leave type with no site policy uses the company default. Changes save as soon as you pick.{" "}
+                A leave type with no site policy uses the company default.{viewOnly ? "" : " Changes save as soon as you pick."}{" "}
                 <Link href="/admin/rules-setup?tab=leave-policies" style={{ color: "var(--text-accent)" }}>
                   Manage leave policies
                 </Link>

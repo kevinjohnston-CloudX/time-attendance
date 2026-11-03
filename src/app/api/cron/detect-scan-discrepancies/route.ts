@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cronAuthorized } from "@/lib/cron-auth";
 import { db } from "@/lib/db";
 import { findScanDiscrepancies } from "@/lib/services/scan-event.service";
-import { findOpenPayPeriod, TOO_SOON_REJECTION } from "@/lib/utils/punch-helpers";
+import { findOpenPayPeriod, isMealLockoutRejection, TOO_SOON_REJECTION } from "@/lib/utils/punch-helpers";
 import { isClientBadge } from "@/lib/utils/client-badge";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
@@ -59,6 +59,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // timecard. It stays in the Scan Discrepancies report, but raises no
     // exception for HR to clear.
     if (d.kind === "REJECTED" && d.rejectionReason === TOO_SOON_REJECTION) {
+      repeats += 1;
+      continue;
+    }
+
+    // So is a clock in refused by the meal lockout: the person was told the
+    // minutes left, and their clock in after them is on the timecard.
+    if (d.kind === "REJECTED" && isMealLockoutRejection(d.rejectionReason)) {
       repeats += 1;
       continue;
     }

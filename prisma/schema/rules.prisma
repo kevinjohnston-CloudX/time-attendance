@@ -287,6 +287,11 @@ model RuleSet {
   autoPayOverflowThresholdMinutes Int         @default(0)     // 0 = disabled; credits above this total → overflowPayCode
   autoPayOverflowPayCodeId        String?     // pay code for overflow credits when threshold is exceeded
 
+  /// Meal lockout: a time clock clock in this soon after a clock out is
+  /// refused ("Please wait N minutes before clocking in again"), counted in
+  /// clock minutes, as Oracle has done for California. 0 = off.
+  mealLockoutMinutes              Int         @default(0)
+
   // Meal / Break Premium Rules
   mealBreakPremiumEnabled         Boolean     @default(false) // apply premium when employee misses required meal/break
   mealBreakPremiumMaxPerDay       Int         @default(2)     // max premium credits per day

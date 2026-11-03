@@ -21,6 +21,7 @@ import {
   useStatusView,
   useOpenFromLink,
 } from "./setup/setup-ui";
+import { useViewOnly } from "./setup/view-only";
 
 /**
  * Pay codes: the payroll lines hours are posted to.
@@ -148,7 +149,9 @@ export function PayCodesManager({ payCodes }: { payCodes: PayCode[] }) {
     });
   }
 
-  const addButton = (
+  // Looking only (view-only.tsx): nothing to add.
+  const viewOnly = useViewOnly();
+  const addButton = viewOnly ? undefined : (
     <Button onClick={() => open("new")} leadingIcon={<Plus className="h-4 w-4" />}>
       Add pay code
     </Button>

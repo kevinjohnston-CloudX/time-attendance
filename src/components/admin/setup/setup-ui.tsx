@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { Badge, Banner, Button, Checkbox, SearchInput, SegmentedControl, Select, statusTone } from "@/components/ui";
 import phone from "./setup-phone.module.css";
 import { Overlay } from "@/components/ui/overlay";
+import { useViewOnly } from "./view-only";
 
 /**
  * The parts every Company Setup area is built from, so the eight of them read
@@ -357,6 +358,8 @@ export function SetupDialog({
   useEffect(() => {
     closeRef.current = onClose;
   }, [onClose]);
+  // Looking only: the fields are switched off, and Close replaces Cancel and Save.
+  const viewOnly = useViewOnly();
 
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
@@ -420,21 +423,40 @@ export function SetupDialog({
           className="flex min-h-0 flex-1 flex-col"
           onSubmit={(e: FormEvent<HTMLFormElement>) => {
             e.preventDefault();
-            if (!pending) onSubmit(new FormData(e.currentTarget));
+            if (!pending && !viewOnly) onSubmit(new FormData(e.currentTarget));
           }}
         >
           <div className="ta-scroll flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
             {error && <Banner tone="error" title="Not saved" body={error} />}
-            {children}
+            {viewOnly ? (
+              <fieldset disabled className="contents">
+                {children}
+              </fieldset>
+            ) : (
+              children
+            )}
           </div>
           <footer className={`${phone.dialogFoot} flex flex-none items-center gap-2 px-5 py-3`} style={{ borderTop: "1px solid var(--stroke-divider)" }}>
-            <span className="flex min-w-0 flex-1 items-center">{danger}</span>
-            <Button type="button" hierarchy="secondary" onClick={onClose} disabled={pending}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? "Saving…" : submitLabel}
-            </Button>
+            {viewOnly ? (
+              <>
+                <span className="flex min-w-0 flex-1 items-center" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                  View only
+                </span>
+                <Button type="button" hierarchy="secondary" onClick={onClose}>
+                  Close
+                </Button>
+              </>
+            ) : (
+              <>
+                <span className="flex min-w-0 flex-1 items-center">{danger}</span>
+                <Button type="button" hierarchy="secondary" onClick={onClose} disabled={pending}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={pending}>
+                  {pending ? "Saving…" : submitLabel}
+                </Button>
+              </>
+            )}
           </footer>
         </form>
       </div>

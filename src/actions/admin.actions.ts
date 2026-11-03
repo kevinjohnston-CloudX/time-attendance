@@ -9,10 +9,11 @@ import { db } from "@/lib/db";
 import { cleanEmail, emailHolders } from "@/lib/login-email";
 import { Prisma, type AuditEntityType, type Role } from "@prisma/client";
 import { publicError, withRBAC } from "@/lib/rbac/guard";
+import { SITE_READERS, RULES_READERS } from "@/lib/rbac/permissions";
 import { zodMessage } from "@/lib/zod-message";
 import { photoUrls } from "@/lib/presence/photos";
 import { badgeWhere } from "@/lib/utils/badge-lookup";
-import { asksForClientBadge, isClientBadge, issueClientBadge } from "@/lib/utils/client-badge";
+import { asksForClientBadge, isClientBadge, issueClientBadge, previewClientBadge } from "@/lib/utils/client-badge";
 import { looksLikeBadge } from "@/lib/presence/people-search.service";
 import { MISSING_OPTIONS, PAY_OPTIONS, PERIOD_OPTIONS, PUNCH_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS, pick } from "@/components/admin/employees-list-options";
 import { writeAuditLog } from "@/lib/audit/logger";
@@ -27,6 +28,8 @@ import { todayKey } from "@/lib/pay-rates";
 import { personTimeZone, timeZoneLabel } from "@/lib/utils/person-time-zone";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { webPunchByDefault } from "@/lib/web-punch";
+import { isSignInOnlyRole, isVisitorRole, seesTeam, SIGN_IN_ONLY_RULE_SET, VISITOR_DEPARTMENT } from "@/lib/sign-in-only";
+import { cleanLanguages, languageName } from "@/lib/languages";
 import { hoursToSeconds, secondsToMinutes } from "@/lib/leave-time";
 import { assertBalanceChangeAllowed, assertNotSenior, assertRecordInReach, assertSiteInReach, siteInReach, siteLimit } from "@/lib/rbac/scope";
 
@@ -201,7 +204,7 @@ export const getAdminRefData = withRBAC(
         : Promise.resolve([] as { id: string; user: { name: string | null } }[]),
       db.customRole.findMany({
         where: { tenantId: t, isActive: true },
-        select: { id: true, name: true, isSystem: true, rank: true, liveAttendanceOnly: true },
+        select: { id: true, name: true, isSystem: true, rank: true, liveAttendanceOnly: true, permissions: { select: { resource: true, action: true, scope: true } } },
         orderBy: { rank: "asc" },
       }),
       db.shift.findMany({
@@ -242,9 +245,24 @@ export const getAdminRefData = withRBAC(
     // the forms leave it out for anyone else, unless the person edited has it.
     const me = await currentIdentity();
     const givesLimited = !!me && givesLiveAttendanceRoles(me);
-    const roles = customRoles.map((r) => ({ ...r, givable: !r.liveAttendanceOnly || givesLimited }));
+    // Whether each role makes a sign in only account (no timecard), and whether
+    // that account views a team (an agency viewer, who needs its agency).
+    const roles = customRoles.map(({ permissions, ...r }) => ({
+      ...r,
+      givable: !r.liveAttendanceOnly || givesLimited,
+      signInOnly: isSignInOnlyRole({ isSystem: r.isSystem, permissions }),
+      seesTeam: seesTeam({ permissions }),
+      visitor: isVisitorRole({ isSystem: r.isSystem, permissions }),
+    }));
+    // What New Employee fills in for a visitor: the next visitor badge, as a
+    // preview (it is taken at the save), and the Visitors department.
+    const [nextVisitorBadge, visitorDepartment] = await Promise.all([
+      roles.some((r) => r.visitor) ? previewClientBadge(db) : null,
+      db.department.findFirst({ where: { tenantId: t, name: VISITOR_DEPARTMENT, isActive: true }, select: { id: true, name: true } }),
+    ]);
     return {
       sites, departments, ruleSets, employees, customRoles: roles, shifts, holidayRules, payCategories, payTypes, jobTitles,
+      nextVisitorBadge, visitorDepartment,
       // The default markup as a plain number: a Decimal does not cross to the browser.
       agencies: agencies.map((a) => ({ ...a, defaultMarkupPct: a.defaultMarkupPct == null ? null : Number(a.defaultMarkupPct) })),
     };
@@ -255,15 +273,9 @@ export const getAdminRefData = withRBAC(
 
 const PAGE_SIZE = 100;
 
-/** Returns the site IDs an HR_ADMIN or PAYROLL_ADMIN is restricted to, or null if unrestricted. */
+/** The site IDs the person is restricted to, or null if unrestricted (siteLimit). */
 async function getActorSiteRestrictions(employeeId: string, role: string): Promise<string[] | null> {
-  if (role !== "HR_ADMIN" && role !== "PAYROLL_ADMIN") return null;
-  const rows = await db.hrSiteAccess.findMany({
-    where: { employeeId },
-    select: { siteId: true },
-  });
-  if (rows.length === 0) return null; // empty = unrestricted
-  return rows.map((r) => r.siteId);
+  return siteLimit({ employeeId, role });
 }
 
 export const getEmployees = withRBAC(
@@ -455,6 +467,9 @@ export const createEmployee = withRBAC(
     let resolvedRole = parsed.role;
     // The role by the name people see, for the audit log.
     let roleName: string | null = null;
+    // A custom role at Payroll Admin's rank or above (Payroll Admin NL) starts
+    // able to punch from the web, as the built-in admins do.
+    let adminCustomRole = false;
     if (!resolvedCustomRoleId) {
       const systemName = Object.entries(SYSTEM_ROLE_NAME_TO_ENUM).find(([, v]) => v === parsed.role)?.[0];
       if (systemName) {
@@ -467,15 +482,50 @@ export const createEmployee = withRBAC(
       }
     } else {
       // Derive role enum from the provided customRoleId
-      const cr = await db.customRole.findFirst({ where: { id: resolvedCustomRoleId, tenantId }, select: { isSystem: true, name: true } });
+      const cr = await db.customRole.findFirst({ where: { id: resolvedCustomRoleId, tenantId }, select: { isSystem: true, name: true, rank: true } });
       resolvedRole = (cr?.isSystem ? (SYSTEM_ROLE_NAME_TO_ENUM[cr.name] ?? "EMPLOYEE") : "EMPLOYEE") as typeof parsed.role;
       roleName = cr?.name ?? null;
+      adminCustomRole = !!cr && !cr.isSystem && cr.rank >= ROLE_RANK.PAYROLL_ADMIN;
     }
+
+    // A sign in only account or a visitor (sign-in-only.ts): only for the role
+    // that makes one, and on UNASSIGNED with nothing that would make a
+    // timecard. An agency viewer needs its agency. A visitor is filed in the
+    // Visitors department, gets the next visitor badge, and no email: a
+    // visitor never signs in.
+    let signInRuleSetId: string | null = null;
+    let visitorDepartmentId: string | null = null;
+    if (parsed.signInOnly || parsed.visitor) {
+      const role = resolvedCustomRoleId
+        ? await db.customRole.findFirst({
+            where: { id: resolvedCustomRoleId, tenantId },
+            select: { isSystem: true, permissions: { select: { resource: true, action: true, scope: true } } },
+          })
+        : null;
+      if (parsed.visitor) {
+        if (!role || !isVisitorRole(role)) throw new Error("Only the Visitor role, with no permissions, makes a visitor. Choose that role.");
+        const dept = await db.department.findFirst({ where: { tenantId, name: VISITOR_DEPARTMENT, isActive: true }, select: { id: true } });
+        if (!dept) throw new Error(`Visitors are filed in the department named ${VISITOR_DEPARTMENT}, and this company has none. Add it, then try again.`);
+        visitorDepartmentId = dept.id;
+      } else {
+        if (!role || !isSignInOnlyRole(role)) {
+          throw new Error("Only a role that cannot punch, such as Agency (View Only) or Loss Prevention, is a sign-in only account. Choose that role, or fill in the pay and schedule step.");
+        }
+        if (seesTeam(role) && !parsed.agencyId) throw new Error("Choose the agency this login views.");
+      }
+      const unassigned = await db.ruleSet.findFirst({ where: { tenantId, name: SIGN_IN_ONLY_RULE_SET }, select: { id: true } });
+      if (!unassigned) throw new Error(`Sign-in only accounts and visitors go on the rule set named ${SIGN_IN_ONLY_RULE_SET}, and this company has none. Add it in Rules Setup with no overtime, then try again.`);
+      signInRuleSetId = unassigned.id;
+    }
+    const ruleSetId = signInRuleSetId ?? parsed.ruleSetId;
+    if (!ruleSetId) throw new Error("Choose a rule set");
+    // A login with no timecard starts the day it is made.
+    const hireDate = parsed.hireDate ?? new Date().toISOString().slice(0, 10);
 
     // "CL" as the Badge ID asks for the next client badge, issued inside the
     // transaction below (client-badge.ts). "CL" as the employee code too means
     // the code is that badge.
-    const issuing = asksForClientBadge(parsed.wmsId);
+    const issuing = !!parsed.visitor || asksForClientBadge(parsed.wmsId);
     const ownCode = asksForClientBadge(parsed.employeeCode) ? undefined : parsed.employeeCode;
 
     // A Badge ID or login email already on file is said in words, with who has
@@ -499,8 +549,8 @@ export const createEmployee = withRBAC(
     }
     // Either email signs the person in, so one is needed, and neither may
     // belong to anyone else (in either of their two, ignoring capitals).
-    const personalEmail = cleanEmail(parsed.email, "personal");
-    const workEmail = cleanEmail(parsed.workEmail, "work");
+    const personalEmail = parsed.visitor ? null : cleanEmail(parsed.email, "personal");
+    const workEmail = parsed.visitor ? null : cleanEmail(parsed.workEmail, "work");
     // A client badge signs nobody in, so a client may have neither.
     const client = issuing || isClientBadge(parsed.wmsId);
     if (personalEmail || workEmail || !client) await assertEmailsFree(personalEmail, workEmail, null, tenantId);
@@ -531,26 +581,31 @@ export const createEmployee = withRBAC(
           role: resolvedRole,
           customRoleId: resolvedCustomRoleId,
           // Admins start able to punch from the web; everyone else at the time clock.
-          webPunchEnabled: webPunchByDefault(resolvedRole),
+          webPunchEnabled: webPunchByDefault(resolvedRole) || adminCustomRole,
           siteId: parsed.siteId,
-          departmentId: parsed.departmentId,
-          ruleSetId: parsed.ruleSetId,
-          hireDate: calendarDay(parsed.hireDate),
-          supervisorId: parsed.supervisorId ?? null,
+          departmentId: visitorDepartmentId ?? parsed.departmentId,
+          ruleSetId,
+          hireDate: calendarDay(hireDate),
+          supervisorId: parsed.visitor ? null : parsed.supervisorId ?? null,
           wmsId,
-          payType: parsed.payType ?? null,
-          payRate: parsed.payRate ?? null,
-          ...(parsed.payRate
-            ? { payRates: { create: { effectiveDate: new Date(`${parsed.hireDate}T00:00:00.000Z`), rate1: parsed.payRate, createdById: actorId || null } } }
-            : {}),
+          ...(signInRuleSetId
+            ? { payType: null, payRate: null }
+            : {
+                payType: parsed.payType ?? null,
+                payRate: parsed.payRate ?? null,
+                ...(parsed.payRate
+                  ? { payRates: { create: { effectiveDate: new Date(`${hireDate}T00:00:00.000Z`), rate1: parsed.payRate, createdById: actorId || null } } }
+                  : {}),
+              }),
           jobTitle: parsed.jobTitle ?? null,
-          jobTitleId: parsed.jobTitleId ?? null,
-          agencyId: parsed.agencyId ?? null,
-          adpWorkerId: parsed.adpWorkerId ?? null,
-          shiftId: parsed.shiftId ?? null,
-          holidayRuleId: parsed.holidayRuleId ?? null,
-          payCategoryId: parsed.payCategoryId ?? null,
-          payTypeId: parsed.payTypeId ?? null,
+          jobTitleId: parsed.visitor ? null : parsed.jobTitleId ?? null,
+          agencyId: parsed.visitor ? null : parsed.agencyId ?? null,
+          adpWorkerId: signInRuleSetId ? null : parsed.adpWorkerId ?? null,
+          shiftId: signInRuleSetId ? null : parsed.shiftId ?? null,
+          holidayRuleId: signInRuleSetId ? null : parsed.holidayRuleId ?? null,
+          payCategoryId: signInRuleSetId ? null : parsed.payCategoryId ?? null,
+          payTypeId: signInRuleSetId ? null : parsed.payTypeId ?? null,
+          preferredLanguage: parsed.preferredLanguage ?? null,
           ...encPii,
         },
       });
@@ -567,6 +622,7 @@ export const createEmployee = withRBAC(
           employeeCode: employee.employeeCode,
           role: roleName ?? resolvedRole,
           ...(issuing && { clientBadge: employee.wmsId }),
+          ...(signInRuleSetId && (parsed.visitor ? { visitor: true } : { signInOnly: true })),
         },
       },
     });
@@ -576,19 +632,72 @@ export const createEmployee = withRBAC(
   }
 );
 
+/**
+ * A visitor keeps only what New Employee gives one (sign-in-only.ts): the
+ * Visitors department, UNASSIGNED, a visitor badge, and no email, supervisor,
+ * job title, agency, schedule or pay. A record moved onto the Visitor role
+ * (set up on the wrong role first), or edited while on it, is saved that way
+ * whatever the form sent. Changes `input` in place.
+ */
+async function keepVisitorShape(tenantId: string, input: ReturnType<typeof updateEmployeeSchema.parse>) {
+  const current = await db.employee.findFirst({
+    where: { id: input.employeeId, tenantId },
+    select: { customRoleId: true, wmsId: true },
+  });
+  if (!current) return;
+  const roleId = input.customRoleId !== undefined ? input.customRoleId : current.customRoleId;
+  if (!roleId) return;
+  const role = await db.customRole.findFirst({
+    where: { id: roleId, tenantId },
+    select: { isSystem: true, permissions: { select: { resource: true, action: true, scope: true } } },
+  });
+  if (!role || !isVisitorRole(role)) return;
+
+  const [dept, unassigned] = await Promise.all([
+    db.department.findFirst({ where: { tenantId, name: VISITOR_DEPARTMENT, isActive: true }, select: { id: true } }),
+    db.ruleSet.findFirst({ where: { tenantId, name: SIGN_IN_ONLY_RULE_SET }, select: { id: true } }),
+  ]);
+  if (!dept) throw new Error(`Visitors are filed in the department named ${VISITOR_DEPARTMENT}, and this company has none. Add it, then try again.`);
+  if (!unassigned) throw new Error(`Visitors go on the rule set named ${SIGN_IN_ONLY_RULE_SET}, and this company has none. Add it in Rules Setup with no overtime, then try again.`);
+
+  // "CL" asks the save for the next visitor badge, unless they hold one
+  // already. The old badge's barcode goes with it.
+  const badge = input.wmsId !== undefined ? input.wmsId : current.wmsId;
+  const needsBadge = !isClientBadge(badge) && !asksForClientBadge(badge);
+  Object.assign(input, {
+    departmentId: dept.id,
+    ruleSetId: unassigned.id,
+    email: "",
+    workEmail: "",
+    supervisorId: null,
+    jobTitleId: null,
+    agencyId: null,
+    shiftId: null,
+    holidayRuleId: null,
+    payCategoryId: null,
+    payTypeId: null,
+    adpWorkerId: null,
+    payType: null,
+    payRate: null,
+    ...(needsBadge && { wmsId: "CL", barcode: "" }),
+  });
+}
+
 export const updateEmployee = withRBAC(
   "EMPLOYEE_MANAGE",
   async (actor, input: UpdateEmployeeInput) => {
     const { employeeId: actorId, tenantId } = actor;
+    if (!tenantId) throw new Error("Tenant context required");
+    const parsed = updateEmployeeSchema.parse(input);
+    await keepVisitorShape(tenantId, parsed);
     const {
       employeeId, name, email, workEmail, role, customRoleId, supervisorId, siteId, departmentId, ruleSetId, shiftId, holidayRuleId, payCategoryId, payTypeId, isActive, onLeave, webPunchEnabled, wmsId, barcode, adpWorkerId,
       adjustedHireDate, jobTitle, jobTitleId, agencyId, terminationReason, terminatedAt: terminatedAtInput, timeZone, payType, payRate, chargeRate, holidayRate, overtimeRate,
       phone, phone2, gender, maritalStatus,
       emergencyContact, emergencyPhone, emergencyRelationship,
-      address1, address2, city, state, country, zipCode,
-    } = updateEmployeeSchema.parse(input);
+      address1, address2, city, state, country, zipCode, preferredLanguage,
+    } = parsed;
 
-    if (!tenantId) throw new Error("Tenant context required");
     await assertRecordInReach(actor, employeeId);
     const current = await db.employee.findFirst({
       where: { id: employeeId, tenantId },
@@ -735,6 +844,7 @@ export const updateEmployee = withRBAC(
           ...(terminationReason !== undefined && { terminationReason }),
           ...(terminatedAt !== undefined && { terminatedAt: terminatedAt ? new Date(terminatedAt + "T00:00:00.000Z") : null }),
           ...(timeZone !== undefined && { timeZone }),
+          ...(preferredLanguage !== undefined && { preferredLanguage }),
           ...(payType !== undefined && { payType }),
           ...(payRate !== undefined && { payRate }),
           ...(chargeRate !== undefined && { chargeRate }),
@@ -832,6 +942,7 @@ export const updateEmployee = withRBAC(
     if (moneyChanges(chargeRate, current.chargeRate)) diff("Charge Rate", usd(current.chargeRate), usd(chargeRate));
     if (moneyChanges(holidayRate, current.holidayRate)) diff("Holiday Rate", usd(current.holidayRate), usd(holidayRate));
     if (moneyChanges(overtimeRate, current.overtimeRate)) diff("Overtime Rate", usd(current.overtimeRate), usd(overtimeRate));
+    if (preferredLanguage !== undefined) diff("Preferred Language", languageName(current.preferredLanguage), languageName(preferredLanguage));
     if (timeZone !== undefined) diff("Time Zone", current.timeZone ? timeZoneLabel(current.timeZone) : "Site's time zone", timeZone ? timeZoneLabel(timeZone) : "Site's time zone");
     if (phone !== undefined) diff("Phone 1", decCurrent.phone, phone);
     if (phone2 !== undefined) diff("Phone 2", decCurrent.phone2, phone2);
@@ -1294,7 +1405,7 @@ export const getEmployeeLeaveLog = withRBAC(
 
 // ─── Sites ────────────────────────────────────────────────────────────────────
 
-export const getSites = withRBAC("SITE_MANAGE", async ({ tenantId }, _input: void) => {
+export const getSites = withRBAC(SITE_READERS, async ({ tenantId }, _input: void) => {
   return db.site.findMany({ where: { tenantId: tenantId ?? undefined }, orderBy: { name: "asc" } });
 });
 
@@ -1304,7 +1415,13 @@ export const createSite = withRBAC(
     if (!tenantId) throw new Error("Tenant context required");
     const parsed = siteSchema.parse(input);
     const site = await db.site.create({
-      data: { ...parsed, address: parsed.address?.trim() || null, tenantId },
+      data: {
+        ...parsed,
+        address: parsed.address?.trim() || null,
+        primaryLanguage: parsed.primaryLanguage ?? null,
+        additionalLanguages: cleanLanguages(parsed.primaryLanguage, parsed.additionalLanguages),
+        tenantId,
+      },
     });
     await writeAuditLog({
       tenantId,
@@ -1323,7 +1440,7 @@ export const updateSite = withRBAC(
   "SITE_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: UpdateSiteInput) => {
     if (!tenantId) throw new Error("Tenant context required");
-    const { siteId, isActive, address, ...rest } = updateSiteSchema.parse(input);
+    const { siteId, isActive, address, primaryLanguage, additionalLanguages, ...rest } = updateSiteSchema.parse(input);
     // Found inside this company first: an id from another one answers the
     // same "not found" as an id that does not exist.
     const own = await db.site.findFirst({ where: { id: siteId, tenantId }, select: { id: true } });
@@ -1336,6 +1453,9 @@ export const updateSite = withRBAC(
         // which Prisma skips, so the old address could never be removed.
         ...(address !== undefined && { address: address.trim() || null }),
         ...(isActive !== undefined && { isActive }),
+        // Informational for now. The others never repeat the primary.
+        ...(primaryLanguage !== undefined && { primaryLanguage }),
+        ...(additionalLanguages !== undefined && { additionalLanguages: cleanLanguages(primaryLanguage, additionalLanguages) }),
       },
     });
     await writeAuditLog({
@@ -1360,7 +1480,7 @@ async function assertOwnSites(tenantId: string, siteIds: string[]) {
 }
 
 export const getDepartments = withRBAC(
-  "SITE_MANAGE",
+  SITE_READERS,
   async ({ tenantId }, _input: void) => {
     return db.department.findMany({
       where: { tenantId: tenantId ?? undefined },
@@ -1436,7 +1556,7 @@ async function assertOwnPayCode(tenantId: string, payCodeId: string | null | und
 }
 
 export const getLeaveTypesAdmin = withRBAC(
-  "RULES_MANAGE",
+  RULES_READERS,
   async ({ tenantId }, _input: void) => {
     if (!tenantId) return [];
     return db.leaveType.findMany({ where: { tenantId }, orderBy: { name: "asc" } });
@@ -1499,7 +1619,7 @@ export const updateLeaveType = withRBAC(
 // ─── Rule Sets ────────────────────────────────────────────────────────────────
 
 export const getRuleSets = withRBAC(
-  "RULES_MANAGE",
+  RULES_READERS,
   async ({ tenantId }, _input: void) => {
     // With no company it used to drop the filter and return every company's.
     if (!tenantId) return [];
@@ -1513,7 +1633,7 @@ export const getRuleSets = withRBAC(
 
 /** One rule set, for its editor page. Only the caller's company's. */
 export const getRuleSet = withRBAC(
-  "RULES_MANAGE",
+  RULES_READERS,
   async ({ tenantId }, input: { ruleSetId: string }) => {
     if (!tenantId) throw new Error("NOT_FOUND");
     const rs = await db.ruleSet.findFirst({

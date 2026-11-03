@@ -16,6 +16,7 @@ import { TimecardViewer } from "@/components/payroll/timecard-viewer";
 import { Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { Users } from "lucide-react";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { directReportsOf } from "@/lib/get-subordinate-ids";
 
 /**
  * Timecards, as the portal design lays it out: the list template for choosing
@@ -76,10 +77,19 @@ export default async function TimecardsPage({
     departmentId: sp.departmentId ?? null,
     payPeriodId: sp.periodId ?? null,
   };
+  // A team viewer (a supervisor, an agency) is offered the sites and
+  // departments its own people are in: the company's whole list was every
+  // site and department name, to a login that can see 11 people.
+  const teamOnly = isAllScope ? null : { ...directReportsOf(session.user.employeeId ?? ""), isActive: true };
   const [employeesResult, sites, departments] = await Promise.all([
     isAllScope ? getActiveEmployeesForTimecards(listFilters) : getTeamEmployeesForTimecards(listFilters),
     db.site.findMany({
-      where: { isActive: true, ...(t ? { tenantId: t } : {}), ...(siteIds ? { id: { in: siteIds } } : {}) },
+      where: {
+        isActive: true,
+        ...(t ? { tenantId: t } : {}),
+        ...(siteIds ? { id: { in: siteIds } } : {}),
+        ...(teamOnly ? { employees: { some: teamOnly } } : {}),
+      },
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
@@ -90,9 +100,11 @@ export default async function TimecardsPage({
       where: {
         isActive: true,
         ...(t ? { tenantId: t } : {}),
-        ...(sp.siteId
-          ? { OR: [{ sites: { some: { siteId: sp.siteId } } }, { employees: { some: { siteId: sp.siteId, isActive: true } } }] }
-          : {}),
+        ...(teamOnly
+          ? { employees: { some: { ...teamOnly, ...(sp.siteId ? { siteId: sp.siteId } : {}) } } }
+          : sp.siteId
+            ? { OR: [{ sites: { some: { siteId: sp.siteId } } }, { employees: { some: { siteId: sp.siteId, isActive: true } } }] }
+            : {}),
       },
       orderBy: { name: "asc" },
       select: { id: true, name: true },

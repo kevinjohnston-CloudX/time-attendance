@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { hasOwnTime } from "@/lib/rbac/check-permission";
 import { db } from "@/lib/db";
 import { findOpenPayPeriod } from "@/lib/utils/punch-helpers";
 import { PunchHistoryTable } from "@/components/time/punch-history-table";
@@ -25,6 +26,9 @@ import { personTimeZone } from "@/lib/utils/person-time-zone";
 export default async function PunchHistoryPage() {
   const session = await auth();
   if (!session?.user?.employeeId) redirect("/dashboard");
+  // A sign in only login (sign-in-only.ts) has no punches of its own. Someone
+  // inactive keeps this page whatever their role allows them now.
+  if (session.user.isActive !== false && !(await hasOwnTime(session.user))) redirect("/dashboard");
 
   const { employeeId } = session.user;
 

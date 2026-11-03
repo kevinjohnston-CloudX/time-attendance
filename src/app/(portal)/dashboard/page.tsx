@@ -15,7 +15,7 @@ import { ChevronRight } from "lucide-react";
 import { format, addDays } from "date-fns";
 import { formatMinutes } from "@/lib/utils/duration";
 import { formatTimeOfDay, parseUtcDate, toSiteClock } from "@/lib/utils/date";
-import { userHasPermission } from "@/lib/rbac/check-permission";
+import { hasOwnTime, userHasPermission } from "@/lib/rbac/check-permission";
 import { OverviewPeriodFilter } from "@/components/dashboard/overview-period-filter";
 import { TodayPunchActions } from "@/components/dashboard/today-punch-actions";
 import {
@@ -81,7 +81,7 @@ export default async function DashboardPage({
   // Three rounds, each waiting only on what it needs: what is open now and who
   // this is, then everything that hangs off the open period, then the counts
   // for the period the overview is showing.
-  const [payPeriod, allLeaveBalances, myLeaveRequests, me, hasPayrollAccess, canApproveTeam, canPunch, canRequestLeave] = await Promise.all([
+  const [payPeriod, allLeaveBalances, myLeaveRequests, me, hasPayrollAccess, canApproveTeam, canPunch, canRequestLeave, ownTime, canSeeTeamPeople, canSeeTeamTimecards, canSeeTeamPunches] = await Promise.all([
     tenantId
       ? db.payPeriod.findFirst({
           where: {
@@ -125,6 +125,12 @@ export default async function DashboardPage({
     // Punch Clock or Clock In: the punch itself would only be refused.
     session?.user ? userHasPermission(session.user, "PUNCH_OWN") : false,
     session?.user ? userHasPermission(session.user, "LEAVE_REQUEST_OWN") : false,
+    // A sign in only login (sign-in-only.ts) has no time of its own: no Today
+    // or Pay Period card, and its people in their place.
+    session?.user ? hasOwnTime(session.user) : false,
+    session?.user ? userHasPermission(session.user, "EMPLOYEE_VIEW_TEAM") : false,
+    session?.user ? userHasPermission(session.user, "TIMECARD_VIEW_TEAM") : false,
+    session?.user ? userHasPermission(session.user, "PUNCH_VIEW_TEAM") : false,
   ]);
 
   // The building's own clock, for the dates and times this page prints. The
@@ -142,7 +148,7 @@ export default async function DashboardPage({
           include: { overtimeBuckets: true },
         })
       : null,
-    employeeId ? getToday(employeeId, now, siteZone) : null,
+    employeeId && ownTime ? getToday(employeeId, now, siteZone) : null,
     canApproveTeam && tenantId
       ? getExceptionsFeed(employeeId, tenantId, hasPayrollAccess, payPeriod?.id ?? null)
       : null,
@@ -359,6 +365,20 @@ export default async function DashboardPage({
 
       {/* ── Row 1: your day, and your team's ── */}
       <div className={CARD_GRID}>
+        {!ownTime && (canSeeTeamPeople || canSeeTeamTimecards || canSeeTeamPunches) && (
+          <Card title="Your people" subtitle="View only">
+            <div className="flex flex-col gap-3.5">
+              <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                The people you can see, their timecards and their punches. Nothing here can be changed from this login.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {canSeeTeamPeople && <LinkButton href="/supervisor/team" hierarchy="secondary">Team Members</LinkButton>}
+                {canSeeTeamTimecards && <LinkButton href="/payroll/timecards" hierarchy="secondary">Timecards</LinkButton>}
+                {canSeeTeamPunches && <LinkButton href="/supervisor/punch-history" hierarchy="secondary">Team Punch History</LinkButton>}
+              </div>
+            </div>
+          </Card>
+        )}
         {today && (
           <Card
             title="Today"
@@ -422,7 +442,7 @@ export default async function DashboardPage({
           </Card>
         )}
 
-        {employeeId && (
+        {employeeId && ownTime && (
           <Card
             title="Pay Period"
             subtitle={

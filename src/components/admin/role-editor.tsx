@@ -138,12 +138,14 @@ const RESOURCE_INFO: Record<string, PermInfo> = {
   rules: {
     summary: "Controls configuration of rule sets, overtime rules, and scheduling.",
     cells: {
+      "read:all": "See Rules Setup (rule sets, shifts, holiday rules, leave policies) and Company Setup's job titles, agencies, holidays, leave types, pay categories and pay types, without changing them.",
       "write:all": "Create and edit rule sets, OT rules, shift schedules, and holiday rules.",
     },
   },
   site: {
     summary: "Controls company site and location management.",
     cells: {
+      "read:all": "See sites, departments and each site's leave policies in Company Setup, without changing them.",
       "write:all": "Add and edit sites, departments, and company location settings.",
     },
   },

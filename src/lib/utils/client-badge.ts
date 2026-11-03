@@ -89,7 +89,21 @@ export function nextClientBadge(used: Iterable<string | null | undefined>): stri
 export async function issueClientBadge(tx: Prisma.TransactionClient): Promise<string> {
   // $executeRaw, not $queryRaw: the lock returns void, which a query cannot read back.
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('client-badge'))`;
-  const people = await tx.employee.findMany({
+  return nextClientBadge(await clientBadgesInUse(tx));
+}
+
+/**
+ * The badge the next visitor will get, for New Employee to show before it is
+ * issued. Only a preview: the number is taken at the save, under the lock,
+ * and is this one unless someone else was added in between.
+ */
+export async function previewClientBadge(client: Pick<Prisma.TransactionClient, "employee" | "scanEvent">): Promise<string> {
+  return nextClientBadge(await clientBadgesInUse(client));
+}
+
+/** Every client badge on a person or seen in a scan. */
+async function clientBadgesInUse(client: Pick<Prisma.TransactionClient, "employee" | "scanEvent">): Promise<(string | null)[]> {
+  const people = await client.employee.findMany({
     where: {
       OR: [
         { wmsId: { startsWith: CLIENT_BADGE_PREFIX } },
@@ -98,13 +112,10 @@ export async function issueClientBadge(tx: Prisma.TransactionClient): Promise<st
     },
     select: { wmsId: true, employeeCode: true },
   });
-  const scanned = await tx.scanEvent.findMany({
+  const scanned = await client.scanEvent.findMany({
     where: { badgeCode: { startsWith: CLIENT_BADGE_PREFIX } },
     distinct: ["badgeCode"],
     select: { badgeCode: true },
   });
-  return nextClientBadge([
-    ...people.flatMap((p) => [p.wmsId, p.employeeCode]),
-    ...scanned.map((s) => s.badgeCode),
-  ]);
+  return [...people.flatMap((p) => [p.wmsId, p.employeeCode]), ...scanned.map((s) => s.badgeCode)];
 }

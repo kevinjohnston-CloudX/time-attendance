@@ -49,6 +49,10 @@ import { PayRatesTable } from "./pay-rates-table";
 import type { PayRateRow } from "@/actions/pay-rate.actions";
 import { TIME_ZONE_OPTIONS, timeZoneLabel } from "@/lib/utils/person-time-zone";
 import { Overlay } from "@/components/ui/overlay";
+import { languageName } from "@/lib/languages";
+import { LanguagePicker } from "@/components/ui/language-picker";
+import { SIGN_IN_ONLY_RULE_SET } from "@/lib/sign-in-only";
+import { ROLE_RANK } from "@/lib/rbac/roles";
 
 /**
  * The employee record. It opens to read: every section shows its values as
@@ -96,7 +100,12 @@ interface Props {
   departments: (Department & { sites: { site: Pick<Site, "id" | "name"> }[] })[];
   ruleSets: RuleSet[];
   employees: { id: string; user: { name: string | null } }[];
-  customRoles: { id: string; name: string; isSystem: boolean; rank: number; liveAttendanceOnly?: boolean }[];
+  /** visitor: a role with no permissions (sign-in-only.ts). */
+  customRoles: { id: string; name: string; isSystem: boolean; rank: number; liveAttendanceOnly?: boolean; visitor?: boolean }[];
+  /** The badge the next visitor gets (a preview: it is taken at the save). */
+  nextVisitorBadge?: string | null;
+  /** The department every visitor is filed in. */
+  visitorDepartment?: { id: string; name: string } | null;
   shifts: { id: string; name: string; startTime: string; endTime: string }[];
   holidayRules: { id: string; name: string }[];
   payCategories: { id: string; number: number; description: string | null }[];
@@ -128,6 +137,19 @@ const SYSTEM_ROLE_NAME: Record<string, string> = {
 };
 
 const MARITAL = ["Single", "Married", "Divorced", "Widowed", "Other"];
+
+/**
+ * What a visitor does not have, as New Employee files one: no sign in, no
+ * supervisor, job title or agency, no schedule or pay. Picking the Visitor
+ * role fills these in and switches them off; the save does the same
+ * (updateEmployee). The department, rule set and badge are filled in too.
+ */
+const VISITOR_FIELDS = [
+  "email", "workEmail", "jobTitleId", "agencyId", "departmentId", "supervisorId",
+  "wmsId", "barcode", "adpWorkerId",
+  "ruleSetId", "shiftId", "holidayRuleId", "payCategoryId", "payTypeId", "payType",
+] as const;
+const visitorField = new Set<string>(VISITOR_FIELDS);
 
 /** Every value the record edits, as the text its field holds. */
 type Values = {
@@ -166,6 +188,7 @@ type Values = {
   overtimeRate: string;
   gender: string;
   maritalStatus: string;
+  preferredLanguage: string;
   phone: string;
   phone2: string;
   emergencyContact: string;
@@ -320,6 +343,8 @@ export function EditEmployeeForm({
   ruleSets,
   employees,
   customRoles,
+  nextVisitorBadge,
+  visitorDepartment,
   shifts,
   holidayRules,
   payCategories,
@@ -401,6 +426,7 @@ export function EditEmployeeForm({
       overtimeRate: employee.overtimeRate != null ? String(employee.overtimeRate) : "",
       gender: employee.gender ?? "",
       maritalStatus: employee.maritalStatus ?? "",
+      preferredLanguage: employee.preferredLanguage ?? "",
       phone: employee.phone ?? "",
       phone2: employee.phone2 ?? "",
       emergencyContact: employee.emergencyContact ?? "",
@@ -428,8 +454,12 @@ export function EditEmployeeForm({
   // An account on a role limited to Live Attendance gets the same section: its
   // ticked buildings are the ones its Live Attendance can switch between.
   // Read off the role in the form, so picking that role shows it at once.
-  const limitedToLiveAttendance = customRoles.find((r) => r.id === v.customRoleId)?.liveAttendanceOnly ?? false;
-  const showsSiteAccess = employeeIsHrOrSysAdmin || limitedToLiveAttendance;
+  const pickedRole = customRoles.find((r) => r.id === v.customRoleId);
+  const limitedToLiveAttendance = pickedRole?.liveAttendanceOnly ?? false;
+  // A custom role at Payroll Admin's rank or above, such as Payroll Admin NL,
+  // is held to its sites as Payroll Admin is (site-limit.ts).
+  const adminCustomRole = !!pickedRole && !pickedRole.isSystem && pickedRole.rank >= ROLE_RANK.PAYROLL_ADMIN;
+  const showsSiteAccess = employeeIsHrOrSysAdmin || limitedToLiveAttendance || adminCustomRole;
 
   const changed = (Object.keys(saved) as Key[]).filter((k) => draft[k] !== saved[k]);
   const accessChanged =
@@ -500,13 +530,33 @@ export function EditEmployeeForm({
     };
   }, []);
 
+  const isVisitorRole = (id: string) => !!customRoles.find((r) => r.id === id)?.visitor;
+  const unassignedId = ruleSets.find((r) => r.name === SIGN_IN_ONLY_RULE_SET)?.id ?? "";
+
   function set<K extends Key>(key: K, value: Values[K]) {
     setDraft((d) => {
       const next = { ...d, [key]: value };
+      // Made a visitor: filed as New Employee files one. Moved off it again
+      // before saving: what was saved comes back, to be picked anew if the
+      // saved record was a visitor too.
+      if (key === "customRoleId" && isVisitorRole(value as string) !== isVisitorRole(d.customRoleId)) {
+        if (isVisitorRole(value as string)) {
+          for (const f of VISITOR_FIELDS) (next[f] as string) = "";
+          next.departmentId = visitorDepartment?.id ?? d.departmentId;
+          next.ruleSetId = unassignedId || d.ruleSetId;
+          next.payType = d.payType;
+          // "CL" asks the save for the next visitor badge, unless they have one.
+          next.wmsId = /^CL\d+$/i.test(d.wmsId.trim()) ? d.wmsId : "CL";
+          next.barcode = next.wmsId === d.wmsId ? d.barcode : "";
+        } else if (!isVisitorRole(saved.customRoleId)) {
+          for (const f of VISITOR_FIELDS) (next[f] as string) = saved[f];
+        }
+      }
       // A department only exists at some sites. Moving site keeps the
       // department when the new site has it, and otherwise takes the first
-      // one the new site offers, as the list below shows.
-      if (key === "siteId") {
+      // one the new site offers, as the list below shows. A visitor stays in
+      // Visitors.
+      if (key === "siteId" && !isVisitorRole(next.customRoleId)) {
         const offered = departments.filter((dep) => dep.sites.some((ds) => ds.site.id === value));
         if (!offered.some((dep) => dep.id === next.departmentId)) next.departmentId = offered[0]?.id ?? "";
       }
@@ -567,6 +617,7 @@ export function EditEmployeeForm({
         case "adjustedHireDate":
         case "terminatedAt":
         case "timeZone":
+        case "preferredLanguage":
           out[k] = val || null;
           break;
         default:
@@ -663,6 +714,9 @@ export function EditEmployeeForm({
     return a ? `${a.code} (${a.description})${agencyEnded(a) ? ", inactive" : ""}` : "";
   };
   const filteredDepts = departments.filter((d) => d.sites.some((ds) => ds.site.id === v.siteId));
+  /** On the Visitor role in the form: the fields a visitor does not have are switched off. */
+  const visitor = isVisitorRole(v.customRoleId);
+  const lockedFor = (key: Key) => visitor && visitorField.has(key);
   const tone = v.status === "inactive" ? "inactive" : v.status === "on-leave" ? "leave" : "active";
   const statusWord = v.status === "inactive" ? "Inactive" : v.status === "on-leave" ? "On leave" : "Active";
 
@@ -691,6 +745,7 @@ export function EditEmployeeForm({
       name={key}
       value={draft[key] as string}
       onChange={(e) => set(key, e.target.value as never)}
+      disabled={lockedFor(key)}
       {...extra}
     />
   );
@@ -701,6 +756,7 @@ export function EditEmployeeForm({
       name={key}
       value={draft[key] as string}
       onChange={(e) => set(key, e.target.value as never)}
+      disabled={lockedFor(key)}
       style={{ width: "100%" }}
     >
       {options}
@@ -962,7 +1018,18 @@ export function EditEmployeeForm({
                   )}
                 </Field>
 
-                <Field label="Role" htmlFor="f-customRoleId" read={roleName(v.customRoleId)}>
+                <Field
+                  label="Role"
+                  htmlFor="f-customRoleId"
+                  read={roleName(v.customRoleId)}
+                  hint={
+                    visitor
+                      ? !visitorDepartment
+                        ? "Visitors are filed in a department named Visitors, and there is none. Add it before making this person a visitor."
+                        : "A visitor: a badge for the security gate and nothing else. The save files them in Visitors on UNASSIGNED, and clears their emails, supervisor, job title, agency, schedule and pay."
+                      : undefined
+                  }
+                >
                   {pick(
                     "customRoleId",
                     <>
@@ -1073,6 +1140,7 @@ export function EditEmployeeForm({
                     <Select
                       id="f-additionalSupervisors"
                       value=""
+                      disabled={visitor}
                       onChange={(e) => {
                         const id = e.target.value;
                         if (id) setDraftExtra((list) => (list.includes(id) ? list : [...list, id]));
@@ -1275,7 +1343,17 @@ export function EditEmployeeForm({
             {/* ── Badges & IDs ───────────────────────────────────────────── */}
             <Section icon={ScanLine} title="Badges & IDs" subtitle="What the kiosks, the WMS and ADP know this person by, and where they punch">
               <div className={styles.grid}>
-                <Field label="Badge ID (WMS)" htmlFor="f-wmsId" read={v.wmsId} mono>
+                <Field
+                  label="Badge ID (WMS)"
+                  htmlFor="f-wmsId"
+                  read={v.wmsId}
+                  mono
+                  hint={
+                    visitor && draft.wmsId === "CL"
+                      ? `The next visitor badge${nextVisitorBadge ? `, ${nextVisitorBadge},` : ""} is given at the save.`
+                      : undefined
+                  }
+                >
                   {text("wmsId", { placeholder: "QR code badge ID" })}
                 </Field>
                 <Field
@@ -1319,6 +1397,14 @@ export function EditEmployeeForm({
                 </Field>
                 <Field label="Gender" htmlFor="f-gender" read={v.gender}>
                   {text("gender")}
+                </Field>
+                {/* Informational for now (lib/languages.ts). */}
+                <Field label="Preferred language" htmlFor="f-preferredLanguage" read={languageName(v.preferredLanguage)}>
+                  <LanguagePicker
+                    id="f-preferredLanguage"
+                    value={draft.preferredLanguage}
+                    onChange={(code) => set("preferredLanguage", code as never)}
+                  />
                 </Field>
                 <Field label="Marital status" htmlFor="f-maritalStatus" read={v.maritalStatus}>
                   {pick(

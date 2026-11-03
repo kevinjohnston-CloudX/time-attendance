@@ -4,16 +4,17 @@ import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
 import { computeRoundedTime, computeShiftExpiry } from "@/lib/utils/date";
-import { getCurrentPunchState, findOpenPayPeriod, saveRejectedPunch, TOO_SOON_REJECTION } from "@/lib/utils/punch-helpers";
+import { getCurrentPunchState, findOpenPayPeriod, saveRejectedPunch, mealLockoutRejection, mealLockoutWait, TOO_SOON_REJECTION } from "@/lib/utils/punch-helpers";
 import { validateTransition } from "@/lib/state-machines/punch-state";
 import { timeclockScanSchema } from "@/lib/validators/punch.schema";
-import { recordScanEvent, resolveScanOutcome } from "@/lib/services/scan-event.service";
+import { recordScanEvent, resolveScanOutcome, setScanAsideFromAlternation } from "@/lib/services/scan-event.service";
 import { toTabletVerdict } from "@/lib/services/tablet-verdict";
 import { findEmployeeByBadge } from "@/lib/utils/badge-lookup";
 import { tabletTimeZone } from "@/lib/utils/tablet-time-zone";
-import type { PunchType, PunchState } from "@prisma/client";
+import type { Prisma, PunchType, PunchState } from "@prisma/client";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { CLIENT_TIME_CLOCK_REJECTION, isClientBadge } from "@/lib/utils/client-badge";
+import { WMS_TERMINATION_ENDS_EMPLOYMENT, employmentEnded, madeActiveAt } from "@/lib/presence/employment";
 
 function unauthorized() {
   return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
@@ -206,6 +207,29 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Ended all the same, though still Active here: a termination date nothing
+  // since undoes, or terminated in WMS (employment.ts, the gate's own rule).
+  // Until 2026-10-30 a time clock refused Inactive only, so someone the gate
+  // turned away could still clock in. Refused in the inactive answer's exact
+  // words, which every tablet already handles: build 167 shows "Employment
+  // ended" with its alarm, 159 to 166 show the punch as not recorded. The
+  // reason kept on the scan says which system ended it. Decides this punch
+  // only; isActive and the timecard are left as they are.
+  const punchDay = new Intl.DateTimeFormat("en-CA", { timeZone: scanZone }).format(punchTime);
+  const madeActive = (await madeActiveAt([employee])).get(employee.id) ?? null;
+  if (employmentEnded(employee, punchDay, madeActive, WMS_TERMINATION_ENDS_EMPLOYMENT)) {
+    const byCloudTime = employmentEnded(employee, punchDay, madeActive, false);
+    await settle("PUNCH_REJECTED", {
+      rejectionReason: byCloudTime
+        ? "Employee is inactive (termination date has passed)"
+        : "Employee is inactive (terminated in WMS)",
+    });
+    return NextResponse.json(
+      { success: false, error: "Employee is inactive" },
+      { status: 400 }
+    );
+  }
+
   // A client's badge (client-badge.ts) is for the gate only: a visitor keeps
   // no timecard, so the scan is refused before one could be made. A 200, for
   // the reason 5b gives: a refusal waiting cannot fix must never be a 4xx.
@@ -216,7 +240,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, punchId: null, error: CLIENT_TIME_CLOCK_REJECTION });
   }
 
-  // 5b. Too soon after the last punch.
+  // 5a'. The same scan, already a punch. 5a only knows a retry by its scan
+  //      row, and that row is not always there to ask: when its write failed,
+  //      or when the first attempt saved the punch and then died before
+  //      linking it (a 500, a timeout), the retry got through as a new scan.
+  //      The person being clocked in by then, it became a clock OUT, and the
+  //      next retry a clock IN: Carlos Jurado's 6:12:33 AM scan on 10/29 was
+  //      retried for 36 minutes into 9 punches, and 20 people had punches
+  //      doubled on 10/28-10/29. A punch at this very instant from a time clock
+  //      is this scan, whatever the scan rows say.
+  const samePunch = await sameScanPunch(db, employee.id, punchTime);
+  if (samePunch) {
+    await settle("PUNCH_RECORDED", { punchId: samePunch.id, punchType: samePunch.punchType, stateAfter: samePunch.stateAfter });
+    return repeatResponse(samePunch);
+  }
+
+  // 5b. Too soon after (or before) another punch.
   //
   //     Oracle refuses a punch inside five minutes of the previous one, and
   //     that rule is presently the only thing keeping a reader that fires twice
@@ -249,7 +288,13 @@ export async function POST(req: NextRequest) {
       // auto clock-out that had just closed the person's previous shift. With
       // it, 57 -- the kiosk-following-kiosk pairs the rule is actually for.
       source: "KIOSK",
-      punchTime: { gte: new Date(punchTime.getTime() - PUNCH_MIN_GAP_MS), lt: punchTime },
+      // Either side of this scan. A double tap can arrive out of order: the
+      // second tap recorded first, as the clock out, then the first, seconds
+      // late, taken as a clock in, since only punches before a scan were
+      // checked. 12 times at Rutherford 10/8-10/28, the first tap always from
+      // NJ299-HRTB001 (Luis M Van Grieken Garcia: 3:31:32 PM out, then 3:31:19
+      // PM in). The same instant is the same scan, answered at 5a'.
+      punchTime: { gte: new Date(punchTime.getTime() - PUNCH_MIN_GAP_MS), lte: new Date(punchTime.getTime() + PUNCH_MIN_GAP_MS) },
     },
     orderBy: { punchTime: "desc" },
     select: { punchTime: true },
@@ -391,6 +436,36 @@ export async function POST(req: NextRequest) {
   // 7. Auto-detect punch type and validate transition
   const punchType = detectPunchType(stateBefore);
 
+  // 7a. Meal lockout. A clock in too soon after a clock out is refused with the
+  //     minutes left, as Oracle refuses it for California. The tablets show
+  //     this pipeline's answer, so while only Oracle refused, nobody saw it: in
+  //     the 3 weeks to 10/29, 36 people went back to work after 28-29 minute
+  //     lunches, on CloudTime's "clocked in", owed a meal premium, and never
+  //     reached NovaTime. A 200, for the reason 5b gives; the tablet shows the
+  //     message and holds back the Oracle write.
+  if (punchType === "CLOCK_IN" && employee.ruleSet.mealLockoutMinutes > 0) {
+    const lastOut = await db.punch.findFirst({
+      where: {
+        employeeId: employee.id,
+        punchType: { in: ["CLOCK_OUT", "MEAL_START"] },
+        source: { not: "SYSTEM" },
+        isRejected: false,
+        correctedById: null,
+        hoursOnly: false,
+        punchTime: { lt: punchTime, gte: new Date(punchTime.getTime() - (employee.ruleSet.mealLockoutMinutes + 1) * 60_000) },
+      },
+      orderBy: { punchTime: "desc" },
+      select: { punchTime: true },
+    });
+    const wait = lastOut ? mealLockoutWait(lastOut.punchTime, punchTime, employee.ruleSet.mealLockoutMinutes) : 0;
+    if (wait > 0) {
+      const error = mealLockoutRejection(wait);
+      await settle("PUNCH_REJECTED", { punchType, rejectionReason: error });
+      if (scanEventId) await setScanAsideFromAlternation(scanEventId, "Refused by the meal lockout: not counted as a clock in or out");
+      return NextResponse.json({ success: false, punchId: null, error, minutesLeft: wait });
+    }
+  }
+
   // 8. Validate state transition
   const transition = validateTransition(stateBefore, punchType);
   if (!transition.valid) {
@@ -407,9 +482,15 @@ export async function POST(req: NextRequest) {
 
   const roundedTime = computeRoundedTime(punchTime, punchType, employee.ruleSet, employee.shift, personTimeZone(employee));
 
-  // 9. Create punch + audit log in transaction
+  // 9. Create punch + audit log in transaction. Two retries of one scan can
+  //    arrive together (1 ms apart for Anthony Opoku on 10/29), both past 5a';
+  //    the lock on the person makes the second wait for the first, then find it.
+  let punch: { id: string; timesheetId: string | null };
   try {
-    const punch = await db.$transaction(async (tx) => {
+    const saved = await db.$transaction(async (tx) => {
+      await tx.$executeRaw`select pg_advisory_xact_lock(hashtext(${employee.id}))`;
+      const same = await sameScanPunch(tx, employee.id, punchTime);
+      if (same) return { repeat: same };
       const p = await tx.punch.create({
         data: {
           employeeId: employee.id,
@@ -438,33 +519,14 @@ export async function POST(req: NextRequest) {
           },
         },
       });
-      return p;
+      return { created: p };
     });
-
-    // 10. Rebuild segments
-    await rebuildSegments(punch.timesheetId!, employee.ruleSet);
-
-    // 12. Report the verdict back onto the tablet's transaction record, and
-    //     to the tablet — in the tablet's two words. The scan row keeps its own
-    //     independently resolved direction; what is written here is what THIS
-    //     pipeline concluded, reduced to IN or OUT so the two can be compared
-    //     afterwards by detect-scan-discrepancies. The punch itself, above,
-    //     keeps the pipeline's full answer (a MEAL_START stays a MEAL_START on
-    //     the timecard); only what the tablets see and log is reduced.
-    await settle("PUNCH_RECORDED", {
-      punchId: punch.id,
-      punchType,
-      stateAfter: transition.newState,
-    });
-
-    const verdict = toTabletVerdict({ punchType, stateAfter: transition.newState });
-    return NextResponse.json({
-      success: true,
-      punchId: punch.id,
-      punchType: verdict.punchType ?? punchType,
-      stateAfter: verdict.stateAfter ?? transition.newState,
-      direction: verdict.direction,
-    });
+    if (!saved.created) {
+      const same = saved.repeat;
+      await settle("PUNCH_RECORDED", { punchId: same.id, punchType: same.punchType, stateAfter: same.stateAfter });
+      return repeatResponse(same);
+    }
+    punch = saved.created;
   } catch (err) {
     const message = err instanceof Error ? err.message : "Internal server error";
     await settle("ERROR", { rejectionReason: message });
@@ -473,4 +535,62 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+
+  // 10. Report the verdict back onto the tablet's transaction record, and
+  //     to the tablet — in the tablet's two words. The scan row keeps its own
+  //     independently resolved direction; what is written here is what THIS
+  //     pipeline concluded, reduced to IN or OUT so the two can be compared
+  //     afterwards by detect-scan-discrepancies. The punch itself, above,
+  //     keeps the pipeline's full answer (a MEAL_START stays a MEAL_START on
+  //     the timecard); only what the tablets see and log is reduced.
+  //     Written before the recalculation, which is the slow part: from here a
+  //     retry finds its punch through the scan row (5a).
+  await settle("PUNCH_RECORDED", {
+    punchId: punch.id,
+    punchType,
+    stateAfter: transition.newState,
+  });
+
+  // 11. Rebuild segments. A failure here is not the scan's: the punch is
+  //     saved, and answering 500 sent the tablet to retry a scan already on
+  //     the timecard. The person's next punch, or the nightly recalculation,
+  //     redoes the timecard.
+  try {
+    await rebuildSegments(punch.timesheetId!, employee.ruleSet);
+  } catch (err) {
+    console.error("timeclock: punch saved, timecard not recalculated", punch.id, err);
+  }
+
+  const verdict = toTabletVerdict({ punchType, stateAfter: transition.newState });
+  return NextResponse.json({
+    success: true,
+    punchId: punch.id,
+    punchType: verdict.punchType ?? punchType,
+    stateAfter: verdict.stateAfter ?? transition.newState,
+    direction: verdict.direction,
+  });
+}
+
+type SamePunch = { id: string; punchType: PunchType; stateAfter: PunchState };
+
+/** A live time clock punch for this person at this exact instant: the scan, already a punch. */
+function sameScanPunch(client: Pick<Prisma.TransactionClient, "punch">, employeeId: string, punchTime: Date): Promise<SamePunch | null> {
+  return client.punch.findFirst({
+    where: { employeeId, punchTime, source: "KIOSK", isRejected: false, correctedById: null },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, punchType: true, stateAfter: true },
+  });
+}
+
+/** What a retry is told: the punch its scan already made, as 5a answers. */
+function repeatResponse(p: SamePunch) {
+  const verdict = toTabletVerdict({ punchType: p.punchType, stateAfter: p.stateAfter });
+  return NextResponse.json({
+    success: true,
+    punchId: p.id,
+    punchType: verdict.punchType ?? p.punchType,
+    stateAfter: verdict.stateAfter ?? p.stateAfter,
+    direction: verdict.direction,
+    duplicate: true,
+  });
 }

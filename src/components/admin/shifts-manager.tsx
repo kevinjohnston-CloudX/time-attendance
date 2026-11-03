@@ -7,6 +7,7 @@ import { CalendarClock, Plus } from "lucide-react";
 import type { DayScheduleRow } from "@/actions/shift.actions";
 import { Button, EmptyState, LinkButton, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
 import { AreaPanel, FactTiles, StatusBadge, clock12, countLine, matches, useFacts, useStatusView } from "./setup/setup-ui";
+import { useViewOnly } from "./setup/view-only";
 import { defaultDaySchedule, type ShiftRow } from "./shift-editor";
 
 /**
@@ -55,7 +56,9 @@ export function ShiftsManager({ shifts }: { shifts: ShiftRow[] }) {
   ]);
   const shown = facts.kept.filter((s) => matches(query, s.name, s.number));
 
-  const addButton = (
+  // Looking only (view-only.tsx): nothing to add.
+  const viewOnly = useViewOnly();
+  const addButton = viewOnly ? undefined : (
     <LinkButton href="/admin/rules-setup/shifts/new" hierarchy="primary" leadingIcon={<Plus className="h-4 w-4" />}>
       Add shift
     </LinkButton>
