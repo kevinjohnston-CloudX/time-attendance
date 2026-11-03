@@ -1,0 +1,33 @@
+.list {
+  margin: 0;
+  padding: 0;
+}
+
+/* The Export window's choice rows, as a list to read rather than to pick. */
+.item {
+  cursor: default;
+  list-style: none;
+}
+.item:hover {
+  background: none;
+}
+
+/* A count still on its way. */
+.pending {
+  display: inline-block;
+  width: 22px;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--stroke-divider);
+  animation: pending 1.2s ease-in-out infinite;
+}
+@keyframes pending {
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pending {
+    animation: none;
+  }
+}

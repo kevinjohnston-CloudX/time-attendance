@@ -133,6 +133,7 @@ const RESOURCE_INFO: Record<string, PermInfo> = {
     cells: {
       "read:team": "See your own people's details on Team Members (name, badge, site, department, agency, supervisor, shift, hire date), read only. No pay, contact details or changes.",
       "write:all": "Add new employees, edit profiles, change roles, and deactivate or terminate employees.",
+      "execute:all": "Download everything CloudTime holds about one employee, for a personal data request. Every download is recorded.",
     },
   },
   rules: {

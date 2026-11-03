@@ -65,6 +65,7 @@ export default async function EditEmployeePage({
         // again by the save itself; this only decides whether to offer it.
         canEditPhoto={await userHasPermission(session.user, "PRESENCE_PHOTO_EDIT")}
         canRemovePhoto={await userHasPermission(session.user, "PRESENCE_PHOTO_REMOVE")}
+        canExportData={await userHasPermission(session.user, "EMPLOYEE_DATA_EXPORT")}
         sites={sites}
         departments={departments}
         ruleSets={ruleSets}
