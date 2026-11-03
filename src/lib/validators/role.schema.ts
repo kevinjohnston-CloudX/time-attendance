@@ -36,7 +36,7 @@ export type PermissionEntry = z.infer<typeof permissionEntrySchema>;
 export const createRoleSchema = z.object({
   name: z.string().min(1).max(100).trim(),
   description: z.string().max(500).optional(),
-  rank: z.number().int().min(0).max(100).default(0),
+  rank: z.number().int().min(0).max(4, "A role's rank goes from 0 (Employee) to 4 (System Admin)").default(0),
   canViewAs: z.boolean().optional(),
   liveAttendanceOnly: z.boolean().optional(),
   permissions: z.array(permissionEntrySchema),
@@ -48,7 +48,7 @@ export const updateRoleSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1).max(100).trim().optional(),
   description: z.string().max(500).optional().nullable(),
-  rank: z.number().int().min(0).max(100).optional(),
+  rank: z.number().int().min(0).max(4, "A role's rank goes from 0 (Employee) to 4 (System Admin)").optional(),
   canViewAs: z.boolean().optional(),
   liveAttendanceOnly: z.boolean().optional(),
   permissions: z.array(permissionEntrySchema).optional(),

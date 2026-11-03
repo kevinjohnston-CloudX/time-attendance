@@ -19,6 +19,20 @@ export const ROLE_RANK: Record<Role, number> = {
   SUPER_ADMIN: 5,
 };
 
+/**
+ * The highest rank a company's own role can carry: System Admin. A custom
+ * role's rank is a number typed on the Roles page, and a rank above this one
+ * outranked a super admin in every "only someone more senior" check, so a
+ * System Admin could raise their own role and reset the super admin's login.
+ * Every rank read from a role goes through {@link companyRank}.
+ */
+export const COMPANY_TOP_RANK = ROLE_RANK.SYSTEM_ADMIN;
+
+/** A company role's rank as the checks read it: never above System Admin. */
+export function companyRank(rank: number): number {
+  return Math.min(Math.max(rank, 0), COMPANY_TOP_RANK);
+}
+
 export function isValidRole(value: unknown): value is Role {
   return ROLES.includes(value as Role);
 }

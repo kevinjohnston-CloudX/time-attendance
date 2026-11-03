@@ -42,9 +42,15 @@ async function manageableLogin(employeeId: string) {
   }
   const target = await db.employee.findFirst({
     where: { id: employeeId, ...(caller.isSuperAdmin ? {} : { tenantId: caller.tenantId ?? "" }) },
-    select: { id: true, tenantId: true, userId: true, user: { select: { id: true, name: true, email: true, workEmail: true } } },
+    select: { id: true, tenantId: true, userId: true, user: { select: { id: true, name: true, email: true, workEmail: true, isSuperAdmin: true } } },
   });
   if (!target) return { error: "This employee isn't available to you. Reload the page and try again." } as const;
+  // A super admin's login reaches every company, so only a super admin
+  // resets it, whichever employee record it is reached through. Answered as
+  // a record that isn't there, so nothing tells that it exists.
+  if (target.user?.isSuperAdmin && !caller.isSuperAdmin) {
+    return { error: "This employee isn't available to you. Reload the page and try again." } as const;
+  }
   if (!caller.isSuperAdmin) {
     if (target.id === caller.employeeId) {
       return { error: "To change your own password, use Change password in your profile." } as const;

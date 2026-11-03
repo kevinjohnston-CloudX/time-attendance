@@ -438,8 +438,8 @@ export function RoleEditor({
               value={rank}
               onChange={(e) => setRank(Number(e.target.value))}
               min={0}
-              max={100}
-              hint="Higher rank = more privileged"
+              max={4}
+              hint="From 0 (Employee) to 4 (System Admin). Higher means more senior."
             />
           </div>
 

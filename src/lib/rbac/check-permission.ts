@@ -5,7 +5,7 @@ import { hasPermission, type Permission } from "./permissions";
 import { hasPermissionByLegacy } from "./permission-resolver";
 import { SUPER_ADMIN_TENANT_COOKIE, VIEW_AS_ROLE_COOKIE } from "@/lib/constants";
 import { INACTIVE_PERMISSIONS, liveIdentity } from "./identity";
-import { ROLE_RANK, isValidRole } from "./roles";
+import { ROLE_RANK, isValidRole, companyRank } from "./roles";
 
 const PRIVILEGED_ROLES = ["SYSTEM_ADMIN", "SUPER_ADMIN"];
 
@@ -132,7 +132,7 @@ export async function requirePermission(permission: Permission): Promise<{
 export async function viewAsRank(viewAsId: string): Promise<number> {
   if (LEGACY_ROLE_STRINGS.has(viewAsId)) return isValidRole(viewAsId) ? ROLE_RANK[viewAsId] : 0;
   const role = await db.customRole.findUnique({ where: { id: viewAsId }, select: { rank: true } });
-  return role?.rank ?? 0;
+  return companyRank(role?.rank ?? 0);
 }
 
 export async function checkViewAsPermission(viewAsId: string, permission: Permission): Promise<boolean> {
