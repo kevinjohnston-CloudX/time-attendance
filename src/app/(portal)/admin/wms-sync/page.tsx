@@ -129,6 +129,26 @@ export default async function WmsSyncPage() {
 
   const result = await getWmsSyncStatus(undefined);
   if (!result.success) redirect("/admin");
+  if (!result.data.connected) {
+    return (
+      <div className="flex flex-col gap-4">
+        <PageHeader pinned
+          title="WMS Sync"
+          subtitle="Employees, schedules and security gate status from the warehouse system"
+          actions={
+            <LinkButton href="/admin" hierarchy="tertiary">
+              ← Administration
+            </LinkButton>
+          }
+        />
+        <EmptyState
+          icon={<PlugZap className="h-7 w-7" />}
+          title="WMS isn't connected for this company"
+          body="Ask Cloudx support to connect it. Until then nothing is read from or sent to the warehouse system."
+        />
+      </div>
+    );
+  }
   const s = result.data;
 
   const health = HEALTH[s.health];

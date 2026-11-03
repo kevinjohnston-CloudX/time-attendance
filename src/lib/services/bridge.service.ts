@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { assertIntegrationConnected } from "@/lib/integrations/connected";
 import { Prisma, type SyncKind } from "@prisma/client";
 import { applyRosterBatch, type RosterRow } from "@/lib/services/roster-sync.service";
 import {
@@ -94,6 +95,8 @@ export async function enqueueBridgeJob(
   kind: string,
   payload: Prisma.InputJsonValue,
 ): Promise<{ id: string; created: boolean }> {
+  // One bridge reads one Oracle: only the company it belongs to gets its work.
+  await assertIntegrationConnected(tenantId, "wms");
   const pending = await db.bridgeJob.findFirst({
     where: { tenantId, kind, status: "PENDING" },
     select: { id: true },

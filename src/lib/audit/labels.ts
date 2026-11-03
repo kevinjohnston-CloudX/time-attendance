@@ -102,6 +102,8 @@ const NAMED: Record<string, string> = {
   ADP_PAYROLL_PUSHED: "Payroll sent to ADP",
   VIEW_AS_STARTED: "View as started",
   SUPER_ADMIN_ENTERED: "Super admin entered the company",
+  INTEGRATION_CONNECTED: "ADP or WMS connected to the company",
+  INTEGRATION_DISCONNECTED: "ADP or WMS disconnected from the company",
   LOGIN_FAILED: "Sign in failed",
   SETTINGS_UPDATE: "Company settings updated",
   LOCK: "Pay period locked",

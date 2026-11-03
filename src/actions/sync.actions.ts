@@ -1,6 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { integrationConnected } from "@/lib/integrations/connected";
 import { withRBAC } from "@/lib/rbac/guard";
 import {
   BRIDGE_AGENT,
@@ -55,6 +56,8 @@ const KIND_LABELS: Record<string, { kind: SyncKind; label: string; cadence: stri
 };
 
 export const getWmsSyncStatus = withRBAC("EMPLOYEE_MANAGE", async ({ tenantId }) => {
+  // The bridge belongs to one company; any other sees that, and nothing of it.
+  if (!(await integrationConnected(tenantId, "wms"))) return { connected: false as const };
   const t = tenantId ?? undefined;
   const now = Date.now();
   const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60_000);
@@ -137,6 +140,7 @@ export const getWmsSyncStatus = withRBAC("EMPLOYEE_MANAGE", async ({ tenantId })
   });
 
   return {
+    connected: true as const,
     agentName: BRIDGE_AGENT,
     lastSeenAt: agent?.lastSeenAt ?? null,
     version: agent?.version ?? null,

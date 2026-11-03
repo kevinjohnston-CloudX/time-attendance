@@ -9,6 +9,7 @@ import { userHasPermission } from "@/lib/rbac/check-permission";
 import { db } from "@/lib/db";
 import { getPayPeriodRail, getPayPeriodDetail } from "@/actions/pay-period.actions";
 import { getAdpConfig } from "@/lib/integrations/adp/client";
+import { integrationConnected } from "@/lib/integrations/connected";
 import { dayKey, FREQ_LABEL, periodLastDay, periodRange } from "@/lib/pay-period-display";
 import { parseUtcDate } from "@/lib/utils/date";
 import { Badge, LinkButton, type BadgeTone } from "@/components/ui";
@@ -159,6 +160,9 @@ export default async function PayPeriodsPage({
   const lastDayText = format(lastDay, "EEE, MMM d");
   const isPast = dayKey(lastDay) < todayKey;
 
+  // ADP's button only for the company the platform's ADP connection is theirs.
+  const adpConfigured = getAdpConfig() !== null && (await integrationConnected(payPeriod.tenantId, "adp"));
+
   const [sites, departments, payrollRun] = await Promise.all([
     db.site.findMany({ where: { isActive: true, tenantId: payPeriod.tenantId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.department.findMany({
@@ -195,7 +199,7 @@ export default async function PayPeriodsPage({
           isPast={isPast}
           canRunPayroll={canRunPayroll}
           exceptions={validation.unresolvedExceptions}
-          adpConfigured={getAdpConfig() !== null}
+          adpConfigured={adpConfigured}
           payrollRun={payrollRun}
           leading={<PayPeriodDownload payPeriodId={payPeriod.id} label={label} />}
         />

@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { createTenantSchema, type CreateTenantInput } from "@/lib/validators/super-admin.schema";
 import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
 import { enterCompany } from "@/lib/super-admin/enter-company";
+import { writeAuditLog } from "@/lib/audit/logger";
 
 type ActionResult<T> = { success: true; data: T } | { success: false; error: string };
 
@@ -53,6 +54,8 @@ export async function getTenantBySlug(
   name: string;
   slug: string;
   isActive: boolean;
+  adpConnected: boolean;
+  wmsConnected: boolean;
   createdAt: Date;
   updatedAt: Date;
   sites: Array<{ id: string; name: string; timezone: string; isActive: boolean }>;
@@ -150,6 +153,40 @@ export async function exitTenant(): Promise<never> {
   const cookieStore = await cookies();
   cookieStore.delete(SUPER_ADMIN_TENANT_COOKIE);
   redirect("/super-admin/tenants");
+}
+
+/**
+ * Marks whether the platform's ADP connection or WMS bridge belongs to this
+ * company (security audit 2026-11, H2). Super admin only; recorded on the
+ * company's audit log.
+ */
+export async function setTenantIntegration(
+  tenantId: string,
+  which: "adp" | "wms",
+  on: boolean,
+): Promise<ActionResult<{ adpConnected: boolean; wmsConnected: boolean }>> {
+  try {
+    const session = await requireSuperAdmin();
+    if (which !== "adp" && which !== "wms") throw new Error("NOT_FOUND");
+    const updated = await db.tenant.update({
+      where: { id: tenantId },
+      data: which === "adp" ? { adpConnected: !!on } : { wmsConnected: !!on },
+      select: { adpConnected: true, wmsConnected: true },
+    });
+    await writeAuditLog({
+      tenantId,
+      actorId: null,
+      action: on ? "INTEGRATION_CONNECTED" : "INTEGRATION_DISCONNECTED",
+      // As a super admin entering the company is recorded: on the super admin.
+      entityType: "USER",
+      entityId: session.user.id ?? "",
+      changes: { after: { [which === "adp" ? "adpConnected" : "wmsConnected"]: !!on } },
+    });
+    revalidatePath("/super-admin/tenants");
+    return { success: true, data: updated };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "INTERNAL_ERROR" };
+  }
 }
 
 export async function toggleTenantActive(

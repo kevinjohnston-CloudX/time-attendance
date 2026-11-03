@@ -32,7 +32,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // for a tenant with no Oracle presence would give the bridge a query that
   // can only ever return rows nobody can match.
   const tenants = await db.tenant.findMany({
-    where: { isActive: true, employees: { some: { wmsId: { not: null } } } },
+    where: { isActive: true, wmsConnected: true, employees: { some: { wmsId: { not: null } } } },
     select: { id: true, slug: true },
   });
 

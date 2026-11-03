@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { bridgeAuthed } from "@/lib/api/bridge-auth";
 import { applyBridgeAnswer } from "@/lib/services/bridge.service";
+import { integrationConnected } from "@/lib/integrations/connected";
 
 /**
  * Answer endpoint for the CloudTime bridge. One POST per job:
@@ -48,6 +49,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       },
     });
     return NextResponse.json({ ok: true });
+  }
+
+  // An answer for a company the bridge doesn't belong to is not stored or applied.
+  if (!(await integrationConnected(job.tenantId, "wms"))) {
+    await db.bridgeJob.updateMany({
+      where: { id: job.id, status: "PENDING" },
+      data: { status: "FAILED", error: "WMS isn't connected for this company.", answeredAt: new Date() },
+    });
+    return NextResponse.json({ ok: true, note: "not connected" });
   }
 
   if (!body?.result || typeof body.result !== "object") {
