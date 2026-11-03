@@ -11,6 +11,7 @@ import { filterRowsInMemory } from "../query-builder";
 import { textFilter } from "../scope";
 import { readable } from "../readable";
 import { snapToLocalTime } from "@/lib/utils/date";
+import { codePaidUnder, overtimeCodesOf } from "../overtime-pay-code";
 
 const fieldMap: FieldMap = {
   employeeName:  { prismaPath: "timesheet.employee.user.name",       type: "string" },
@@ -101,7 +102,7 @@ export const dailyHoursSource: DataSourceDefinition = {
     const segments = await db.workSegment.findMany({
       where,
       include: {
-        payCode: { select: { code: true, label: true } },
+        payCode: { select: { code: true, label: true, payBucket: true } },
         timesheet: {
           include: {
             employee: { include: { user: true, department: true, site: true } },
@@ -119,6 +120,12 @@ export const dailyHoursSource: DataSourceDefinition = {
     // Stopped at the cap: the days read are short of some lines, so the
     // report says so rather than total them as if they were whole.
     const cutShort = !!config.limit && segments.length >= config.limit * 25;
+    const overtimeCodes = overtimeCodesOf(
+      await db.payCode.findMany({
+        where: { tenantId, payBucket: { in: ["OT", "DT"] } },
+        select: { code: true, label: true, payBucket: true, isActive: true },
+      }),
+    );
 
     // Group segments by employee + date.
     // Pass 1: build day entries and count hours and pay codes from non-zero segments.
@@ -197,7 +204,8 @@ export const dailyHoursSource: DataSourceDefinition = {
       else if (seg.segmentType === "HOLIDAY") day.holidayMinutes = (day.holidayMinutes ?? 0) + seg.durationMinutes;
 
       if (seg.payCode && seg.segmentType !== "MEAL") {
-        day.payCodeSet.add(`${seg.payCode.label} (${seg.payCode.code})`);
+        const paidAs = codePaidUnder({ segmentType: seg.segmentType, bucket, payCode: seg.payCode }, overtimeCodes);
+        day.payCodeSet.add(`${paidAs.label} (${paidAs.code})`);
       }
     }
 
