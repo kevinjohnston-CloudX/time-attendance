@@ -10,6 +10,7 @@ import { authConfig } from "@/lib/auth.config";
 import { liveIdentity } from "@/lib/rbac/identity";
 import { DUMMY_PASSWORD_HASH, clientAddress, isLockedOut, loginKey, recordFailedLogin } from "@/lib/login-limit";
 import { findLoginUserId } from "@/lib/login-lookup";
+import { redeemAppSigninCode } from "@/lib/app-signin";
 import { mailAddress } from "@/lib/login-email";
 import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
 import { cookies } from "next/headers";
@@ -113,6 +114,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           canViewAs: user.employee?.customRole?.canViewAs ?? false,
           mustChangePassword: user.mustChangePassword,
         };
+      },
+    }),
+    // The phone app, after the person signed in in the phone's own browser
+    // (lib/app-signin.ts). Returned without a role, so jwt() below reads the
+    // person from the database exactly as it does for Google.
+    Credentials({
+      id: "app-signin",
+      credentials: { code: {}, verifier: {} },
+      async authorize(credentials) {
+        const userId = redeemAppSigninCode(credentials?.code, credentials?.verifier);
+        if (!userId) return null;
+        const user = await db.user.findUnique({ where: { id: userId }, include: { employee: { select: { wmsId: true } } } });
+        if (!user || isClientBadge(user.employee?.wmsId)) return null;
+        return { id: user.id, name: user.name, email: mailAddress(user) };
       },
     }),
   ],

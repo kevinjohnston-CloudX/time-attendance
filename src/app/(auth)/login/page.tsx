@@ -6,6 +6,12 @@ import { signIn } from "next-auth/react";
 import { Banner, Button, Checkbox, Input } from "@/components/ui";
 import { BrandLockup } from "@/components/layout/brand-mark";
 import { rememberedEmailStore, useRememberedEmail } from "@/lib/remembered-email";
+import { inPhoneApp, onAppSigninReturn, startAppSignin } from "@/lib/native-app";
+
+/** Where a sign in started from the phone app goes back to (lib/app-signin.ts). */
+function appReturn(challenge: string) {
+  return `/api/app-signin?challenge=${encodeURIComponent(challenge)}`;
+}
 
 /**
  * Sign-in, as the portal design draws it: a 360px column on the card surface
@@ -31,6 +37,33 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // Set when the phone app sent this browser here to sign in: afterwards the
+  // person goes back to the app instead of to the dashboard.
+  // Read once from the address; it never changes what the page draws.
+  const [appChallenge] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    const challenge = new URLSearchParams(window.location.search).get("app");
+    return challenge && /^[A-Za-z0-9_-]{43}$/.test(challenge) ? challenge : null;
+  });
+
+  // Inside the app: the browser hands the sign in back here.
+  useEffect(
+    () =>
+      onAppSigninReturn(async (code, verifier) => {
+        setError("");
+        setLoading(true);
+        const result = await signIn("app-signin", { code, verifier, redirect: false });
+        if (result?.error) {
+          setLoading(false);
+          setError("Google sign in did not finish. Try again.");
+          return;
+        }
+        // A real navigation, for the same reason as after a password sign in
+        // below: the first render must carry the new session cookie.
+        window.location.replace("/dashboard");
+      }),
+    [],
+  );
 
   // With the address already filled in, the password is the next thing to
   // type, so the cursor starts there. Once only: never pull focus back later.
@@ -52,7 +85,16 @@ export default function LoginPage() {
   async function handleGoogleSignIn() {
     setError("");
     setLoading(true);
-    await signIn("google", { callbackUrl: "/dashboard" });
+    // Google refuses to sign in inside an app, so the app signs in through
+    // the phone's own browser and comes back here.
+    if (inPhoneApp()) {
+      if (!(await startAppSignin(() => setLoading(false)))) {
+        setLoading(false);
+        setError("Google sign in is not available in this version of the app. Use your email and password.");
+      }
+      return;
+    }
+    await signIn("google", { callbackUrl: appChallenge ? appReturn(appChallenge) : "/dashboard" });
   }
 
   async function handleCredentials(e: React.FormEvent) {
@@ -87,7 +129,7 @@ export default function LoginPage() {
     // by one, so a soft route change here is why nothing was ever saved for
     // this site. It also guarantees the first render after sign-in is made
     // with the new session cookie rather than the one the app started with.
-    window.location.assign("/dashboard");
+    window.location.assign(appChallenge ? appReturn(appChallenge) : "/dashboard");
   }
 
   return (
