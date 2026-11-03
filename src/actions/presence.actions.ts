@@ -199,8 +199,11 @@ export const updateEmployeePhoto = withRBAC("PRESENCE_PHOTO_EDIT", async ({ tena
   if (photo.size > MAX_PHOTO_BYTES) throw new Error("PHOTO_SIZE");
 
   await assertSite(tenantId, { employeeId, role }, siteId);
+  // Someone the open site's board can show, as removing a photo already
+  // requires: by company alone, a viewer held to one building could replace
+  // the photo of anyone in the company (security audit 2026-11, M7).
   const person = await db.employee.findFirst({
-    where: { id: personId, tenantId },
+    where: { AND: [{ id: personId, tenantId }, await reachable(tenantId, siteId)] },
     select: { id: true, barcode: true, wmsId: true, employeeCode: true },
   });
   if (!person) throw new Error("NOT_FOUND");
