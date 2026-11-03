@@ -27,6 +27,7 @@ const EXCEPTION_LABEL: Record<string, string> = {
   MISSED_MEAL:      "Missed Meal",
   SHORT_BREAK:      "Short Break",
   LONG_SHIFT:       "Long Shift",
+  SHORT_REST:       "Short Rest",
   UNSCHEDULED_OT:   "Unscheduled OT",
   CONSECUTIVE_DAYS: "Consecutive Days",
   LATE_IN:          "Late In",

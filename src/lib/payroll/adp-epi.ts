@@ -46,6 +46,7 @@ export type EpiFilters = {
 const EXCEPTION_LABEL: Record<ExceptionType, string> = {
   MISSING_PUNCH: "Missed punch",
   LONG_SHIFT: "Long shift",
+  SHORT_REST: "Short rest",
   SHORT_BREAK: "Short break",
   MISSED_MEAL: "Missed meal",
   UNSCHEDULED_OT: "Unscheduled overtime",

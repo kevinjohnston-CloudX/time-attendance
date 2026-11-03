@@ -262,6 +262,10 @@ model RuleSet {
 
   // Exception thresholds
   longShiftMinutes        Int @default(720) // flag if shift > 12h
+  /// Working time checks against one country's law, for EU companies:
+  /// OFF (every existing rule set), DE, NL or UK. See
+  /// src/lib/engines/working-time-checks.ts for the limits.
+  workingTimeChecks       String @default("OFF")
 
   // Pay period configuration (optional — falls back to tenant settings when null)
   payFrequency        PayFrequency? // null = use tenant-level setting

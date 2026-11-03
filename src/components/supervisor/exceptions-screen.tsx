@@ -64,6 +64,7 @@ const SEVERITY: Record<string, number> = {
   MISSED_MEAL: 1,
   SHORT_BREAK: 1,
   LONG_SHIFT: 1,
+  SHORT_REST: 1,
   UNSCHEDULED_OT: 1,
   LATE_IN: 2,
   EARLY_OUT: 2,

@@ -460,6 +460,7 @@ const EXCEPTION_FILTER_OPTIONS = [
   { id: "ALL_EXCEPTIONS", name: "Has any exception" },
   { id: "MISSING_PUNCH", name: "Missed punch" },
   { id: "LONG_SHIFT", name: "Long shift" },
+  { id: "SHORT_REST", name: "Short rest" },
   { id: "SHORT_BREAK", name: "Short break" },
   { id: "MISSED_MEAL", name: "Missed meal" },
   { id: "UNSCHEDULED_OT", name: "Unscheduled overtime" },

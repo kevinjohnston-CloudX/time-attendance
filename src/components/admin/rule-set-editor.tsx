@@ -21,7 +21,7 @@ export const PAY_FREQUENCIES = [
 ] as const;
 
 type AutoPayDaySchedule = { day: number; apply: boolean; minutes: number }[];
-type RSFields = Omit<RuleSet, "id" | "tenantId" | "createdAt" | "updatedAt" | "employees" | "payPeriods" | "isActive" | "payPeriodAnchorDate" | "otCycleAnchorDate" | "otCycle" | "mealPremiumRows" | "autoPayDaySchedule" | "flsaOtLevels" | "flsaIncludeAsRegular" | "flsaType" | "flsaDistributionFrequency" | "flsaWeeklyOtLevel" | "flsaOtRateComputation"> & { isActive?: boolean; payPeriodAnchorDate?: string | null; otCycleAnchorDate?: string | null; otCycle?: OtCycle | null; mealPremiumRows?: MealPremiumRow[]; autoPayDaySchedule?: AutoPayDaySchedule; flsaOtLevels?: string[]; flsaIncludeAsRegular?: string[]; flsaType: "FEDERAL" | "CALIFORNIA"; flsaDistributionFrequency: "PER_PERIOD" | "WEEKLY"; flsaWeeklyOtLevel: "OT1" | "OT2"; flsaOtRateComputation: "BASE_PLUS_AVG_HALF" | "AVG_RATE" | "BASE_RATE" };
+type RSFields = Omit<RuleSet, "id" | "tenantId" | "createdAt" | "updatedAt" | "employees" | "payPeriods" | "isActive" | "payPeriodAnchorDate" | "otCycleAnchorDate" | "otCycle" | "mealPremiumRows" | "autoPayDaySchedule" | "flsaOtLevels" | "flsaIncludeAsRegular" | "flsaType" | "flsaDistributionFrequency" | "flsaWeeklyOtLevel" | "flsaOtRateComputation" | "workingTimeChecks"> & { workingTimeChecks: "OFF" | "DE" | "NL" | "UK"; isActive?: boolean; payPeriodAnchorDate?: string | null; otCycleAnchorDate?: string | null; otCycle?: OtCycle | null; mealPremiumRows?: MealPremiumRow[]; autoPayDaySchedule?: AutoPayDaySchedule; flsaOtLevels?: string[]; flsaIncludeAsRegular?: string[]; flsaType: "FEDERAL" | "CALIFORNIA"; flsaDistributionFrequency: "PER_PERIOD" | "WEEKLY"; flsaWeeklyOtLevel: "OT1" | "OT2"; flsaOtRateComputation: "BASE_PLUS_AVG_HALF" | "AVG_RATE" | "BASE_RATE" };
 
 interface MealPremiumRow {
   applyFromMinutes: number;
@@ -63,6 +63,16 @@ const FEDERAL_STATES = [
 ];
 
 
+const WORKING_TIME_LABEL: Record<string, string> = { OFF: "Off", DE: "Germany", NL: "Netherlands", UK: "UK" };
+
+/** What each choice checks, as a sentence, so the setting says who it affects and how. */
+const WORKING_TIME_OUTCOME: Record<string, string> = {
+  OFF: "Off. No working time exceptions are added, as for people in the US.",
+  DE: "Flags a day over 10 hours, less than 11 hours of rest between working days, and breaks under 30 minutes after 6 hours or 45 minutes after 9.",
+  NL: "Flags a shift over 12 hours, less than 11 hours of rest between working days, and breaks under 30 minutes after 5.5 hours or 45 minutes after 10.",
+  UK: "Flags less than 11 hours of rest between working days, and no 20 minute break after 6 hours.",
+};
+
 function parseForm(fd: FormData): RSFields {
   const payFreqRaw = fd.get("payFrequency") as string | null;
   const anchorRaw = fd.get("payPeriodAnchorDate") as string | null;
@@ -103,6 +113,7 @@ function parseForm(fd: FormData): RSFields {
     shortBreakMinutes: Number(fd.get("shortBreakMinutes")),
     shortBreaksPerDay: Number(fd.get("shortBreaksPerDay")),
     longShiftMinutes: Number(fd.get("longShiftHours")) * 60,
+    workingTimeChecks: ((fd.get("workingTimeChecks") as string | null) || "OFF") as RSFields["workingTimeChecks"],
     isDefault: fd.get("isDefault") === "true",
     isActive: fd.get("isActive") !== "false",
     payFrequency: (payFreqRaw || null) as RSFields["payFrequency"],
@@ -253,6 +264,7 @@ export function RuleSetEditor({ ruleSet: rs, payCodes }: { ruleSet: RuleSetRow |
   const [weeklyOn, setWeeklyOn] = useState(rs?.weeklyOtEnabled ?? true);
   const [consecOn, setConsecOn] = useState(rs?.consecutiveDayOtEnabled ?? false);
   const [authOn, setAuthOn] = useState(rs?.overtimeRequiresAuth ?? false);
+  const [workingTime, setWorkingTime] = useState(rs?.workingTimeChecks ?? "OFF");
   const [shiftRoundOn, setShiftRoundOn] = useState(rs?.shiftRoundingEnabled ?? false);
   const [punchInOn, setPunchInOn] = useState(rs?.punchRoundingInEnabled ?? false);
   const [punchOutOn, setPunchOutOn] = useState(rs?.punchRoundingOutEnabled ?? false);
@@ -316,6 +328,7 @@ export function RuleSetEditor({ ruleSet: rs, payCodes }: { ruleSet: RuleSetRow |
       title: "Time",
       areas: [
         { id: "long-shifts", label: "Long shifts" },
+        { id: "working-time", label: "Working time checks", count: WORKING_TIME_LABEL[workingTime] ?? "Off" },
         { id: "meal-lockout", label: "Meal lockout", count: lockoutOn ? "On" : "Off" },
         { id: "shift-rounding", label: "Shift rounding", count: shiftRoundOn ? "On" : "Off" },
         { id: "punch-rounding", label: "Punch rounding", count: punchInOn || punchOutOn ? "On" : "Off" },
@@ -562,6 +575,34 @@ export function RuleSetEditor({ ruleSet: rs, payCodes }: { ruleSet: RuleSetRow |
         <Section id="long-shifts" title="Long shifts" hint="Meal length and deduction are set on each shift.">
           <Row label="Flag a shift as long after" unused>
             <Num name="longShiftHours" min={1} step={0.25} defaultValue={hrs(rs?.longShiftMinutes, 12)} unit="hours" aria-label="Flag a shift as long after" />
+          </Row>
+        </Section>
+
+        {/* ── Working time checks (EU) ── */}
+        <Section
+          id="working-time"
+          title="Working time checks"
+          hint="For people who work in the EU or the UK. Each day is checked against that country's working time law, and anything that falls short is added to Exceptions."
+        >
+          <Row label="Country">
+            <span className="flex min-w-0 flex-col gap-1.5">
+              <Select
+                name="workingTimeChecks"
+                value={workingTime}
+                onChange={(e) => setWorkingTime(e.target.value)}
+                aria-label="Working time checks"
+                aria-describedby="working-time-outcome"
+                style={{ width: 220, maxWidth: "100%" }}
+              >
+                <option value="OFF">Off</option>
+                <option value="DE">Germany</option>
+                <option value="NL">Netherlands</option>
+                <option value="UK">United Kingdom</option>
+              </Select>
+              <span id="working-time-outcome" style={{ font: "var(--type-body2)", color: "var(--text-secondary)", textWrap: "pretty" }}>
+                {WORKING_TIME_OUTCOME[workingTime] ?? WORKING_TIME_OUTCOME.OFF}
+              </span>
+            </span>
           </Row>
         </Section>
 

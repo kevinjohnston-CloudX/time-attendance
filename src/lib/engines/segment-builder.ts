@@ -1,5 +1,6 @@
 import { format, eachDayOfInterval, isWeekend, addDays } from "date-fns";
 import { db } from "@/lib/db";
+import { rulesFor, syncWorkingTimeExceptions } from "./working-time-checks";
 import { applyOvertime } from "@/lib/engines/overtime-engine";
 import { reconcileLeaveDeductions, relinkCreditLeave } from "@/lib/engines/leave-deduction";
 import { dropSupersededDayCodes } from "@/lib/engines/leave-segment-builder";
@@ -1528,6 +1529,14 @@ export async function rebuildSegments(
     timesheet.employee.shift?.workDays,
     timesheet.employee.isActive,
   );
+
+  // Working time checks, for a rule set that follows one country's law (EU
+  // companies). OFF, which every rule set is unless a country is picked, is
+  // never passed in, so nothing here runs for it.
+  const workingTime = rulesFor(ruleSet.workingTimeChecks);
+  if (workingTime) {
+    await syncWorkingTimeExceptions(timesheetId, timesheet.employee.id, workingTime, timezone);
+  }
 }
 
 /**
