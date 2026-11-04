@@ -1,6 +1,4 @@
-import { cookies } from "next/headers";
 import type { AuditEntityType } from "@prisma/client";
-import { auth } from "@/lib/auth";
 import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
 import { writeAuditLog } from "@/lib/audit/logger";
 
@@ -25,6 +23,9 @@ export async function recordDownload(what: {
   details: Record<string, string | number | boolean | null | undefined>;
 }): Promise<void> {
   try {
+    // Loaded here, not at the top: the routes that call this load without the
+    // sign in library, as their tests expect.
+    const [{ auth }, { cookies }] = await Promise.all([import("@/lib/auth"), import("next/headers")]);
     const session = await auth();
     if (!session?.user) return;
     let tenantId = session.user.tenantId ?? null;
