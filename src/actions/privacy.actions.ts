@@ -156,6 +156,7 @@ async function anonymiseContext(ctx: { employeeId: string; tenantId: string | nu
 export const getAnonymisePreview = withRBAC(
   "EMPLOYEE_MANAGE",
   async (ctx, input: { employeeId: string }) => {
+    // company-scope-ok: anonymiseContext holds the person to the caller's reach (assertRecordInReach)
     const { tenantId, settings } = await anonymiseContext(ctx, input.employeeId);
     const emp = await db.employee.findFirst({ where: { id: input.employeeId, tenantId }, select: { id: true, barcode: true, wmsId: true, employeeCode: true } });
     const photo = emp ? (await photoUrls(tenantId, [emp])).get(emp.id) : null;
@@ -172,6 +173,7 @@ export const getAnonymisePreview = withRBAC(
 export const anonymiseEmployee = withRBAC(
   "EMPLOYEE_MANAGE",
   async (ctx, input: { employeeId: string; confirmCode: string }) => {
+    // company-scope-ok: anonymiseContext holds the person to the caller's reach (assertRecordInReach)
     const { tenantId, settings } = await anonymiseContext(ctx, input.employeeId);
     const plan = await planAnonymise(tenantId, input.employeeId, settings, ctx.employeeId, false);
     if (!plan) throw new NotFoundError("This employee isn't available to you.");
