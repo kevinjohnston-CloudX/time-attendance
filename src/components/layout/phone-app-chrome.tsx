@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/components/layout/navigation-progress";
 import { useTheme } from "next-themes";
 import { matchSystemBars, startPushNotifications } from "@/lib/native-app";
 import { AppLock } from "./app-lock";

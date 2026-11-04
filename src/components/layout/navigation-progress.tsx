@@ -59,17 +59,30 @@ function destination(href: string): URL | null {
   return url;
 }
 
+/**
+ * The same page with new filters, a search or another page of rows: the page
+ * stays and only its rows change, so no loading screen is drawn. The rows
+ * beside the pinned bar fade back meanwhile (globals.css, .ta-nav-refresh).
+ */
+function markRefresh(on: boolean) {
+  if (on) document.documentElement.dataset.navRefresh = "true";
+  else delete document.documentElement.dataset.navRefresh;
+}
+
 function start(href: string) {
-  if (!destination(href)) return;
+  const url = destination(href);
+  if (!url) return;
   clearTimeout(giveUp);
   clearTimeout(finish);
   startedAt = Date.now();
+  markRefresh(url.pathname === window.location.pathname);
   set("loading");
   giveUp = setTimeout(done, GIVE_UP_MS);
 }
 
 function done() {
   clearTimeout(giveUp);
+  markRefresh(false);
   if (phase !== "loading") return;
   // Never shown yet, so there is nothing to finish: just stop.
   if (Date.now() - startedAt < SHOW_AFTER_MS) return set("idle");

@@ -977,16 +977,25 @@ tbody .ta-row:hover {
 @keyframes ta-spin { to { transform: rotate(360deg); } }
 @keyframes ta-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
-/* A phone tab or menu row whose page is on its way: the same ring, at the
-   tab icon's top left (its count, if any, keeps the top right), or before a
-   menu row's chevron. */
-.ta-tab-pending .ta-nav-spinner {
-  position: absolute;
-  top: -4px;
-  right: calc(100% - 6px);
-  width: 14px;
-  height: 14px;
+/* A phone tab whose page is on its way (phone-shell.tsx TabGlyph): its icon
+   gives way to a ring of the same size after 150ms. A menu row shows the
+   sidebar's small ring before its chevron. */
+.ta-tab-glyph {
+  position: relative;
+  display: inline-flex;
 }
+.ta-tab-glyph[data-pending] > svg {
+  animation: ta-fade-out 1ms linear 150ms both;
+}
+.ta-tab-ring {
+  position: absolute;
+  inset: 2px;
+  border-radius: 9999px;
+  border: 2px solid var(--stroke-secondary);
+  border-top-color: var(--icon-accent);
+  animation: ta-spin 700ms linear infinite, ta-fade-in 1ms linear 150ms both;
+}
+@keyframes ta-fade-out { from { opacity: 1; } to { opacity: 0; } }
 
 /* A page's loading screen (components/layout/page-skeleton.tsx). It waits
    150ms before it shows, so a page that arrives at once goes straight from
@@ -1001,6 +1010,19 @@ tbody .ta-row:hover {
   transition: opacity 160ms ease;
 }
 .ta-pending-region[aria-busy="true"] {
+  opacity: 0.5;
+  transition-delay: 150ms;
+}
+
+/* The same page reloading with new filters or a search (navigation-progress
+   markRefresh): what comes after the page's pinned bar fades back, so the old
+   rows read as on their way out while the title and filters stay crisp to
+   use. A page with no pinned bar does not fade: it fails to no fade, never to
+   a faded filter bar. */
+main :is(.ta-pin, .ta-pinned) ~ * {
+  transition: opacity 160ms ease;
+}
+html[data-nav-refresh] main :is(.ta-pin, .ta-pinned) ~ * {
   opacity: 0.5;
   transition-delay: 150ms;
 }
@@ -1034,10 +1056,12 @@ tbody .ta-row:hover {
   .ta-btn-spinner {
     animation: none;
   }
-  .ta-nav-spinner {
+  .ta-nav-spinner,
+  .ta-tab-ring {
     animation: ta-fade-in 1ms linear 150ms both;
   }
-  .ta-pending-region {
+  .ta-pending-region,
+  main :is(.ta-pin, .ta-pinned) ~ * {
     transition: none;
   }
 }

@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
 import { signOut } from "next-auth/react";
 import { useTheme } from "next-themes";
 import { ChevronLeft, ChevronRight, Eye, LogOut, Menu as MenuIcon, Search, ShieldCheck, X } from "lucide-react";
 import { LinkPendingSpinner, useRouter } from "@/components/layout/navigation-progress";
+import { useLinkStatus } from "next/link";
 import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
 import { SegmentedControl } from "@/components/ui";
 import {
@@ -167,6 +168,21 @@ type PhoneNavProps = {
   approvalsCount: number;
 };
 
+/**
+ * A tab's icon, which turns into a ring while that tab's page is on its way:
+ * where the thumb just landed, at the icon's own size. Both wait 150ms, so a
+ * page that arrives at once never swaps them. Must sit inside the Link.
+ */
+function TabGlyph({ children }: { children: ReactNode }) {
+  const { pending } = useLinkStatus();
+  return (
+    <span className="ta-tab-glyph" data-pending={pending || undefined}>
+      {children}
+      {pending && <span className="ta-tab-ring" role="status" aria-label="Loading" />}
+    </span>
+  );
+}
+
 export function PhoneNav(props: PhoneNavProps) {
   const { permissions, isInactive = false, liveAttendanceOnly = false, approvalsCount } = props;
   const pathname = usePathname();
@@ -212,10 +228,11 @@ export function PhoneNav(props: PhoneNavProps) {
               aria-label={count ? `${t.label}, ${count} waiting` : undefined}
               onClick={() => setMenuOpen(false)}
             >
-              <span className={`${styles.tabIcon} ta-tab-pending`}>
-                <t.icon className="h-[22px] w-[22px]" strokeWidth={on ? 2.2 : 1.8} aria-hidden="true" />
+              <span className={styles.tabIcon}>
+                <TabGlyph>
+                  <t.icon className="h-[22px] w-[22px]" strokeWidth={on ? 2.2 : 1.8} aria-hidden="true" />
+                </TabGlyph>
                 {count > 0 && <span className={styles.tabCount}>{count > 99 ? "99+" : count}</span>}
-                <LinkPendingSpinner />
               </span>
               <span className={styles.tabLabel}>{t.label}</span>
             </Link>
