@@ -12,7 +12,7 @@ import {
 } from "@/actions/report.actions";
 import { nextRun } from "@/lib/reports/schedule-time";
 import { MONTH_NAMES, timezoneAbbr } from "@/lib/reports/schedule-words";
-import { ReportWindow, WindowBlock, WindowCard } from "./window/report-window";
+import { ReportWindow, WindowBlock, WindowCard, WindowNote } from "./window/report-window";
 import { codeOf } from "@/lib/action-errors";
 
 /* ------------------------------------------------------------------ */
@@ -602,6 +602,7 @@ export function ScheduleForm({
         </WindowBlock>
         <WindowBlock label="Recipients">
           <div className="flex flex-col gap-2">
+            <WindowNote>Emails of people in CloudTime, or any address at your company&apos;s email domain.</WindowNote>
             <div className="flex items-end gap-2">
               <div className="min-w-0 flex-1">
                 <Input

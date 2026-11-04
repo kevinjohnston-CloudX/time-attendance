@@ -4,6 +4,8 @@ const { db } = vi.hoisted(() => ({
   db: {
     reportDefinition: { findFirstOrThrow: vi.fn() },
     reportSchedule: { create: vi.fn(), update: vi.fn(), findFirstOrThrow: vi.fn() },
+    // The company's people, for the recipient check: one at example.com.
+    $queryRaw: vi.fn(async () => [{ email: "someone@gmail.com", workEmail: "hr@example.com" }]),
   },
 }));
 
@@ -103,5 +105,15 @@ describe("toggleSchedule", () => {
     const res = await toggleSchedule({ id: "other", isActive: true });
     expect(res.success).toBe(false);
     expect(db.reportSchedule.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("schedule recipients", () => {
+  it("go only to the company's people and domains", async () => {
+    expect((await createSchedule({ ...valid, recipients: ["payroll-list@example.com", "someone@gmail.com"] })).success).toBe(true);
+    const outside = await createSchedule({ ...valid, recipients: ["hr@example.com", "friend@gmail.com"] });
+    expect(outside.success).toBe(false);
+    expect((outside as { error?: string }).error).toContain("friend@gmail.com");
+    expect((await createSchedule({ ...valid, recipients: ["x@other-company.com"] })).success).toBe(false);
   });
 });
