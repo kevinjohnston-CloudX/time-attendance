@@ -1,7 +1,6 @@
 import type { NextAuthConfig } from "next-auth";
 import { NextResponse } from "next/server";
 import { REQUEST_PATH_HEADER } from "@/lib/constants";
-import { signInEnded } from "@/lib/session-length";
 
 /**
  * Edge-safe auth config — no Prisma, no bcrypt, no Node.js-only modules.
@@ -43,11 +42,6 @@ export const authConfig = {
     // /super-admin, and the browser gives up after a few dozen hops.
     // The richer session callback in auth.ts replaces this one everywhere
     // except the proxy, which is exactly where it was missing.
-    // A sign in past its length (lib/session-length.ts) ends here too, so
-    // the proxy never lets through a sign in the pages would refuse.
-    jwt({ token }) {
-      return signInEnded(token) ? null : token;
-    },
     session({ session, token }) {
       if (token && session.user) {
         session.user.role = token.role as string;
