@@ -1,5 +1,14 @@
 apply plugin: 'com.android.application'
 
+// The Google Play upload key lives outside the repo, never in git:
+// ~/.cloudx-signing/cloudtime/ (or the file CLOUDTIME_KEYSTORE_PROPERTIES names).
+// Without it, release builds come out unsigned and debug builds are unaffected.
+def keystorePropertiesFile = file(System.getenv("CLOUDTIME_KEYSTORE_PROPERTIES") ?: "${System.getProperty('user.home')}/.cloudx-signing/cloudtime/keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
 android {
     namespace = "net.cloudxsystems.cloudtime"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,8 +25,19 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (keystorePropertiesFile.exists()) {
+            upload {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
+            if (keystorePropertiesFile.exists()) signingConfig signingConfigs.upload
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
