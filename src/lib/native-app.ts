@@ -46,6 +46,11 @@ type CapacitorBridge = {
       }): Promise<void> | void;
     };
     SplashScreen?: { hide(): Promise<void> | void };
+    // @capacitor-community/screen-brightness: 0 to 1. -1 hands Android back to the system setting.
+    ScreenBrightness?: {
+      getBrightness(): Promise<{ brightness: number }> | { brightness: number };
+      setBrightness(options: { brightness: number }): Promise<void> | void;
+    };
     PushNotifications?: {
       checkPermissions(): Promise<{ receive: PermissionState }> | { receive: PermissionState };
       requestPermissions(): Promise<{ receive: PermissionState }> | { receive: PermissionState };
@@ -410,6 +415,52 @@ export function onReturnAfterAway(cb: () => void): () => void {
   ).then((l) => {
     listener = l ?? null;
     if (removed) void settle(() => listener?.remove());
+  });
+  return () => {
+    removed = true;
+    void settle(() => listener?.remove());
+  };
+}
+
+/**
+ * Full brightness while a badge is on screen, so the door reader sees the
+ * code at once; the returned function puts the screen back. Leaving the app
+ * returns the phone to its own setting by itself on iOS, so coming back asks
+ * for full brightness again. Nothing happens in a browser, which cannot change
+ * the screen, or in an app build without the plugin.
+ */
+export function brightenScreen(): () => void {
+  const sb = bridge()?.Plugins.ScreenBrightness;
+  if (!sb) return () => {};
+  const android = bridge()?.getPlatform?.() === "android";
+  let before: number | undefined;
+  let done = false;
+  void settle(() => sb.getBrightness()).then((r) => {
+    if (done) return;
+    before = r?.brightness;
+    void settle(() => sb.setBrightness({ brightness: 1 }));
+  });
+  const stopReturn = onAppActive(() => {
+    if (!done) void settle(() => sb.setBrightness({ brightness: 1 }));
+  });
+  return () => {
+    done = true;
+    stopReturn();
+    // Android takes -1 as "the system's own"; iOS has no such value, so it
+    // gets back what it had.
+    const back = android ? -1 : before;
+    if (back !== undefined) void settle(() => sb.setBrightness({ brightness: back }));
+  };
+}
+
+function onAppActive(cb: () => void): () => void {
+  const app = bridge()?.Plugins.App;
+  if (!app) return () => {};
+  let listener: Listener | undefined;
+  let removed = false;
+  void settle(() => app.addListener("appStateChange", (s) => { if (s.isActive) cb(); })).then((l) => {
+    if (removed) void settle(() => l?.remove());
+    else listener = l;
   });
   return () => {
     removed = true;
