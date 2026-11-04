@@ -7,6 +7,7 @@ import { Banner, Button, Checkbox, Input } from "@/components/ui";
 import { BrandLockup } from "@/components/layout/brand-mark";
 import { rememberedEmailStore, useRememberedEmail } from "@/lib/remembered-email";
 import { inPhoneApp, onAppSigninReturn, startAppSignin } from "@/lib/native-app";
+import { REMEMBER_COOKIE } from "@/lib/session-length";
 
 /** Where a sign in started from the phone app goes back to (lib/app-signin.ts). */
 function appReturn(challenge: string) {
@@ -33,7 +34,14 @@ export default function LoginPage() {
   const [typedEmail, setTypedEmail] = useState<string | null>(null);
   const [rememberChoice, setRememberChoice] = useState<boolean | null>(null);
   const email = typedEmail ?? remembered;
+  // Ticked, this also keeps the person signed in for 30 days instead of a
+  // working day (lib/session-length.ts), on every way of signing in.
   const remember = rememberChoice ?? remembered !== "";
+  // For the app's sign in, which finishes in a listener set up once.
+  const rememberRef = useRef(remember);
+  useEffect(() => {
+    rememberRef.current = remember;
+  }, [remember]);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -52,7 +60,7 @@ export default function LoginPage() {
       onAppSigninReturn(async (code, verifier) => {
         setError("");
         setLoading(true);
-        const result = await signIn("app-signin", { code, verifier, redirect: false });
+        const result = await signIn("app-signin", { code, verifier, remember: rememberRef.current ? "1" : "", redirect: false });
         if (result?.error) {
           setLoading(false);
           setError("Google sign in did not finish. Try again.");
@@ -94,6 +102,8 @@ export default function LoginPage() {
       }
       return;
     }
+    // Google cannot carry Remember me, so a short cookie does (auth.ts reads it once).
+    document.cookie = `${REMEMBER_COOKIE}=${remember ? "1" : "0"}; path=/; max-age=600; samesite=lax`;
     await signIn("google", { callbackUrl: appChallenge ? appReturn(appChallenge) : "/dashboard" });
   }
 
@@ -105,6 +115,7 @@ export default function LoginPage() {
     const result = await signIn("credentials", {
       username: email,
       password,
+      remember: remember ? "1" : "",
       redirect: false,
     });
 

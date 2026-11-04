@@ -14,6 +14,7 @@ import { redeemAppSigninCode } from "@/lib/app-signin";
 import { mailAddress } from "@/lib/login-email";
 import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
 import { cookies } from "next/headers";
+import { LONGEST_SIGN_IN_SECONDS, REMEMBER_COOKIE, signInEnded } from "@/lib/session-length";
 
 /**
  * The company a super admin has entered, from its cookie. Null when there is
@@ -24,6 +25,20 @@ async function enteredCompany(): Promise<string | null> {
     return (await cookies()).get(SUPER_ADMIN_TENANT_COOKIE)?.value ?? null;
   } catch {
     return null;
+  }
+}
+
+/** Remember me, as the sign-in page sends it with a password or app sign in. */
+function ticked(credentials: Partial<Record<string, unknown>> | undefined): boolean {
+  return credentials?.remember === "1";
+}
+
+/** Remember me for Google sign in, from the cookie the sign-in page set before leaving for Google. */
+async function rememberedForGoogle(): Promise<boolean> {
+  try {
+    return (await cookies()).get(REMEMBER_COOKIE)?.value === "1";
+  } catch {
+    return false;
   }
 }
 
@@ -45,9 +60,10 @@ const allowedDomains = (process.env.GOOGLE_ALLOWED_DOMAINS ?? "")
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   adapter: PrismaAdapter(db),
-  // A working day, not the 30 day default: a sign-in left open on a shared
-  // warehouse computer should not outlive the shift.
-  session: { strategy: "jwt", maxAge: 12 * 60 * 60, updateAge: 60 * 60 },
+  // The cookie lives as long as the longest sign in; how long each one really
+  // lasts (a working day, or 30 days with Remember me) is checked in jwt()
+  // below and in the proxy (lib/session-length.ts).
+  session: { strategy: "jwt", maxAge: LONGEST_SIGN_IN_SECONDS, updateAge: 60 * 60 },
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -100,6 +116,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             employeeId: undefined,
             tenantId: null,
             mustChangePassword: false,
+            remember: ticked(credentials),
           };
         }
 
@@ -113,6 +130,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           customRoleId: user.employee?.customRoleId ?? undefined,
           canViewAs: user.employee?.customRole?.canViewAs ?? false,
           mustChangePassword: user.mustChangePassword,
+          remember: ticked(credentials),
         };
       },
     }),
@@ -121,13 +139,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     // person from the database exactly as it does for Google.
     Credentials({
       id: "app-signin",
-      credentials: { code: {}, verifier: {} },
+      credentials: { code: {}, verifier: {}, remember: {} },
       async authorize(credentials) {
         const userId = redeemAppSigninCode(credentials?.code, credentials?.verifier);
         if (!userId) return null;
         const user = await db.user.findUnique({ where: { id: userId }, include: { employee: { select: { wmsId: true } } } });
         if (!user || isClientBadge(user.employee?.wmsId)) return null;
-        return { id: user.id, name: user.name, email: mailAddress(user) };
+        return { id: user.id, name: user.name, email: mailAddress(user), remember: ticked(credentials) };
       },
     }),
   ],
@@ -184,6 +202,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // tell "just signed in" from "still in the same session" (the design
         // notice opens again after every sign in).
         token.signInId = crypto.randomUUID();
+        // How long this sign in lasts (lib/session-length.ts).
+        token.signedInAt = Date.now();
+        token.remember = account?.provider === "google" ? await rememberedForGoogle() : (user as { remember?: boolean }).remember === true;
         if (account?.provider === "google" || !(user as { role?: string }).role) {
           // Google sign-in: look up employee from DB
           const fullUser = await db.user.findUnique({
@@ -219,6 +240,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // demoted, moved or deactivated is treated that way on their next
       // click rather than when their session runs out. A person whose login
       // no longer exists is signed out.
+      if (signInEnded(token)) return null;
       if (token.sub) {
         const live = await liveIdentity(token.sub);
         if (!live) return null;
