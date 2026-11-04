@@ -65,6 +65,8 @@ export const authConfig = {
         !nextUrl.pathname.startsWith("/forgot-password") &&
         !nextUrl.pathname.startsWith("/setup-password") &&
         !nextUrl.pathname.startsWith("/change-password") &&
+        // Public: the stores and anyone not signed in must be able to read it.
+        nextUrl.pathname !== "/privacy" &&
         !nextUrl.pathname.startsWith("/api/auth") &&
         !nextUrl.pathname.startsWith("/api/timeclock") &&
         !nextUrl.pathname.startsWith("/api/cron") &&

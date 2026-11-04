@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { signOut } from "next-auth/react";
 import { useTheme } from "next-themes";
-import { ChevronLeft, ChevronRight, Eye, LogOut, Menu as MenuIcon, Search, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, LogOut, Menu as MenuIcon, Search, ShieldCheck, X } from "lucide-react";
 import { useRouter } from "@/components/layout/navigation-progress";
 import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
 import { SegmentedControl } from "@/components/ui";
@@ -410,6 +410,18 @@ function PhoneMenu({
 
         <NotificationsChoice />
         <AppLockChoice />
+
+        {/* The app stores require the policy to be reachable inside the app. */}
+        <section aria-label="About">
+          <h2 className={styles.groupLabel}>About</h2>
+          <div className={styles.card}>
+            <Link href="/privacy" className={styles.row}>
+              <ShieldCheck className={styles.rowIcon} aria-hidden="true" />
+              <span className={styles.rowLabel}>Privacy Policy</span>
+              <ChevronRight className={styles.rowChevron} aria-hidden="true" />
+            </Link>
+          </div>
+        </section>
       </div>
     </div>
   );

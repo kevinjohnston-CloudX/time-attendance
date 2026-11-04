@@ -243,6 +243,15 @@ export default function LoginPage() {
           >
             Sign in with Google
           </Button>
+
+          {/* The app stores require the policy to be reachable before sign in. */}
+          <Link
+            href="/privacy"
+            className="self-center"
+            style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}
+          >
+            Privacy Policy
+          </Link>
         </div>
       </div>
 
