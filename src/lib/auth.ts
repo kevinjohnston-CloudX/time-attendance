@@ -136,6 +136,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
     async signIn({ account, profile }) {
       if (account?.provider === "google") {
+        // Only an address Google has confirmed belongs to the account signs
+        // someone in by it, as CXT checks (security audit 2026-11).
+        if ((profile as { email_verified?: boolean } | undefined)?.email_verified !== true) return false;
         const email = profile?.email ?? "";
         const domain = email.split("@")[1]?.toLowerCase() ?? "";
         if (allowedDomains.length > 0 && !allowedDomains.includes(domain)) {
