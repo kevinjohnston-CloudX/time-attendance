@@ -313,8 +313,10 @@ export function phoneTabs({
   const approvals: PhoneTab = { label: "Approvals", href: APPROVALS_HREF, icon: ClipboardCheck, approvals: true };
   const attendance: PhoneTab = { label: "Attendance", href: "/supervisor/on-site", icon: DoorOpen };
 
-  // Live Attendance and their guides: the only two pages these roles open.
-  if (liveAttendanceOnly) return [attendance, { label: "Guides", href: "/knowledge-base", icon: LibraryBig }];
+  // Live Attendance, their badge and their guides: the only pages these roles open.
+  if (liveAttendanceOnly) {
+    return [attendance, { label: "Badge", href: "/badge", icon: QrCode }, { label: "Guides", href: "/knowledge-base", icon: LibraryBig }];
+  }
   if (inactive) {
     return [
       { label: "Timesheet", href: "/time/timesheet", icon: ClipboardList },

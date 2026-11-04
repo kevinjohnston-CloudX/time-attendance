@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
 import { signOut } from "next-auth/react";
 import { useTheme } from "next-themes";
-import { ChevronLeft, ChevronRight, Eye, LogOut, Menu as MenuIcon, Search, ShieldCheck, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, LogOut, Menu as MenuIcon, QrCode, Search, ShieldCheck, X } from "lucide-react";
 import { LinkPendingSpinner, useRouter } from "@/components/layout/navigation-progress";
 import { useLinkStatus } from "next/link";
 import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
@@ -60,10 +60,13 @@ export function PhoneTopBar({
   waiting,
   helpOffered = true,
   userPhoto = null,
+  badgeOffered = false,
 }: {
   waiting: WaitingItem[];
   helpOffered?: boolean;
   userPhoto?: string | null;
+  /** The badge from any page, for an active person with an employee record. */
+  badgeOffered?: boolean;
 }) {
   const pathname = usePathname();
   const back = usePhoneBackState();
@@ -95,6 +98,12 @@ export function PhoneTopBar({
           {!back && !home && folded ? title : null}
         </div>
         <div className={styles.topActions}>
+          {/* Home has its own large button for it. */}
+          {badgeOffered && !home && pathname !== "/badge" && (
+            <Link href="/badge" className={styles.iconBtn} aria-label="My Badge">
+              <QrCode className="h-5 w-5" aria-hidden="true" />
+            </Link>
+          )}
           <button type="button" className={styles.iconBtn} onClick={openCommandPalette} aria-label="Search pages">
             <Search className="h-5 w-5" aria-hidden="true" />
           </button>

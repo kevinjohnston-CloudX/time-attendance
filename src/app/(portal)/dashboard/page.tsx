@@ -18,6 +18,7 @@ import { formatTimeOfDay, parseUtcDate, toSiteClock } from "@/lib/utils/date";
 import { hasOwnTime, userHasPermission } from "@/lib/rbac/check-permission";
 import { OverviewPeriodFilter } from "@/components/dashboard/overview-period-filter";
 import { TodayPunchActions } from "@/components/dashboard/today-punch-actions";
+import { BadgeShortcut } from "@/components/badge/badge-shortcut";
 import {
   getExceptionsFeed,
   getPresence,
@@ -362,6 +363,9 @@ export default async function DashboardPage({
           ) : undefined
         }
       />
+
+      {/* The badge first on a phone: the app opens here, at the door. */}
+      {employeeId && <BadgeShortcut />}
 
       {/* ── Row 1: your day, and your team's ── */}
       <div className={CARD_GRID}>
