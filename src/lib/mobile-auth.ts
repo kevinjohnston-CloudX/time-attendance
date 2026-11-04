@@ -1,6 +1,6 @@
 import { SignJWT, jwtVerify, type JWTPayload } from "jose";
 import { db } from "@/lib/db";
-import { randomBytes } from "crypto";
+import { randomBytes, createHash } from "crypto";
 import { hasPermission, type Permission } from "@/lib/rbac/permissions";
 
 // ---------- Types ----------
@@ -70,13 +70,23 @@ export async function verifyAccessToken(
 
 // ---------- Refresh Token (opaque, DB-stored) ----------
 
+/**
+ * What the database keeps of a refresh token: its SHA-256, never the token.
+ * Stored readable, anyone able to read the table could take over a phone
+ * session (security audit 2026-11, L5). API keys and reset links are kept
+ * the same way.
+ */
+function tokenHash(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
 export async function createRefreshToken(userId: string): Promise<string> {
   const token = randomBytes(48).toString("hex");
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + REFRESH_TOKEN_EXPIRY_DAYS);
 
   await db.refreshToken.create({
-    data: { token, userId, expiresAt },
+    data: { token: tokenHash(token), userId, expiresAt },
   });
 
   return token;
@@ -87,9 +97,9 @@ export async function rotateRefreshToken(oldToken: string): Promise<{
   refreshToken: string;
 }> {
   const existing = await db.refreshToken.findUnique({
-    where: { token: oldToken },
+    where: { token: tokenHash(oldToken) },
     include: {
-      user: { include: { employee: { include: { customRole: { select: { liveAttendanceOnly: true } } } } } },
+      user: { include: { employee: { include: { customRole: { select: { liveAttendanceOnly: true } }, tenant: { select: { isActive: true } } } } } },
     },
   });
 
@@ -113,6 +123,10 @@ export async function rotateRefreshToken(oldToken: string): Promise<{
   if (!employee || !employee.isActive) {
     throw new AuthError("Employee account is inactive");
   }
+  // A switched-off company signs nobody in, on the phone as on the web.
+  if (!employee.tenant.isActive) {
+    throw new AuthError("Employee account is inactive");
+  }
   // Limited to Live Attendance after signing in to the app: the next refresh
   // ends that session rather than keeping it for the refresh token's life.
   if (employee.customRole?.liveAttendanceOnly) {
@@ -127,10 +141,10 @@ export async function rotateRefreshToken(oldToken: string): Promise<{
   await db.$transaction([
     db.refreshToken.update({
       where: { id: existing.id },
-      data: { revokedAt: new Date(), replacedByToken: newToken },
+      data: { revokedAt: new Date(), replacedByToken: tokenHash(newToken) },
     }),
     db.refreshToken.create({
-      data: { token: newToken, userId: user.id, expiresAt },
+      data: { token: tokenHash(newToken), userId: user.id, expiresAt },
     }),
   ]);
 
@@ -146,7 +160,7 @@ export async function rotateRefreshToken(oldToken: string): Promise<{
 
 export async function revokeRefreshToken(token: string): Promise<void> {
   await db.refreshToken.updateMany({
-    where: { token, revokedAt: null },
+    where: { token: tokenHash(token), revokedAt: null },
     data: { revokedAt: new Date() },
   });
 }
