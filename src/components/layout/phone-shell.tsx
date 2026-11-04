@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, useTransition } from
 import { signOut } from "next-auth/react";
 import { useTheme } from "next-themes";
 import { ChevronLeft, ChevronRight, Eye, LogOut, Menu as MenuIcon, Search, ShieldCheck, X } from "lucide-react";
-import { useRouter } from "@/components/layout/navigation-progress";
+import { LinkPendingSpinner, useRouter } from "@/components/layout/navigation-progress";
 import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
 import { SegmentedControl } from "@/components/ui";
 import {
@@ -212,9 +212,10 @@ export function PhoneNav(props: PhoneNavProps) {
               aria-label={count ? `${t.label}, ${count} waiting` : undefined}
               onClick={() => setMenuOpen(false)}
             >
-              <span className={styles.tabIcon}>
+              <span className={`${styles.tabIcon} ta-tab-pending`}>
                 <t.icon className="h-[22px] w-[22px]" strokeWidth={on ? 2.2 : 1.8} aria-hidden="true" />
                 {count > 0 && <span className={styles.tabCount}>{count > 99 ? "99+" : count}</span>}
+                <LinkPendingSpinner />
               </span>
               <span className={styles.tabLabel}>{t.label}</span>
             </Link>
@@ -393,6 +394,7 @@ function PhoneMenu({
                   >
                     <item.icon className={styles.rowIcon} aria-hidden="true" />
                     <span className={styles.rowLabel}>{item.label}</span>
+                    <LinkPendingSpinner />
                     <ChevronRight className={styles.rowChevron} aria-hidden="true" />
                   </Link>
                 );

@@ -72,7 +72,7 @@ export function MissedPunchForm() {
             <LinkButton href="/time/history" hierarchy="tertiary">
               ← Punch History
             </LinkButton>
-            <Button type="submit" disabled={isPending}>
+            <Button pending={isPending} type="submit" disabled={isPending}>
               {isPending ? "Submitting…" : "Submit Request"}
             </Button>
           </>

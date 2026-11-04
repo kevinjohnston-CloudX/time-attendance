@@ -268,7 +268,7 @@ function NewKeyDialog({ onClose, onCreated }: { onClose: () => void; onCreated: 
           <Button type="button" hierarchy="secondary" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
-          <Button type="submit" disabled={!name.trim() || (!timeOff && !directory) || pending}>
+          <Button pending={pending} type="submit" disabled={!name.trim() || (!timeOff && !directory) || pending}>
             {pending ? "Generating…" : "Generate"}
           </Button>
         </div>

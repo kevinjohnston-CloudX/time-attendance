@@ -373,7 +373,7 @@ export function ReportViewer({
         subtitleTone={undefined}
         action={
           <span className="flex flex-wrap items-center gap-1.5">
-            <Button size="sm" hierarchy="tertiary" onClick={() => void handleRun()} disabled={isRunning} leadingIcon={<RefreshCw className="h-3.5 w-3.5" />}>
+            <Button pending={isRunning} size="sm" hierarchy="tertiary" onClick={() => void handleRun()} disabled={isRunning} leadingIcon={<RefreshCw className="h-3.5 w-3.5" />}>
               {isRunning ? "Running" : "Run again"}
             </Button>
             <span className="mx-1 whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }} aria-live="polite">
@@ -803,7 +803,7 @@ function CopyDialog({
           <Button hierarchy="secondary" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
-          <Button hierarchy="primary" onClick={go} disabled={pending || !name.trim()} leadingIcon={<Copy className="h-4 w-4" />}>
+          <Button pending={pending} hierarchy="primary" onClick={go} disabled={pending || !name.trim()} leadingIcon={<Copy className="h-4 w-4" />}>
             {pending ? "Copying" : "Make a copy"}
           </Button>
         </>
@@ -843,6 +843,7 @@ function DeleteDialog({
             Keep it
           </Button>
           <Button
+            pending={pending}
             hierarchy="primary"
             tone="error"
             disabled={pending}

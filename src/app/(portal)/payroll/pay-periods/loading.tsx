@@ -21,7 +21,7 @@ const panel = { background: "var(--surface-card)", borderRadius: 18, boxShadow: 
 
 export default function Loading() {
   return (
-    <div className="flex flex-col items-stretch gap-[18px] lg:flex-row lg:items-start" aria-busy="true" aria-label="Loading pay periods">
+    <div className="ta-loading flex flex-col items-stretch gap-[18px] lg:flex-row lg:items-start" aria-busy="true" aria-label="Loading pay periods">
       <div className="flex h-[480px] flex-col gap-3 p-[18px] lg:h-[calc(100dvh-7rem)] lg:min-w-[240px] lg:flex-[0_1_300px]" style={panel}>
         <div className="flex items-center justify-between">
           <Bar w={120} h={22} />

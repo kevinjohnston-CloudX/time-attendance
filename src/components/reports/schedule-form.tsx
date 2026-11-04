@@ -390,7 +390,7 @@ export function ScheduleForm({
           <Button hierarchy="secondary" disabled={isPending} onClick={onClose}>
             Cancel
           </Button>
-          <Button hierarchy="primary" disabled={isPending} onClick={handleSave}>
+          <Button pending={isPending} hierarchy="primary" disabled={isPending} onClick={handleSave}>
             {isPending ? "Saving" : existingSchedule ? "Save changes" : "Save schedule"}
           </Button>
         </>

@@ -383,6 +383,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
           subtitle="Each employee's punches, where they came from and whether they are approved"
           actions={
             <Button
+              pending={exporting}
               hierarchy="secondary"
               size="sm"
               onClick={exportPunches}

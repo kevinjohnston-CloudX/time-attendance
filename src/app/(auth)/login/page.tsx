@@ -215,7 +215,7 @@ export default function LoginPage() {
 
             {error && <Banner tone="error" body={error} />}
 
-            <Button type="submit" disabled={loading} fullWidth>
+            <Button pending={loading} type="submit" disabled={loading} fullWidth>
               {loading ? "Signing in…" : "Sign In"}
             </Button>
 

@@ -89,7 +89,7 @@ function SetupPasswordForm() {
 
       {error && <Banner tone="error" body={error} />}
 
-      <Button type="submit" disabled={loading} fullWidth>
+      <Button pending={loading} type="submit" disabled={loading} fullWidth>
         {loading ? "Saving…" : "Set password"}
       </Button>
     </form>

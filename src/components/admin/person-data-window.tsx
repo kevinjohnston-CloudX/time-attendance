@@ -150,6 +150,7 @@ export function PersonDataWindow({
             Cancel
           </Button>
           <Button
+            pending={busy}
             hierarchy="primary"
             onClick={download}
             disabled={busy || !summary}

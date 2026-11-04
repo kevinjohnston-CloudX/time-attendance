@@ -170,7 +170,7 @@ function NewWebhookWindow({ onClose, onCreated }: { onClose: () => void; onCreat
           <Button type="button" hierarchy="secondary" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
-          <Button type="submit" disabled={!ready || pending}>
+          <Button pending={pending} type="submit" disabled={!ready || pending}>
             {pending ? "Creating…" : "Create webhook"}
           </Button>
         </>
@@ -310,7 +310,7 @@ function DeliveriesWindow({ hook, testFirst, onClose }: { hook: WebhookRow; test
       foot={
         <>
           <span className={styles.footHint}>The latest 25 attempts, newest first.</span>
-          <Button hierarchy="secondary" onClick={runTest} disabled={testing}>
+          <Button pending={testing} hierarchy="secondary" onClick={runTest} disabled={testing}>
             {testing ? "Sending…" : "Send test"}
           </Button>
           <Button data-autofocus onClick={onClose}>

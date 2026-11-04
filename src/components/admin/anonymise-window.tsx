@@ -112,7 +112,7 @@ export function AnonymiseWindow({ employeeId, onClose, onDone }: { employeeId: s
           <Button hierarchy="tertiary" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button tone="error" onClick={run} disabled={busy || blocked || !confirmed}>
+          <Button pending={busy} tone="error" onClick={run} disabled={busy || blocked || !confirmed}>
             {busy ? "Anonymising" : "Anonymise permanently"}
           </Button>
         </>

@@ -1407,6 +1407,7 @@ export function LeaveTabs({
                     Cancel
                   </Button>
                   <Button
+                    pending={isPending}
                     type="submit"
                     disabled={isPending || !targetEmployeeId || !leaveTypeId || selectedDays.length === 0}
                   >

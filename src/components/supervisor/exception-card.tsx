@@ -520,7 +520,7 @@ export function ExceptionCard({
           </div>
 
           <div className={`${styles.formButtons} flex items-center gap-2`}>
-            <Button size="sm" disabled={isPending || !reasonText.trim()} onClick={savePunch}>
+            <Button pending={isPending} size="sm" disabled={isPending || !reasonText.trim()} onClick={savePunch}>
               {isPending ? "Saving" : "Save and Resolve"}
             </Button>
             <Button hierarchy="tertiary" size="sm" disabled={isPending} onClick={closeForm}>
@@ -545,7 +545,7 @@ export function ExceptionCard({
             />
           </Field>
           <div className={`${styles.formButtons} flex items-center gap-2`}>
-            <Button size="sm" disabled={isPending || !note.trim()} onClick={saveNote}>
+            <Button pending={isPending} size="sm" disabled={isPending || !note.trim()} onClick={saveNote}>
               {isPending ? "Saving" : "Resolve"}
             </Button>
             <Button hierarchy="tertiary" size="sm" disabled={isPending} onClick={closeForm}>

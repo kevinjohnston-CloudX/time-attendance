@@ -452,7 +452,7 @@ export function SetupDialog({
                 <Button type="button" hierarchy="secondary" onClick={onClose} disabled={pending}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={pending}>
+                <Button pending={pending} type="submit" disabled={pending}>
                   {pending ? "Saving…" : submitLabel}
                 </Button>
               </>
@@ -492,7 +492,7 @@ export function DeleteAction({
       <span className="truncate" style={{ font: "var(--type-body2)", color: "var(--text-error)" }}>
         {question}
       </span>
-      <Button type="button" size="sm" tone="error" onClick={onDelete} disabled={pending}>
+      <Button pending={pending} type="button" size="sm" tone="error" onClick={onDelete} disabled={pending}>
         {pending ? "Deleting…" : "Delete"}
       </Button>
       <Button type="button" size="sm" hierarchy="tertiary" onClick={() => setAsking(false)} disabled={pending}>

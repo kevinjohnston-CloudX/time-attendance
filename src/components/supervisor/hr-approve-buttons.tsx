@@ -58,6 +58,7 @@ export function HrApproveButtons({ leaveRequestId }: Props) {
             Cancel
           </Button>
           <Button
+            pending={isPending}
             size="sm"
             tone="error"
             onClick={handleReject}
@@ -72,7 +73,7 @@ export function HrApproveButtons({ leaveRequestId }: Props) {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Button size="sm" onClick={handleApprove} disabled={isPending}>
+      <Button pending={isPending} size="sm" onClick={handleApprove} disabled={isPending}>
         {isPending ? "Saving…" : "HR Approve"}
       </Button>
       <Button hierarchy="secondary" size="sm" onClick={() => setRejectMode(true)} disabled={isPending}>

@@ -263,7 +263,7 @@ export function UploadDocumentForm({ employees }: Props) {
                 <Button type="button" hierarchy="secondary" onClick={closeModal}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={isPending || !selectedEmployee}>
+                <Button pending={isPending} type="submit" disabled={isPending || !selectedEmployee}>
                   {isPending ? "Uploading…" : "Upload"}
                 </Button>
               </div>

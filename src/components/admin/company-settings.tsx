@@ -327,7 +327,7 @@ export function CompanySettings({
                 Discard
               </Button>
             )}
-            <Button onClick={save} disabled={!dirty || saving}>
+            <Button pending={saving} onClick={save} disabled={!dirty || saving}>
               {saving ? "Saving…" : "Save Settings"}
             </Button>
           </div>

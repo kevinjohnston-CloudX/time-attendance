@@ -493,6 +493,7 @@ function RecalculateButton({ timesheetId }: { timesheetId: string }) {
   return (
     <div className="flex items-center gap-2">
       <Button
+        pending={isPending}
         hierarchy="secondary"
         size="sm"
         onClick={handleRecalculate}
@@ -2612,7 +2613,7 @@ export function TimecardViewer({
                     </p>
                   )}
                   {canAuthorizeOt && (
-                    <Button size="sm" tone="warning" onClick={handleAuthorizeOt} disabled={isPending}>
+                    <Button pending={isPending} size="sm" tone="warning" onClick={handleAuthorizeOt} disabled={isPending}>
                       {isPending ? "Saving…" : "Approve overtime"}
                     </Button>
                   )}
@@ -4277,7 +4278,7 @@ export function TimecardViewer({
                   <Button hierarchy="secondary" size="sm" onClick={handleDiscardChanges} disabled={isPending}>
                     Discard changes
                   </Button>
-                  <Button size="sm" onClick={handleSaveChanges} disabled={isPending || reasonMissing}>
+                  <Button pending={isPending} size="sm" onClick={handleSaveChanges} disabled={isPending || reasonMissing}>
                     {isPending ? "Saving…" : "Save changes"}
                   </Button>
                 </div>
@@ -4436,6 +4437,7 @@ export function TimecardViewer({
                 />
                 <div className="mt-2 flex justify-end">
                   <Button
+                    pending={noteSaving}
                     onClick={handleSaveNote}
                     disabled={noteSaving || !noteText.trim()}
                   >
@@ -4643,6 +4645,7 @@ export function TimecardViewer({
                   Cancel
                 </Button>
                 <Button
+                  pending={isPending}
                   type="submit"
                   disabled={isPending || (newEntryMode === "time" ? (!newInTimeStr || !newOutTimeStr) : !newEntryHours)}
                 >

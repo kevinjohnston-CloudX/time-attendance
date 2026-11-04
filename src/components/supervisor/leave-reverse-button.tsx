@@ -46,7 +46,7 @@ export function LeaveReverseButton({ leaveRequestId, label = "Reverse Approval" 
           <Button hierarchy="tertiary" size="sm" onClick={() => setConfirm(false)}>
             Cancel
           </Button>
-          <Button size="sm" tone="warning" onClick={handleReverse} disabled={isPending}>
+          <Button pending={isPending} size="sm" tone="warning" onClick={handleReverse} disabled={isPending}>
             {isPending ? "Saving…" : "Confirm"}
           </Button>
         </div>

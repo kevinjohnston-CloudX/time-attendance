@@ -99,7 +99,7 @@ export function RequestLeaveForm({ leaveTypes, shift, layout = "page", onSuccess
   }
 
   const submitButton = (
-    <Button type="submit" disabled={isPending || selectedDays.length === 0}>
+    <Button pending={isPending} type="submit" disabled={isPending || selectedDays.length === 0}>
       {isPending ? "Submitting…" : "Submit Request"}
     </Button>
   );

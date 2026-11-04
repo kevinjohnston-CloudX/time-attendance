@@ -71,7 +71,7 @@ export function PayRatesTable({
               Add rate
             </Button>
             <Button type="button" size="sm" hierarchy="secondary" onClick={cancel} disabled={pending}>Cancel</Button>
-            <Button type="button" size="sm" onClick={save} disabled={pending}>{pending ? "Saving…" : "Save rates"}</Button>
+            <Button pending={pending} type="button" size="sm" onClick={save} disabled={pending}>{pending ? "Saving…" : "Save rates"}</Button>
           </div>
         ) : (
           <Button type="button" size="sm" hierarchy="secondary" onClick={edit} leadingIcon={<Pencil className="h-3.5 w-3.5" />}>

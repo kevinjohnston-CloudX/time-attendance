@@ -164,7 +164,7 @@ export function AddTimecardEntry({
               required
             />
           </div>
-          <Button type="submit" disabled={isPending || !reason.trim()}>
+          <Button pending={isPending} type="submit" disabled={isPending || !reason.trim()}>
             {isPending ? "Saving…" : "Add"}
           </Button>
         </form>
@@ -211,7 +211,7 @@ export function AddTimecardEntry({
               placeholder="e.g. FMLA paperwork ref #…"
             />
           </div>
-          <Button type="submit" disabled={isPending || !leaveTypeId || !durationHours}>
+          <Button pending={isPending} type="submit" disabled={isPending || !leaveTypeId || !durationHours}>
             {isPending ? "Saving…" : "Add"}
           </Button>
           {/* Decimal hours are what lands in the ledger, so they are echoed back

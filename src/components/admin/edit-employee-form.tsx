@@ -809,7 +809,7 @@ export function EditEmployeeForm({
                   <Button type="button" hierarchy="secondary" className="ta-header-even ta-phone-hide" onClick={cancel} disabled={isPending}>
                     Cancel
                   </Button>
-                  <Button type="submit" className="ta-header-even ta-phone-hide" disabled={isPending || changeCount === 0}>
+                  <Button pending={isPending} type="submit" className="ta-header-even ta-phone-hide" disabled={isPending || changeCount === 0}>
                     {isPending ? "Saving…" : "Save changes"}
                   </Button>
                 </>
@@ -1677,7 +1677,7 @@ export function EditEmployeeForm({
                 <Button type="button" hierarchy="secondary" onClick={cancel} disabled={isPending}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={isPending || changeCount === 0}>
+                <Button pending={isPending} type="submit" disabled={isPending || changeCount === 0}>
                   {isPending ? "Saving…" : "Save changes"}
                 </Button>
               </div>

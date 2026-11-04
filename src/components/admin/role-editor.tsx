@@ -776,6 +776,7 @@ export function RoleEditor({
               Cancel
             </Button>
             <Button
+              pending={saving}
               onClick={handleSave}
               disabled={saving || !name.trim()}
               leadingIcon={<Save className="h-4 w-4" />}

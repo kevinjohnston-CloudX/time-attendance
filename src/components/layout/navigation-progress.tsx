@@ -100,6 +100,14 @@ export function useRouter(): ReturnType<typeof useNextRouter> {
   );
 }
 
+/**
+ * True while a page change started by a link or this file's useRouter is on
+ * its way. For PendingRegion around rows a filter or search is replacing.
+ */
+export function useNavigationPending(): boolean {
+  return useSyncExternalStore(store.subscribe, store.get, store.getServer) === "loading";
+}
+
 export function NavigationProgress() {
   const current = useSyncExternalStore(store.subscribe, store.get, store.getServer);
   const pathname = usePathname();

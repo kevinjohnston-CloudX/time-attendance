@@ -55,11 +55,14 @@ export function PunchHero({
   const [current, setCurrent] = useState<PunchStateValue>(state);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  // Which punch is being recorded, so that button shows it is working.
+  const [punching, setPunching] = useState<PunchTypeValue | null>(null);
 
   const available = getAvailablePunchTypes(current);
 
   function handlePunch(punchType: PunchTypeValue) {
     setError(null);
+    setPunching(punchType);
     startTransition(async () => {
       const result = await recordPunch({ punchType });
       if (!result.success) {
@@ -134,6 +137,7 @@ export function PunchHero({
               fullWidth
               hierarchy={i === 0 ? "primary" : "secondary"}
               disabled={isPending}
+              pending={isPending && punching === type}
               onClick={() => handlePunch(type)}
             >
               {PUNCH_TYPE_LABEL[type]}

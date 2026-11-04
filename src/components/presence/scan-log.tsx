@@ -599,7 +599,7 @@ export function ScanLogList({
             : `${rows.length.toLocaleString()} ${rows.length === 1 ? "scan" : "scans"}, the whole day`}
         </span>
         {hasMore && (
-          <Button hierarchy="secondary" size="sm" onClick={onShowMore} disabled={loadingMore}>
+          <Button pending={loadingMore} hierarchy="secondary" size="sm" onClick={onShowMore} disabled={loadingMore}>
             {loadingMore ? "Loading" : "Show earlier scans"}
           </Button>
         )}

@@ -555,6 +555,7 @@ export function PhotoEditor({
               Cancel
             </Button>
             <Button
+              pending={saving}
               hierarchy="primary"
               onClick={save}
               disabled={mode !== "frame" || !image || saving}

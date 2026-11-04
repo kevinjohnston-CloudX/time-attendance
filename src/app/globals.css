@@ -926,7 +926,9 @@ tbody .ta-row:hover {
    arrives at once never flickers it. */
 .ta-nav-progress {
   position: fixed;
-  top: 0;
+  /* Below the notch and the clock on a phone and in the app, where the page
+     reaches under them; 0 everywhere else. */
+  top: env(safe-area-inset-top, 0px);
   left: 0;
   right: 0;
   z-index: 100;
@@ -974,6 +976,71 @@ tbody .ta-row:hover {
 }
 @keyframes ta-spin { to { transform: rotate(360deg); } }
 @keyframes ta-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* A phone tab or menu row whose page is on its way: the same ring, at the
+   tab icon's top left (its count, if any, keeps the top right), or before a
+   menu row's chevron. */
+.ta-tab-pending .ta-nav-spinner {
+  position: absolute;
+  top: -4px;
+  right: calc(100% - 6px);
+  width: 14px;
+  height: 14px;
+}
+
+/* A page's loading screen (components/layout/page-skeleton.tsx). It waits
+   150ms before it shows, so a page that arrives at once goes straight from
+   the old page to the new one with nothing flashing in between. */
+.ta-loading {
+  animation: ta-fade-in 180ms ease-out 150ms both;
+}
+
+/* Rows that are being replaced (components/ui/pending-region.tsx): they stay
+   where they are, so nothing jumps, and fade back while the new ones load. */
+.ta-pending-region {
+  transition: opacity 160ms ease;
+}
+.ta-pending-region[aria-busy="true"] {
+  opacity: 0.5;
+  transition-delay: 150ms;
+}
+
+/* A button whose action is running (Button's pending prop): a ring in place
+   of its icon, the label kept, so the button keeps its size. */
+.ta-btn-spinner {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-radius: 9999px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  opacity: 0.85;
+  animation: ta-spin 700ms linear infinite;
+}
+/* Busy is not unavailable: it keeps its own colours, never the grey disabled
+   fill, while still refusing a second click. */
+.wms-btn[aria-busy="true"],
+.wms-btn[aria-busy="true"]:disabled {
+  background: var(--bg);
+  color: var(--fg);
+  border-color: var(--bd);
+  cursor: progress !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Still there, just not moving: a held tint and a still ring. */
+  .ta-loading,
+  .ta-loading .animate-pulse,
+  .ta-btn-spinner {
+    animation: none;
+  }
+  .ta-nav-spinner {
+    animation: ta-fade-in 1ms linear 150ms both;
+  }
+  .ta-pending-region {
+    transition: none;
+  }
+}
 
 /* The pinned top of a page (PinnedBar in page-header.tsx). --pin-stick is
    for a pane that scrolls inside its own padding: a sticky box stops at the
