@@ -26,6 +26,8 @@ const GIVE_UP_MS = 15_000;
 type Phase = "idle" | "loading" | "finishing";
 
 let phase: Phase = "idle";
+/** Where the page change in progress is going, path and query, or null. */
+let target: string | null = null;
 let startedAt = 0;
 let giveUp: ReturnType<typeof setTimeout> | undefined;
 let finish: ReturnType<typeof setTimeout> | undefined;
@@ -76,6 +78,7 @@ function start(href: string) {
   clearTimeout(finish);
   startedAt = Date.now();
   markRefresh(url.pathname === window.location.pathname);
+  target = url.pathname + url.search;
   set("loading");
   giveUp = setTimeout(done, GIVE_UP_MS);
 }
@@ -83,6 +86,7 @@ function start(href: string) {
 function done() {
   clearTimeout(giveUp);
   markRefresh(false);
+  target = null;
   if (phase !== "loading") return;
   // Never shown yet, so there is nothing to finish: just stop.
   if (Date.now() - startedAt < SHOW_AFTER_MS) return set("idle");
@@ -119,6 +123,14 @@ export function useRouter(): ReturnType<typeof useNextRouter> {
  */
 export function useNavigationPending(): boolean {
   return useSyncExternalStore(store.subscribe, store.get, store.getServer) === "loading";
+}
+
+/**
+ * Where the page change in progress is going ("/path?query"), or null. For a
+ * screen that fades only what its own next page replaces.
+ */
+export function useNavigationTarget(): string | null {
+  return useSyncExternalStore(store.subscribe, () => (phase === "loading" ? target : null), () => null);
 }
 
 export function NavigationProgress() {

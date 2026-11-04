@@ -3,7 +3,7 @@
 import React, { useState, useTransition, useEffect, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "next/navigation";
-import { useRouter } from "@/components/layout/navigation-progress";
+import { useNavigationTarget, useRouter } from "@/components/layout/navigation-progress";
 import {
   format,
   addDays,
@@ -786,6 +786,25 @@ export function TimecardViewer({
 }: TimecardViewerProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  // While this screen's next page loads: another person fades only the
+  // timecard; another site, department or period fades the list too.
+  // Leaving for another page fades nothing, as everywhere else.
+  const navTarget = useNavigationTarget();
+  const navUrl =
+    navTarget?.startsWith("/payroll/timecards") &&
+    new URL(navTarget, "http://x").search.slice(1) !== searchParams.toString() // not already here
+      ? new URL(navTarget, "http://x")
+      : null;
+  const navSame = (k: string) => navUrl?.searchParams.get(k) === searchParams.get(k);
+  // Picking a person sends their id and leaves the period out of the address.
+  const navPerson =
+    navUrl !== null &&
+    !!navUrl.searchParams.get("employeeId") &&
+    !navSame("employeeId") &&
+    navSame("siteId") &&
+    navSame("departmentId") &&
+    (!navUrl.searchParams.has("periodId") || navSame("periodId")) &&
+    !navUrl.searchParams.has("customStart");
 
   /**
    * On a phone, whose timecard is showing instead of the list of people.
@@ -2372,7 +2391,10 @@ export function TimecardViewer({
             />
           </div>
 
-          <div className={`${grid.listScroll} ta-scroll min-h-0 flex-1 overflow-y-auto pb-2`}>
+          <div
+            className={`${grid.listScroll} ta-scroll ta-pending-region min-h-0 flex-1 overflow-y-auto pb-2`}
+            aria-busy={(navUrl !== null && !navPerson) || undefined}
+          >
             {filteredEmployees.length === 0 && (
               // Says which of the two empty lists this is. "No employees" after
               // narrowing to Open reads as "this site is clean", and that
@@ -2488,7 +2510,8 @@ export function TimecardViewer({
 
         {/* ── Right: their timecard ─────────────────────────────────── */}
         <section
-          className={`${grid.cardPane} flex min-h-0 flex-col overflow-hidden`}
+          className={`${grid.cardPane} ta-pending-region flex min-h-0 flex-col overflow-hidden`}
+          aria-busy={navUrl !== null || undefined}
           style={{ background: "var(--surface-card)", borderRadius: "var(--radius-l)", boxShadow: "var(--shadow-card)" }}
         >
           {!selectedEmployeeId || !days ? (
