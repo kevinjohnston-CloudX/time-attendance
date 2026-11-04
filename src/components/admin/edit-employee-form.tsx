@@ -41,6 +41,7 @@ import {
   ChevronRight,
   ScanLine,
   Wallet,
+  QrCode,
 } from "lucide-react";
 import { useBreadcrumbLeaf } from "@/components/layout/breadcrumb-leaf";
 import { PhotoViewer, ZoomableFace } from "@/components/presence/face";
@@ -832,6 +833,14 @@ export function EditEmployeeForm({
                     View Accruals
                   </LinkButton>
                   <LinkButton
+                    href={`/admin/employees/${employee.id}/badge`}
+                    hierarchy="secondary"
+                    className="ta-phone-hide"
+                    leadingIcon={<QrCode className="h-4 w-4" aria-hidden="true" />}
+                  >
+                    View Badge
+                  </LinkButton>
+                  <LinkButton
                     href={`/admin/employees?copyFrom=${employee.id}`}
                     hierarchy="secondary"
                     className="ta-phone-hide"
@@ -981,6 +990,11 @@ export function EditEmployeeForm({
                   <Link href={`/admin/accruals/${employee.id}`} className="ta-list-row">
                     <Wallet className={styles.phoneLinkIcon} aria-hidden="true" />
                     <span className="ta-list-title">Accruals</span>
+                    <ChevronRight className="ta-list-chevron" aria-hidden="true" />
+                  </Link>
+                  <Link href={`/admin/employees/${employee.id}/badge`} className="ta-list-row">
+                    <QrCode className={styles.phoneLinkIcon} aria-hidden="true" />
+                    <span className="ta-list-title">Badge</span>
                     <ChevronRight className="ta-list-chevron" aria-hidden="true" />
                   </Link>
                   <Link href={`/admin/employees?copyFrom=${employee.id}`} className="ta-list-row">

@@ -4,7 +4,8 @@ import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getEmployeeById } from "@/actions/admin.actions";
 import { getIdBadge } from "@/lib/badge/badge.service";
 import { IdBadge } from "@/components/badge/id-badge";
-import { PageHeader } from "@/components/ui";
+import { ArrowLeft } from "lucide-react";
+import { LinkButton, PageHeader } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,21 @@ export default async function EmployeeBadgePage({ params }: { params: Promise<{ 
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader pinned title="Badge" subtitle={badge.name} />
+      <PageHeader
+        pinned
+        title="Badge"
+        subtitle={badge.name}
+        actions={
+          <LinkButton
+            href={`/admin/employees/${id}`}
+            hierarchy="tertiary"
+            className="ta-phone-hide"
+            leadingIcon={<ArrowLeft className="h-4 w-4" aria-hidden="true" />}
+          >
+            Employee record
+          </LinkButton>
+        }
+      />
       <IdBadge badge={badge} />
     </div>
   );
