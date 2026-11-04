@@ -27,6 +27,7 @@ import {
   House,
   ClipboardCheck,
   LibraryBig,
+  QrCode,
 } from "lucide-react";
 
 /**
@@ -92,10 +93,11 @@ export const SECTIONS: NavSection[] = [
     icon: CircleUser,
     railLabel: "Me",
     label: "Me",
-    prefixes: ["/dashboard", "/time", "/leave", "/documents", "/accruals", "/knowledge-base"],
+    prefixes: ["/dashboard", "/time", "/badge", "/leave", "/documents", "/accruals", "/knowledge-base"],
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { label: "Punch Clock", href: "/time/punch", icon: Clock, permission: "PUNCH_OWN" },
+      { label: "My Badge", href: "/badge", icon: QrCode },
       // Only for someone with time of their own: a sign in only login (an
       // agency viewer, Loss Prevention) has no timesheet or punches.
       { label: "My Timesheet", href: "/time/timesheet", icon: ClipboardList, permission: ["PUNCH_OWN", "TIMESHEET_SUBMIT_OWN"] },
