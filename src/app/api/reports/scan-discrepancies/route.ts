@@ -3,6 +3,8 @@ import { findScanDiscrepancies } from "@/lib/services/scan-event.service";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { userHasPermission } from "@/lib/rbac/check-permission";
+import { currentIdentity } from "@/lib/rbac/current";
+import { employeeScope, reachesCompany } from "@/lib/rbac/scope";
 
 /**
  * Ad-hoc view of tablet-vs-timecard discrepancies, for IT and payroll to query
@@ -62,7 +64,20 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const rows = await findScanDiscrepancies(from, to, employee.tenantId);
+  const all = await findScanDiscrepancies(from, to, employee.tenantId);
+  // Company wide for those who approve every timesheet; anyone else (a
+  // supervisor) gets their own team, never the whole company's badges and
+  // names (security audit 2026-11).
+  const me = await currentIdentity();
+  if (!me || !me.isActive) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const ctx = { employeeId: me.employeeId ?? "", tenantId: employee.tenantId, role: me.role };
+  const rows = (await reachesCompany(ctx, "TIMESHEET_APPROVE_ANY"))
+    ? all
+    : await (async () => {
+        const team = await db.employee.findMany({ where: await employeeScope(ctx, "TIMESHEET_APPROVE_ANY"), select: { id: true } });
+        const ids = new Set(team.map((t) => t.id));
+        return all.filter((r) => r.employeeId !== null && ids.has(r.employeeId));
+      })();
 
   const byKind = rows.reduce<Record<string, number>>((acc, r) => {
     acc[r.kind] = (acc[r.kind] ?? 0) + 1;
