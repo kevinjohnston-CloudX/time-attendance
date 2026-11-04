@@ -2,9 +2,11 @@
 
 import { useState, useTransition, type CSSProperties } from "react";
 import { ShieldCheck } from "lucide-react";
-import { Banner, SegmentedControl, Switch } from "@/components/ui";
+import { Banner, Button, SegmentedControl, Select, Switch } from "@/components/ui";
 import { updateDataProtection } from "@/actions/privacy.actions";
 import type { DataProtection } from "@/lib/privacy/data-protection";
+import { PHOTO_DAY_CHOICES, RETENTION_COUNTRY_LABEL, RETENTION_YEARS, retentionYears, type RetentionCountry } from "@/lib/privacy/retention-rules";
+import { RetentionWindow } from "./retention-window";
 
 /**
  * Data protection on Company Settings: the switches an EU company turns on.
@@ -15,19 +17,33 @@ import type { DataProtection } from "@/lib/privacy/data-protection";
 
 const PANEL: CSSProperties = { background: "var(--surface-card)", borderRadius: 18, boxShadow: "var(--ta-shell-shadow)" };
 
-export function DataProtectionPanel({ initial }: { initial: DataProtection }) {
+type Change = {
+  noMedicalNotes?: boolean;
+  anonymise?: Partial<DataProtection["anonymise"]>;
+  retention?: Partial<DataProtection["retention"]>;
+  leaverPhotos?: Partial<DataProtection["leaverPhotos"]>;
+};
+
+const TITLE: CSSProperties = { font: "var(--weight-semibold) 14px/20px var(--font-sans)", color: "var(--text-primary)" };
+const LINE: CSSProperties = { font: "var(--type-body2)", color: "var(--text-secondary)", textWrap: "pretty" };
+
+/** `canReview`: the caller may also export people's data, which the review downloads. */
+export function DataProtectionPanel({ initial, canReview }: { initial: DataProtection; canReview: boolean }) {
+  const [reviewing, setReviewing] = useState(false);
   const [settings, setSettings] = useState(initial);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [pending, startTransition] = useTransition();
 
-  function save(change: { noMedicalNotes?: boolean; anonymise?: Partial<DataProtection["anonymise"]> }) {
+  function save(change: Change) {
     setError(null);
     setSaved(false);
     const before = settings;
     setSettings({
       noMedicalNotes: change.noMedicalNotes ?? settings.noMedicalNotes,
       anonymise: { ...settings.anonymise, ...change.anonymise },
+      retention: { ...settings.retention, ...change.retention },
+      leaverPhotos: { ...settings.leaverPhotos, ...change.leaverPhotos },
     });
     startTransition(async () => {
       const res = await updateDataProtection(change);
@@ -40,6 +56,17 @@ export function DataProtectionPanel({ initial }: { initial: DataProtection }) {
       setSaved(true);
     });
   }
+
+  const years = retentionYears(settings.retention);
+  const countryYears = settings.retention.country ? RETENTION_YEARS[settings.retention.country] : null;
+  const shorterThanLaw = !!years && !!countryYears && years < countryYears;
+  const retentionOutcome = !settings.anonymise.enabled
+    ? "Off. Turn on Allow anonymising leavers first."
+    : !years
+      ? "Off. Choose the country, then turn this on."
+      : settings.retention.enabled
+        ? `On. Leavers are listed for anonymising ${years === 1 ? "1 year" : `${years} years`} after the end of the year they left. Nothing changes until HR confirms it in the review.`
+        : "Off. Leavers are kept until someone anonymises them.";
 
   return (
     <section style={{ ...PANEL, padding: "18px 20px 20px" }} aria-labelledby="data-protection-title">
@@ -133,6 +160,113 @@ export function DataProtectionPanel({ initial }: { initial: DataProtection }) {
           </div>
         </div>
       )}
+
+
+      <div className="flex items-start gap-3 py-3" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span style={TITLE}>Retention period</span>
+          <span style={LINE}>{retentionOutcome}</span>
+        </span>
+        <Switch
+          checked={settings.retention.enabled}
+          onChange={(on) => save({ retention: { enabled: on } })}
+          disabled={pending || !settings.anonymise.enabled || !years}
+          label={<span className="sr-only">Retention period</span>}
+        />
+      </div>
+
+      {settings.anonymise.enabled && (
+        <div className="flex flex-col gap-1.5 pb-3 pl-4" style={{ borderLeft: "2px solid var(--stroke-divider)", marginLeft: 2 }}>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={settings.retention.country ?? ""}
+              onChange={(e) => {
+                const c = (e.target.value || null) as RetentionCountry | null;
+                save({ retention: { country: c, years: c ? RETENTION_YEARS[c] : null } });
+              }}
+              disabled={pending}
+              aria-label="Country"
+              style={{ width: 200 }}
+            >
+              <option value="">Choose a country</option>
+              {(Object.keys(RETENTION_COUNTRY_LABEL) as RetentionCountry[]).map((c) => (
+                <option key={c} value={c}>
+                  {RETENTION_COUNTRY_LABEL[c]}
+                </option>
+              ))}
+            </Select>
+            <Select
+              value={years ?? ""}
+              onChange={(e) => save({ retention: { years: Number(e.target.value) } })}
+              disabled={pending || !settings.retention.country}
+              aria-label="Years kept"
+              style={{ width: 140 }}
+            >
+              {!years && <option value="">Years kept</option>}
+              {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={n}>
+                  {n === 1 ? "1 year" : `${n} years`}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <span style={{ ...LINE, color: shorterThanLaw ? "var(--text-warning)" : "var(--text-secondary)" }}>
+            {!settings.retention.country
+              ? "The country sets how long payroll and tax law ask to keep a leaver's records."
+              : shorterThanLaw
+                ? `Shorter than the ${countryYears} years ${RETENTION_COUNTRY_LABEL[settings.retention.country]} asks for.`
+                : `${RETENTION_COUNTRY_LABEL[settings.retention.country]} asks for ${countryYears} years. Your accountant may ask for longer.`}
+          </span>
+        </div>
+      )}
+
+      <div className="flex items-start gap-3 py-3" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span style={TITLE}>Delete leavers&apos; photos</span>
+          <span style={LINE}>
+            {settings.leaverPhotos.enabled
+              ? `On. A leaver's time clock photo is listed for deletion ${settings.leaverPhotos.days} days after they leave. Nothing is deleted until HR confirms it in the review.`
+              : "Off. A leaver's time clock photo is kept."}
+          </span>
+        </span>
+        <Switch
+          checked={settings.leaverPhotos.enabled}
+          onChange={(on) => save({ leaverPhotos: { enabled: on } })}
+          disabled={pending}
+          label={<span className="sr-only">Delete leavers&apos; photos</span>}
+        />
+      </div>
+
+      {settings.leaverPhotos.enabled && (
+        <div className="flex flex-wrap items-center gap-2 pb-3 pl-4" style={{ borderLeft: "2px solid var(--stroke-divider)", marginLeft: 2 }}>
+          <Select
+            value={settings.leaverPhotos.days}
+            onChange={(e) => save({ leaverPhotos: { days: Number(e.target.value) } })}
+            disabled={pending}
+            aria-label="Days after leaving"
+            style={{ width: 200 }}
+          >
+            {PHOTO_DAY_CHOICES.map((d) => (
+              <option key={d} value={d}>
+                {d} days after leaving
+              </option>
+            ))}
+          </Select>
+        </div>
+      )}
+
+      {canReview && (settings.retention.enabled || settings.leaverPhotos.enabled) && (
+        <div className="flex items-center gap-3 py-3" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span style={TITLE}>Retention review</span>
+            <span style={LINE}>See who is due, download their data, then remove them in groups of 25.</span>
+          </span>
+          <Button hierarchy="secondary" onClick={() => setReviewing(true)}>
+            Review leavers
+          </Button>
+        </div>
+      )}
+      {reviewing && <RetentionWindow onClose={() => setReviewing(false)} />}
 
       <p role="status" className="m-0" style={{ minHeight: 18, font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
         {pending ? "Saving…" : saved ? "Saved." : ""}

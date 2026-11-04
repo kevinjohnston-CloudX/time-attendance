@@ -87,7 +87,35 @@ async function historyEntriesWith(tenantId: string, values: string[]) {
     WHERE "tenantId" = ${tenantId} AND changes IS NOT NULL AND changes::text ILIKE ANY(${patterns})`;
 }
 
-export async function planAnonymise(tenantId: string, employeeId: string, settings: DataProtection, actorId: string, photoPresent: boolean): Promise<AnonymisePlan | null> {
+type HistoryRow = { id: string; changes: unknown };
+
+/**
+ * The change history entries of several people, from one search of the log
+ * instead of one each (a search reads the company's whole log). For the
+ * retention batch.
+ */
+export async function historiesOf(tenantId: string, employeeIds: string[]): Promise<Map<string, HistoryRow[]>> {
+  const people = await Promise.all(employeeIds.map(async (id) => {
+    const loaded = await loadPerson(tenantId, id);
+    return { id, values: loaded ? identifyingValues({ name: loaded.emp.user.name, email: loaded.emp.user.email, workEmail: loaded.emp.user.workEmail, phone: loaded.pii.phone, phone2: loaded.pii.phone2 }) : [] };
+  }));
+  const rows = await historyEntriesWith(tenantId, [...new Set(people.flatMap((p) => p.values))]);
+  const texts = rows.map((r) => JSON.stringify(r.changes).toLowerCase());
+  return new Map(people.map((p) => {
+    const lower = p.values.map((v) => v.toLowerCase());
+    return [p.id, rows.filter((_, i) => lower.some((v) => texts[i].includes(v)))];
+  }));
+}
+
+export async function planAnonymise(
+  tenantId: string,
+  employeeId: string,
+  settings: DataProtection,
+  actorId: string,
+  photoPresent: boolean,
+  /** The person's history entries when already found, by {@link historiesOf}. */
+  knownHistory?: HistoryRow[],
+): Promise<AnonymisePlan | null> {
   const loaded = await loadPerson(tenantId, employeeId);
   if (!loaded) return null;
   const { emp, pii } = loaded;
@@ -100,7 +128,7 @@ export async function planAnonymise(tenantId: string, employeeId: string, settin
     db.pushDevice.count({ where: { userId: emp.userId } }),
     db.leaveRequest.count({ where: { employeeId, OR: [{ note: { not: null } }, { reviewNote: { not: null } }] } }),
     db.document.count({ where: { employeeId } }),
-    historyEntriesWith(tenantId, values),
+    knownHistory ?? historyEntriesWith(tenantId, values),
     db.punch.count({ where: { employeeId } }),
     db.timesheet.count({ where: { employeeId } }),
     db.leaveRequest.count({ where: { employeeId } }),
@@ -186,10 +214,35 @@ async function purgePhotoVersions(keys: string[]): Promise<{ deleted: number; pr
   return { deleted, problems };
 }
 
+/**
+ * Deletes a person's time clock photo for good: the file, the copy
+ * removePhoto keeps under removed/, and every earlier version the bucket
+ * keeps. The badges stay on the record, so they still lead to it; removePhoto
+ * never takes a file another employee could own.
+ */
+export async function deletePhotoEverywhere(
+  tenantId: string,
+  person: { id: string; barcode: string | null; wmsId: string | null; employeeCode: string },
+): Promise<{ deleted: number; problems: string[] }> {
+  const problems: string[] = [];
+  let keys: string[] = [];
+  try {
+    const removed = await removePhoto(tenantId, person);
+    keys = removed.removed.flatMap((r) => [r.key, r.savedAs]);
+    if (removed.kept.length) problems.push("A photo file shared with another employee's badge was left in place.");
+  } catch (e) {
+    const code = e instanceof Error ? e.message : "";
+    if (code !== "PHOTOS_OFF") problems.push("The photo store could not be read, so the photo was not deleted. Ask support to remove it.");
+  }
+  const purge = await purgePhotoVersions(keys);
+  return { deleted: purge.deleted, problems: [...problems, ...purge.problems] };
+}
+
 export async function runAnonymise(
   tenantId: string,
   employeeId: string,
   settings: DataProtection,
+  knownHistory?: HistoryRow[],
 ): Promise<AnonymiseResult | null> {
   const loaded = await loadPerson(tenantId, employeeId);
   if (!loaded) return null;
@@ -198,7 +251,7 @@ export async function runAnonymise(
   const values = identifyingValues({ name: emp.user.name, email: emp.user.email, workEmail: emp.user.workEmail, phone: pii.phone, phone2: pii.phone2 });
   const fieldsCleared = CLEARED_FIELDS.filter((f) => (pii as Record<string, unknown>)[f.key] != null && (pii as Record<string, unknown>)[f.key] !== "").length;
   const documents = settings.anonymise.deleteDocuments ? await db.document.findMany({ where: { employeeId }, select: { id: true, fileUrl: true } }) : [];
-  const history = settings.anonymise.history === "REPLACE" ? await historyEntriesWith(tenantId, values) : [];
+  const history = settings.anonymise.history === "REPLACE" ? (knownHistory ?? (await historyEntriesWith(tenantId, values))) : [];
 
   const counts = await db.$transaction(async (tx) => {
     const [a, s, r, p, t] = await Promise.all([
@@ -230,24 +283,12 @@ export async function runAnonymise(
   // Storage, only once the database part has committed, so a failed run never
   // loses the photo or a file while the person still has their name.
   const storageProblems: string[] = [];
-
-  // The photo: the badges stay on the record, so they still lead to it.
-  // removePhoto never takes a file another employee could own, and keeps a
-  // copy under removed/; the version purge takes that copy and every earlier
-  // version of the photo too (the bucket keeps versions).
-  let photoKeys: string[] = [];
+  let photoFilesDeleted = 0;
   if (settings.anonymise.deletePhoto) {
-    try {
-      const removed = await removePhoto(tenantId, { id: emp.id, barcode: emp.barcode, wmsId: emp.wmsId, employeeCode: emp.employeeCode });
-      photoKeys = removed.removed.flatMap((r) => [r.key, r.savedAs]);
-      if (removed.kept.length) storageProblems.push("A photo file shared with another employee's badge was left in place.");
-    } catch (e) {
-      const code = e instanceof Error ? e.message : "";
-      if (code !== "PHOTOS_OFF") storageProblems.push("The photo store could not be read, so the photo was not deleted. Ask support to remove it.");
-    }
+    const photo = await deletePhotoEverywhere(tenantId, emp);
+    photoFilesDeleted = photo.deleted;
+    storageProblems.push(...photo.problems);
   }
-  const purge = await purgePhotoVersions(photoKeys);
-  storageProblems.push(...purge.problems);
 
   // Document files. deleteFromStorage logs a refused delete rather than
   // throwing; storage it cannot reach at all throws, and is reported.
@@ -267,7 +308,7 @@ export async function runAnonymise(
     leaveNotesCleared: counts.notes,
     historyEntriesUpdated: history.length,
     documentsDeleted: documents.length,
-    photoFilesDeleted: purge.deleted,
+    photoFilesDeleted,
     storageProblems,
   };
 }

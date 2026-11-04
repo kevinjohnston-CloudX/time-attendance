@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { isYears, PHOTO_DAY_CHOICES, RETENTION_YEARS, type RetentionCountry } from "./retention-rules";
 
 /**
  * A company's data protection settings, for EU companies: the rules a company
@@ -32,17 +33,38 @@ export interface DataProtection {
     /** REPLACE: swap the person's details for the anonymous name inside the change history. KEEP: leave the history as it is. */
     history: "REPLACE" | "KEEP";
   };
+  /**
+   * How long a leaver is kept before they are listed for anonymising: the
+   * years payroll and tax law ask for, counted from the end of the year they
+   * left. Nothing runs by itself; HR reviews the list, downloads it, and
+   * confirms. Needs anonymise on.
+   */
+  retention: {
+    enabled: boolean;
+    /** The country whose rules the period follows; null until one is chosen. */
+    country: RetentionCountry | null;
+    /** Null means the country's period ({@link RETENTION_YEARS}). */
+    years: number | null;
+  };
+  /** A leaver's time clock photo is listed for deletion this many days after they leave. */
+  leaverPhotos: { enabled: boolean; days: number };
 }
+
+export { isYears, PHOTO_DAY_CHOICES, RETENTION_COUNTRY_LABEL, RETENTION_YEARS, retentionYears, type RetentionCountry } from "./retention-rules";
 
 export const NO_DATA_PROTECTION: DataProtection = {
   noMedicalNotes: false,
   anonymise: { enabled: false, deletePhoto: true, deleteDocuments: true, history: "REPLACE" },
+  retention: { enabled: false, country: null, years: null },
+  leaverPhotos: { enabled: false, days: 30 },
 };
 
 /** Reads the stored value, treating anything missing or unexpected as off. */
 export function parseDataProtection(raw: unknown): DataProtection {
   const v = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const a = v.anonymise && typeof v.anonymise === "object" ? (v.anonymise as Record<string, unknown>) : {};
+  const r = v.retention && typeof v.retention === "object" ? (v.retention as Record<string, unknown>) : {};
+  const ph = v.leaverPhotos && typeof v.leaverPhotos === "object" ? (v.leaverPhotos as Record<string, unknown>) : {};
   const d = NO_DATA_PROTECTION.anonymise;
   return {
     noMedicalNotes: v.noMedicalNotes === true,
@@ -51,6 +73,15 @@ export function parseDataProtection(raw: unknown): DataProtection {
       deletePhoto: typeof a.deletePhoto === "boolean" ? a.deletePhoto : d.deletePhoto,
       deleteDocuments: typeof a.deleteDocuments === "boolean" ? a.deleteDocuments : d.deleteDocuments,
       history: a.history === "KEEP" ? "KEEP" : "REPLACE",
+    },
+    retention: {
+      enabled: r.enabled === true,
+      country: typeof r.country === "string" && r.country in RETENTION_YEARS ? (r.country as RetentionCountry) : null,
+      years: isYears(r.years) ? r.years : null,
+    },
+    leaverPhotos: {
+      enabled: ph.enabled === true,
+      days: PHOTO_DAY_CHOICES.includes(ph.days as never) ? (ph.days as number) : NO_DATA_PROTECTION.leaverPhotos.days,
     },
   };
 }

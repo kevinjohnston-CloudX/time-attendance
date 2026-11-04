@@ -9,14 +9,20 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-import { leaveTypeTakesNoNote, noteKeptOut, parseDataProtection, readablePii } from "./data-protection";
+import { leaveTypeTakesNoNote, noteKeptOut, parseDataProtection, readablePii, retentionYears } from "./data-protection";
 
 describe("parseDataProtection", () => {
   it("is all off for a company that never set it, as every existing company", () => {
-    const off = { noMedicalNotes: false, anonymise: { enabled: false, deletePhoto: true, deleteDocuments: true, history: "REPLACE" } };
+    const off = {
+      noMedicalNotes: false,
+      anonymise: { enabled: false, deletePhoto: true, deleteDocuments: true, history: "REPLACE" },
+      retention: { enabled: false, country: null, years: null },
+      leaverPhotos: { enabled: false, days: 30 },
+    };
     expect(parseDataProtection(null)).toEqual(off);
     expect(parseDataProtection({})).toEqual(off);
     expect(parseDataProtection({ noMedicalNotes: "yes", anonymise: { enabled: "yes" } })).toEqual(off);
+    expect(parseDataProtection({ retention: { enabled: "yes", country: "FR", years: 40 }, leaverPhotos: { enabled: 1, days: 7 } })).toEqual(off);
   });
 
   it("reads the switch when it is on", () => {
@@ -27,6 +33,17 @@ describe("parseDataProtection", () => {
       deleteDocuments: true,
       history: "KEEP",
     });
+  });
+});
+
+describe("retention settings", () => {
+  it("reads the country and the period, and falls back to the country's period", () => {
+    const r = parseDataProtection({ retention: { enabled: true, country: "NL" } }).retention;
+    expect(r).toEqual({ enabled: true, country: "NL", years: null });
+    expect(retentionYears(r)).toBe(7);
+    expect(retentionYears({ country: "DE", years: 8 })).toBe(8);
+    expect(retentionYears({ country: null, years: null })).toBeNull();
+    expect(parseDataProtection({ leaverPhotos: { enabled: true, days: 90 } }).leaverPhotos).toEqual({ enabled: true, days: 90 });
   });
 });
 

@@ -420,3 +420,64 @@ export async function buildPersonWorkbook(data: PersonExport, exportedAt: Date):
 
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
+
+/**
+ * Several people in one workbook, for the retention review: a cover sheet,
+ * one sheet per kind of record with each row led by whose it is, then the
+ * photos. With no sections it holds the photos alone. Times are on each
+ * person's own clock, as in the single export.
+ */
+export async function buildPeopleWorkbook(people: PersonExport[], exportedAt: Date, purpose: string): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "CloudTime";
+  workbook.created = exportedAt;
+  const zone = people[0]?.timeZone ?? "UTC";
+
+  const cover = workbook.addWorksheet("About this file");
+  cover.columns = [{ width: 28 }, { width: 70 }];
+  cover.addRow(["Personal data export"]).font = { bold: true, size: 14 };
+  cover.addRow([]);
+  cover.addRow(["Why", purpose]);
+  cover.addRow(["People", people.length]);
+  cover.addRow(["Exported", formatInstant(exportedAt, zone)]);
+  cover.addRow(["Times are shown in", "Each person's own time zone"]);
+  cover.addRow([]);
+  const who = cover.addRow(["Employee code", "Name"]);
+  who.font = { bold: true };
+  for (const p of people) cover.addRow([p.employeeCode, p.name]);
+
+  const titles = people[0]?.sections.map((s) => s.title) ?? [];
+  for (const title of titles) {
+    const first = people[0].sections.find((s) => s.title === title)!;
+    const sheet = workbook.addWorksheet(title.slice(0, 31));
+    sheet.columns = ["Employee code", "Name", ...first.columns].map((header) => ({ header, width: Math.min(Math.max(header.length + 4, 14), 40) }));
+    const top = sheet.getRow(1);
+    top.font = { bold: true, size: 10 };
+    top.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF4F4F5" } };
+    sheet.views = [{ state: "frozen", ySplit: 1 }];
+    let any = false;
+    for (const p of people) {
+      for (const row of p.sections.find((s) => s.title === title)?.rows ?? []) {
+        sheet.addRow([p.employeeCode, p.name, ...row.map((c) => (c == null ? "" : c))]);
+        any = true;
+      }
+    }
+    if (!any) sheet.addRow(["No records."]);
+  }
+
+  const withPhoto = people.filter((p) => p.photo);
+  if (withPhoto.length) {
+    const sheet = workbook.addWorksheet("Photos");
+    sheet.columns = [{ header: "Employee code", width: 16 }, { header: "Name", width: 28 }, { header: "Photo", width: 26 }];
+    sheet.getRow(1).font = { bold: true, size: 10 };
+    withPhoto.forEach((p, i) => {
+      const row = sheet.addRow([p.employeeCode, p.name, ""]);
+      row.height = 180;
+      row.alignment = { vertical: "top" };
+      const id = workbook.addImage({ buffer: p.photo!.bytes as unknown as ExcelJS.Buffer, extension: p.photo!.extension });
+      sheet.addImage(id, { tl: { col: 2, row: i + 1 }, ext: { width: 180, height: 240 } });
+    });
+  }
+
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
