@@ -28,15 +28,20 @@ import { BrandTile } from "./cloudtime-logo";
  * first and the launch screen lifts onto it, so the page never shows
  * underneath. Signed out, or on a phone that no longer has Face ID set up, it
  * steps aside rather than trap anyone. Offered once after sign in.
+ *
+ * <p>`onReady` runs once a signed in person is past the lock and the offer,
+ * so whatever asks next does not land on top of either.
  */
-export function AppLock() {
+export function AppLock({ onReady }: { onReady?: () => void }) {
   const { status } = useSession();
   // Read on the client's first render. The Overlay draws nothing until
   // hydration is over, so the server's unlocked first frame still matches.
   const [locked, setLocked] = useState(() => typeof window !== "undefined" && inPhoneApp() && appLocked());
   // undefined until the phone answers; null when it has nothing set up.
   const [method, setMethod] = useState<UnlockMethod | null | undefined>(undefined);
-  const [offerOpen, setOfferOpen] = useState(false);
+  // "due" covers the pause before the offer opens.
+  const [offer, setOffer] = useState<"none" | "due" | "open">("none");
+  const offerOpen = offer === "open";
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
 
@@ -75,7 +80,10 @@ export function AppLock() {
       setMethod(m);
       if (!m) return;
       if (appLocked()) void unlock();
-      else if (!appLockOn() && !appLockOffered()) offerTimer = window.setTimeout(() => setOfferOpen(true), 1500);
+      else if (!appLockOn() && !appLockOffered()) {
+        setOffer("due");
+        offerTimer = window.setTimeout(() => setOffer("open"), 1500);
+      }
     })();
     const stopWatching = onReturnAfterAway(() => {
       setLocked(true);
@@ -84,6 +92,7 @@ export function AppLock() {
     return () => {
       cancelled = true;
       window.clearTimeout(offerTimer);
+      setOffer((o) => (o === "due" ? "none" : o));
       stopWatching();
     };
   }, [status, unlock]);
@@ -94,11 +103,16 @@ export function AppLock() {
     const ok = await verifyOwner();
     setBusy(false);
     setAppLock(ok);
-    setOfferOpen(false);
+    setOffer("none");
   }
 
   const showLock = locked && status !== "unauthenticated" && method !== null;
   const methodName = method ?? "Face ID";
+
+  const ready = status === "authenticated" && method !== undefined && !showLock && offer === "none";
+  useEffect(() => {
+    if (ready) onReady?.();
+  }, [ready, onReady]);
 
   return (
     <>
@@ -150,7 +164,7 @@ export function AppLock() {
           onConfirm={() => void acceptOffer()}
           onCancel={() => {
             setAppLock(false);
-            setOfferOpen(false);
+            setOffer("none");
           }}
         >
           CloudTime will ask for {methodName} when it opens, or after 15 minutes away. Only on this phone. You can turn it off in the menu.
