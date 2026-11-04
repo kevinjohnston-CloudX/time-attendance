@@ -290,6 +290,17 @@ const LOCK_OFFERED_KEY = "cloudtime.app-lock-offered";
 const UNLOCKED_KEY = "cloudtime.unlocked";
 const AWAY_KEY = "cloudtime.away-since";
 
+/**
+ * Inline in the first HTML (app/layout.tsx), so the launch screen lifts as
+ * soon as the server's page draws instead of after the page's code has loaded
+ * and started, which on a phone is seconds later. Left to the lock when it is
+ * on and not yet passed this launch, so the page never shows under it.
+ */
+export const LIFT_LAUNCH_SCREEN_SCRIPT =
+  `try{var c=window.Capacitor;if(c&&c.isNativePlatform&&c.isNativePlatform()&&` +
+  `!(localStorage.getItem(${JSON.stringify(LOCK_KEY)})==="on"&&sessionStorage.getItem(${JSON.stringify(UNLOCKED_KEY)})!=="1"))` +
+  `c.Plugins.SplashScreen.hide()}catch(e){}`;
+
 /** Away this long and the app asks again. */
 export const LOCK_AFTER_MS = 15 * 60 * 1000;
 
