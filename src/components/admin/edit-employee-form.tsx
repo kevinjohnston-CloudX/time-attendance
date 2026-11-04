@@ -32,6 +32,7 @@ import {
   Copy,
   CircleDollarSign,
   Download,
+  UserX,
   ContactRound,
   ExternalLink,
   History,
@@ -46,6 +47,7 @@ import { PhotoViewer, ZoomableFace } from "@/components/presence/face";
 import { PhotoEditor } from "@/components/presence/photo-editor";
 import { RemovePhotoDialog } from "@/components/presence/remove-photo-dialog";
 import { PersonDataWindow } from "./person-data-window";
+import { AnonymiseWindow } from "./anonymise-window";
 import styles from "./employee-record.module.css";
 import { PayRatesTable } from "./pay-rates-table";
 import type { PayRateRow } from "@/actions/pay-rate.actions";
@@ -100,6 +102,8 @@ interface Props {
   canRemovePhoto?: boolean;
   /** Whether this viewer may download the person's data (EMPLOYEE_DATA_EXPORT). The download checks again. */
   canExportData?: boolean;
+  /** Whether to offer Anonymise: a leaver, in a company that switched it on, to someone who may. The action checks again. */
+  canAnonymise?: boolean;
   sites: Site[];
   departments: (Department & { sites: { site: Pick<Site, "id" | "name"> }[] })[];
   ruleSets: RuleSet[];
@@ -343,6 +347,7 @@ export function EditEmployeeForm({
   canEditPhoto,
   canRemovePhoto = false,
   canExportData = false,
+  canAnonymise = false,
   sites,
   departments,
   ruleSets,
@@ -379,6 +384,7 @@ export function EditEmployeeForm({
   const [zoomed, setZoomed] = useState<string | null>(null);
   const [editingPhoto, setEditingPhoto] = useState(false);
   const [exportingData, setExportingData] = useState(false);
+  const [anonymising, setAnonymising] = useState(false);
   const [removingPhoto, setRemovingPhoto] = useState(false);
   // The photo just saved here, until the server's own link catches up.
   const [photoSaved, setPhotoSaved] = useState<{ url: string | null } | null>(null);
@@ -844,6 +850,18 @@ export function EditEmployeeForm({
                       Export data
                     </Button>
                   )}
+                  {canAnonymise && (
+                    <Button
+                      type="button"
+                      hierarchy="secondary"
+                      tone="error"
+                      className="ta-phone-hide"
+                      onClick={() => setAnonymising(true)}
+                      leadingIcon={<UserX className="h-4 w-4" aria-hidden="true" />}
+                    >
+                      Anonymise
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     className="ta-header-primary"
@@ -974,6 +992,13 @@ export function EditEmployeeForm({
                     <button type="button" onClick={() => setExportingData(true)} className="ta-list-row">
                       <Download className={styles.phoneLinkIcon} aria-hidden="true" />
                       <span className="ta-list-title">Export data</span>
+                      <ChevronRight className="ta-list-chevron" aria-hidden="true" />
+                    </button>
+                  )}
+                  {canAnonymise && (
+                    <button type="button" onClick={() => setAnonymising(true)} className="ta-list-row">
+                      <UserX className={styles.phoneLinkIcon} aria-hidden="true" />
+                      <span className="ta-list-title">Anonymise</span>
                       <ChevronRight className="ta-list-chevron" aria-hidden="true" />
                     </button>
                   )}
@@ -1670,6 +1695,17 @@ export function EditEmployeeForm({
           name={employee.user.name ?? employee.employeeCode}
           employeeCode={employee.employeeCode}
           onClose={() => setExportingData(false)}
+        />
+      )}
+
+      {anonymising && (
+        <AnonymiseWindow
+          employeeId={employee.id}
+          onClose={() => setAnonymising(false)}
+          onDone={() => {
+            setAnonymising(false);
+            router.refresh();
+          }}
         />
       )}
 

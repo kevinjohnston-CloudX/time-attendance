@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import { db } from "@/lib/db";
-import { decryptPiiFields } from "@/lib/crypto/pii";
+import { decryptPii } from "@/lib/crypto/pii";
+import { readablePii } from "./data-protection";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 /**
@@ -99,7 +100,8 @@ export async function collectPersonData(tenantId: string, employeeId: string): P
   });
   if (!emp) return null;
 
-  const person = decryptPiiFields(emp);
+  // Encrypted and imported (stored as typed) values alike; see readablePii.
+  const person = readablePii(emp, decryptPii);
   const tz = personTimeZone(emp);
   const at = (d: Date | null | undefined) => formatInstant(d, tz);
 

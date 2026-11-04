@@ -17,14 +17,42 @@ export interface DataProtection {
    * is owed only the fact and the length of the absence.
    */
   noMedicalNotes: boolean;
+  /**
+   * Anonymising a person who has left: their identity is removed and their
+   * hours, timesheets, leave and pay history stay under "Former employee"
+   * and their employee code, for the years payroll and working time law
+   * require. Off means the action is not offered at all.
+   */
+  anonymise: {
+    enabled: boolean;
+    /** Delete the time clock photo, every stored copy and version of it. */
+    deletePhoto: boolean;
+    /** Delete the files uploaded to the record. */
+    deleteDocuments: boolean;
+    /** REPLACE: swap the person's details for the anonymous name inside the change history. KEEP: leave the history as it is. */
+    history: "REPLACE" | "KEEP";
+  };
 }
 
-export const NO_DATA_PROTECTION: DataProtection = { noMedicalNotes: false };
+export const NO_DATA_PROTECTION: DataProtection = {
+  noMedicalNotes: false,
+  anonymise: { enabled: false, deletePhoto: true, deleteDocuments: true, history: "REPLACE" },
+};
 
 /** Reads the stored value, treating anything missing or unexpected as off. */
 export function parseDataProtection(raw: unknown): DataProtection {
   const v = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
-  return { noMedicalNotes: v.noMedicalNotes === true };
+  const a = v.anonymise && typeof v.anonymise === "object" ? (v.anonymise as Record<string, unknown>) : {};
+  const d = NO_DATA_PROTECTION.anonymise;
+  return {
+    noMedicalNotes: v.noMedicalNotes === true,
+    anonymise: {
+      enabled: a.enabled === true,
+      deletePhoto: typeof a.deletePhoto === "boolean" ? a.deletePhoto : d.deletePhoto,
+      deleteDocuments: typeof a.deleteDocuments === "boolean" ? a.deleteDocuments : d.deleteDocuments,
+      history: a.history === "KEEP" ? "KEEP" : "REPLACE",
+    },
+  };
 }
 
 export async function companyDataProtection(tenantId: string | null | undefined): Promise<DataProtection> {
@@ -48,4 +76,22 @@ export async function noteKeptOut(employeeId: string, leaveTypeId: string): Prom
     db.leaveType.findUnique({ where: { id: leaveTypeId }, select: { category: true } }),
   ]);
   return leaveTypeTakesNoNote(parseDataProtection(emp?.tenant.dataProtection), type?.category);
+}
+
+/** iv:tag:ciphertext, as encryptPii writes. Anything else was stored as typed. */
+const ENCRYPTED = /^[0-9a-f]{24}:[0-9a-f]{32}:[0-9a-f]+$/;
+
+/**
+ * The person's contact fields as they really are. Ones saved from the
+ * employee form are encrypted; ones that arrived by import are stored as
+ * typed, and decryptPiiFields alone returns null for those, which would leave
+ * them out of an export and out of what anonymising looks for.
+ */
+export function readablePii<T extends Partial<Record<string, unknown>>>(record: T, decrypt: (v: string) => string | null): T {
+  const out: Record<string, unknown> = { ...record };
+  for (const f of ["phone", "phone2", "gender", "maritalStatus", "emergencyContact", "emergencyPhone", "emergencyRelationship", "address1", "address2", "city", "state", "country", "zipCode"]) {
+    const v = out[f];
+    if (typeof v === "string" && v) out[f] = ENCRYPTED.test(v) ? decrypt(v) : v.trim() || null;
+  }
+  return out as T;
 }

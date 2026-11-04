@@ -9,25 +9,33 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-import { leaveTypeTakesNoNote, noteKeptOut, parseDataProtection } from "./data-protection";
+import { leaveTypeTakesNoNote, noteKeptOut, parseDataProtection, readablePii } from "./data-protection";
 
 describe("parseDataProtection", () => {
   it("is all off for a company that never set it, as every existing company", () => {
-    expect(parseDataProtection(null)).toEqual({ noMedicalNotes: false });
-    expect(parseDataProtection({})).toEqual({ noMedicalNotes: false });
-    expect(parseDataProtection({ noMedicalNotes: "yes" })).toEqual({ noMedicalNotes: false });
+    const off = { noMedicalNotes: false, anonymise: { enabled: false, deletePhoto: true, deleteDocuments: true, history: "REPLACE" } };
+    expect(parseDataProtection(null)).toEqual(off);
+    expect(parseDataProtection({})).toEqual(off);
+    expect(parseDataProtection({ noMedicalNotes: "yes", anonymise: { enabled: "yes" } })).toEqual(off);
   });
 
   it("reads the switch when it is on", () => {
-    expect(parseDataProtection({ noMedicalNotes: true })).toEqual({ noMedicalNotes: true });
+    expect(parseDataProtection({ noMedicalNotes: true }).noMedicalNotes).toBe(true);
+    expect(parseDataProtection({ anonymise: { enabled: true, deletePhoto: false, history: "KEEP" } }).anonymise).toEqual({
+      enabled: true,
+      deletePhoto: false,
+      deleteDocuments: true,
+      history: "KEEP",
+    });
   });
 });
 
 describe("leaveTypeTakesNoNote", () => {
   it("only sick leave, only when switched on", () => {
-    expect(leaveTypeTakesNoNote({ noMedicalNotes: true }, "SICK")).toBe(true);
-    expect(leaveTypeTakesNoNote({ noMedicalNotes: true }, "PTO")).toBe(false);
-    expect(leaveTypeTakesNoNote({ noMedicalNotes: false }, "SICK")).toBe(false);
+    const on = { ...parseDataProtection(null), noMedicalNotes: true };
+    expect(leaveTypeTakesNoNote(on, "SICK")).toBe(true);
+    expect(leaveTypeTakesNoNote(on, "PTO")).toBe(false);
+    expect(leaveTypeTakesNoNote(parseDataProtection(null), "SICK")).toBe(false);
   });
 });
 
@@ -42,5 +50,13 @@ describe("noteKeptOut", () => {
     findEmployee.mockResolvedValueOnce({ tenant: { dataProtection: { noMedicalNotes: true } } });
     findLeaveType.mockResolvedValueOnce({ category: "SICK" });
     expect(await noteKeptOut("e1", "lt1")).toBe(true);
+  });
+});
+
+describe("readablePii", () => {
+  it("reads imported values as typed and encrypted ones through the key", () => {
+    const enc = "a".repeat(24) + ":" + "b".repeat(32) + ":c0ffee";
+    const out = readablePii({ phone: "555 0101", phone2: enc, city: "  ", name: "x" }, (v) => (v === enc ? "555 0202" : null));
+    expect(out).toEqual({ phone: "555 0101", phone2: "555 0202", city: null, name: "x" });
   });
 });

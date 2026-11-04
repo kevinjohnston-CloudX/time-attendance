@@ -223,7 +223,8 @@ function Item({ icon: Icon, title, body, count, loading }: { icon: LucideIcon; t
   );
 }
 
-function Shell({ title, subtitle, foot, onClose, children }: { title: string; subtitle: string; foot: ReactNode; onClose: () => void; children: ReactNode }) {
+/** The Export window's frame, shared by the personal data windows. */
+export function Shell({ title, subtitle, foot, onClose, children, glyph }: { title: string; subtitle: string; foot: ReactNode; onClose: () => void; children: ReactNode; glyph?: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
   useEffect(() => {
@@ -250,7 +251,7 @@ function Shell({ title, subtitle, foot, onClose, children }: { title: string; su
       <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="person-data-title" className={`${styles.window} ta-sheet`}>
         <header className={styles.head}>
           <span className={styles.glyph} aria-hidden="true">
-            <Download />
+            {glyph ?? <Download />}
           </span>
           <span className={styles.titles}>
             <h2 id="person-data-title" className={styles.title}>

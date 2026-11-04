@@ -7,6 +7,9 @@ import { photoUrls } from "@/lib/presence/photos";
 import { db } from "@/lib/db";
 import { buildPersonWorkbook, collectPersonData, type PersonExport } from "@/lib/privacy/person-export";
 import { companyDataProtection, type DataProtection } from "@/lib/privacy/data-protection";
+import { planAnonymise, runAnonymise } from "@/lib/privacy/anonymise";
+import { assertNotSenior } from "@/lib/rbac/scope";
+import { checkPermission } from "@/lib/rbac/check-permission";
 import { revalidatePath } from "next/cache";
 import type { Prisma } from "@prisma/client";
 
@@ -102,11 +105,19 @@ export const getDataProtection = withRBAC("EMPLOYEE_MANAGE", async (ctx, _input:
  */
 export const updateDataProtection = withRBAC(
   "EMPLOYEE_MANAGE",
-  async (ctx, input: { noMedicalNotes: boolean }) => {
+  async (ctx, input: { noMedicalNotes?: boolean; anonymise?: Partial<DataProtection["anonymise"]> }) => {
     if (!ctx.tenantId) throw new NotFoundError("This company isn't available to you.");
-    if (typeof input?.noMedicalNotes !== "boolean") throw new Error("Choose on or off.");
     const before = await companyDataProtection(ctx.tenantId);
-    const after: DataProtection = { ...before, noMedicalNotes: input.noMedicalNotes };
+    const a = input?.anonymise ?? {};
+    for (const k of ["enabled", "deletePhoto", "deleteDocuments"] as const) {
+      if (a[k] !== undefined && typeof a[k] !== "boolean") throw new Error("Choose on or off.");
+    }
+    if (input?.noMedicalNotes !== undefined && typeof input.noMedicalNotes !== "boolean") throw new Error("Choose on or off.");
+    if (a.history !== undefined && a.history !== "REPLACE" && a.history !== "KEEP") throw new Error("Choose how the change history is handled.");
+    const after: DataProtection = {
+      noMedicalNotes: input?.noMedicalNotes ?? before.noMedicalNotes,
+      anonymise: { ...before.anonymise, ...a },
+    };
     await db.tenant.update({ where: { id: ctx.tenantId }, data: { dataProtection: after as unknown as Prisma.InputJsonValue } });
     await writeAuditLog({
       tenantId: ctx.tenantId,
@@ -120,5 +131,67 @@ export const updateDataProtection = withRBAC(
     });
     revalidatePath("/admin/settings");
     return after;
+  }
+);
+
+// ─── Anonymise a person who has left (EU companies) ──────────────────────────
+
+/**
+ * Who may anonymise: someone who manages employee records (EMPLOYEE_MANAGE)
+ * and may export a person's data (EMPLOYEE_DATA_EXPORT), since the export is
+ * the only copy kept. Whose: one person in reach, as opening the record, never
+ * the caller and never someone ranked above them. Only in a company that has
+ * switched it on, and only for someone who has left.
+ */
+async function anonymiseContext(ctx: { employeeId: string; tenantId: string | null; role: string }, employeeId: string) {
+  if (!ctx.tenantId) throw new NotFoundError("This employee isn't available to you.");
+  if (!(await checkPermission("EMPLOYEE_DATA_EXPORT"))) throw new Error("You need permission to export employee data to anonymise someone.");
+  await assertRecordInReach(ctx, employeeId);
+  await assertNotSenior(ctx as Parameters<typeof assertNotSenior>[0], employeeId);
+  const settings = await companyDataProtection(ctx.tenantId);
+  return { tenantId: ctx.tenantId, settings };
+}
+
+/** What anonymising would do, read only, for the window. */
+export const getAnonymisePreview = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async (ctx, input: { employeeId: string }) => {
+    const { tenantId, settings } = await anonymiseContext(ctx, input.employeeId);
+    const emp = await db.employee.findFirst({ where: { id: input.employeeId, tenantId }, select: { id: true, barcode: true, wmsId: true, employeeCode: true } });
+    const photo = emp ? (await photoUrls(tenantId, [emp])).get(emp.id) : null;
+    const plan = await planAnonymise(tenantId, input.employeeId, settings, ctx.employeeId, !!photo);
+    if (!plan) throw new NotFoundError("This employee isn't available to you.");
+    return { ...plan, exportedAt: plan.exportedAt?.toISOString() ?? null, settings: settings.anonymise };
+  }
+);
+
+/**
+ * Anonymises the person. Every check of the preview is made again here, and
+ * the employee code must be typed exactly, so nothing runs by accident.
+ */
+export const anonymiseEmployee = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async (ctx, input: { employeeId: string; confirmCode: string }) => {
+    const { tenantId, settings } = await anonymiseContext(ctx, input.employeeId);
+    const plan = await planAnonymise(tenantId, input.employeeId, settings, ctx.employeeId, false);
+    if (!plan) throw new NotFoundError("This employee isn't available to you.");
+    if (plan.blockers.length) throw new Error(plan.blockers[0]);
+    if ((input.confirmCode ?? "").trim() !== plan.employeeCode) throw new Error(`Type the employee code ${plan.employeeCode} to confirm.`);
+
+    const result = await runAnonymise(tenantId, input.employeeId, settings);
+    if (!result) throw new NotFoundError("This employee isn't available to you.");
+
+    // Counts only: the entry must not keep what was just removed.
+    await writeAuditLog({
+      tenantId,
+      actorId: ctx.employeeId,
+      action: "PERSONAL_DATA_ANONYMISED",
+      entityType: "EMPLOYEE",
+      entityId: input.employeeId,
+      changes: { after: { ...result, settings: settings.anonymise } },
+    });
+    revalidatePath(`/admin/employees/${input.employeeId}`);
+    revalidatePath("/admin/employees");
+    return result;
   }
 );
