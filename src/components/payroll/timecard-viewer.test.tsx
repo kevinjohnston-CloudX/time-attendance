@@ -16,7 +16,7 @@ vi.mock("@/actions/timecard.actions", () => ({ ensureTimesheet }));
 vi.mock("@/components/payroll/add-timecard-entry", () => ({ AddTimecardEntry: () => null }));
 vi.mock("@/components/payroll/refused-scans-notice", () => ({ RefusedScansNotice: () => null }));
 vi.mock("@/components/payroll/timecard-lock-control", () => ({ TimecardLockControl: () => null }));
-vi.mock("@/components/layout/navigation-progress", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }) }));
+vi.mock("@/components/layout/navigation-progress", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }), useNavigationTarget: () => null }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }), useSearchParams: () => new URLSearchParams(), usePathname: () => "/payroll/timecards" }));
 
 import { TimecardViewer } from "./timecard-viewer";
