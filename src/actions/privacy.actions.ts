@@ -435,3 +435,28 @@ export const runRetentionBatch = withRBAC(
     return result;
   },
 );
+
+// ─── Company data export (EU Data Act, switching provider) ───────────────────
+
+/**
+ * Checks who may download the whole company's data and records that they
+ * did, before the download route streams it. Who: COMPANY_DATA_EXPORT, which
+ * System Admins hold and any other role only when the company ticks Company
+ * Data, Execute. Whose: the caller's own company, never another.
+ */
+export const startCompanyExport = withRBAC("COMPANY_DATA_EXPORT", async (ctx, input: { photos: boolean }) => {
+  if (!ctx.tenantId) throw new NotFoundError("This company isn't available to you.");
+  const tenant = await db.tenant.findUnique({ where: { id: ctx.tenantId }, select: { name: true } });
+  if (!tenant) throw new NotFoundError("This company isn't available to you.");
+  await writeAuditLog({
+    tenantId: ctx.tenantId,
+    actorId: ctx.employeeId,
+    action: "COMPANY_DATA_EXPORTED",
+    // Company level entries are filed under pay periods with the company as
+    // the record, as the settings are: the log has no company type.
+    entityType: "PAY_PERIOD",
+    entityId: ctx.tenantId,
+    changes: { after: { photos: input?.photos === true } },
+  });
+  return { tenantId: ctx.tenantId, name: tenant.name };
+});

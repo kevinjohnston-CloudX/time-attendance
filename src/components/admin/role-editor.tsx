@@ -59,6 +59,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   role: "Roles",
   presence: "Live Attendance",
   photo: "Time Clock Photos",
+  company: "Company Data",
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -183,6 +184,12 @@ const RESOURCE_INFO: Record<string, PermInfo> = {
     summary: "Controls who can remove an employee's time clock photo. Updating a photo is Live Attendance Write.",
     cells: {
       "write:all": "Remove an employee's photo from Live Attendance, so their next scan at a time clock takes a new one. A copy of the removed photo is kept.",
+    },
+  },
+  company: {
+    summary: "Controls exporting all of the company's data at once.",
+    cells: {
+      "execute:all": "Download everything CloudTime holds for the whole company in one file, to move it to another system. Every download is recorded.",
     },
   },
   role: {
