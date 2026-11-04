@@ -2,14 +2,27 @@ import { describe, expect, it, vi } from "vitest";
 
 const findEmployee = vi.fn();
 const findLeaveType = vi.fn();
+const findTenant = vi.fn();
+const findEmployees = vi.fn();
 vi.mock("@/lib/db", () => ({
   db: {
-    employee: { findUnique: (...a: unknown[]) => findEmployee(...a) },
+    tenant: { findUnique: (...a: unknown[]) => findTenant(...a) },
+    employee: { findUnique: (...a: unknown[]) => findEmployee(...a), findMany: (...a: unknown[]) => findEmployees(...a) },
     leaveType: { findUnique: (...a: unknown[]) => findLeaveType(...a) },
   },
 }));
 
-import { leaveTypeTakesNoNote, noteKeptOut, parseDataProtection, readablePii, retentionYears } from "./data-protection";
+import {
+  companyBlocks,
+  forgetDataProtection,
+  leaveTypeTakesNoNote,
+  noteKeptOut,
+  parseDataProtection,
+  photoOffAt,
+  photoOffIds,
+  readablePii,
+  retentionYears,
+} from "./data-protection";
 
 describe("parseDataProtection", () => {
   it("is all off for a company that never set it, as every existing company", () => {
@@ -18,6 +31,8 @@ describe("parseDataProtection", () => {
       anonymise: { enabled: false, deletePhoto: true, deleteDocuments: true, history: "REPLACE" },
       retention: { enabled: false, country: null, years: null },
       leaverPhotos: { enabled: false, days: 30 },
+      liveBoardsOff: false,
+      clockPhotos: { off: "NONE", siteIds: [] },
     };
     expect(parseDataProtection(null)).toEqual(off);
     expect(parseDataProtection({})).toEqual(off);
@@ -75,5 +90,43 @@ describe("readablePii", () => {
     const enc = "a".repeat(24) + ":" + "b".repeat(32) + ":c0ffee";
     const out = readablePii({ phone: "555 0101", phone2: enc, city: "  ", name: "x" }, (v) => (v === enc ? "555 0202" : null));
     expect(out).toEqual({ phone: "555 0101", phone2: "555 0202", city: null, name: "x" });
+  });
+});
+
+describe("Live Attendance and time clock photos", () => {
+  it("takes nothing away from a company that has not switched anything", async () => {
+    forgetDataProtection("t-us");
+    findTenant.mockResolvedValueOnce({ dataProtection: null });
+    expect(await companyBlocks("t-us", "PRESENCE_VIEW_ANY")).toBe(false);
+    expect(await photoOffIds("t-us", ["e1"])).toEqual(new Set());
+    expect(findEmployees).not.toHaveBeenCalled();
+  });
+
+  it("asks nothing for permissions other than Live Attendance's", async () => {
+    findTenant.mockClear();
+    expect(await companyBlocks("t-x", "EMPLOYEE_MANAGE")).toBe(false);
+    expect(findTenant).not.toHaveBeenCalled();
+  });
+
+  it("closes Live Attendance for a company that turned it off, read once a minute", async () => {
+    forgetDataProtection("t-eu");
+    findTenant.mockClear();
+    findTenant.mockResolvedValueOnce({ dataProtection: { liveBoardsOff: true } });
+    expect(await companyBlocks("t-eu", "PRESENCE_VIEW_ANY")).toBe(true);
+    expect(await companyBlocks("t-eu", "PRESENCE_PHOTO_EDIT")).toBe(true);
+    expect(findTenant).toHaveBeenCalledTimes(1);
+  });
+
+  it("turns photos off by the person's own site", async () => {
+    const some = parseDataProtection({ clockPhotos: { off: "SOME", siteIds: ["de1"] } });
+    expect(photoOffAt(some, "de1")).toBe(true);
+    expect(photoOffAt(some, "us1")).toBe(false);
+    expect(photoOffAt(parseDataProtection({ clockPhotos: { off: "ALL" } }), "us1")).toBe(true);
+    expect(photoOffAt(parseDataProtection(null), "de1")).toBe(false);
+
+    forgetDataProtection("t-eu2");
+    findTenant.mockResolvedValueOnce({ dataProtection: { clockPhotos: { off: "SOME", siteIds: ["de1"] } } });
+    findEmployees.mockResolvedValueOnce([{ id: "e-de" }]);
+    expect(await photoOffIds("t-eu2", ["e-de", "e-us"])).toEqual(new Set(["e-de"]));
   });
 });

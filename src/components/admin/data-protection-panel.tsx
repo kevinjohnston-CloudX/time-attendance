@@ -2,7 +2,7 @@
 
 import { useState, useTransition, type CSSProperties } from "react";
 import { ShieldCheck } from "lucide-react";
-import { Banner, Button, SegmentedControl, Select, Switch } from "@/components/ui";
+import { Banner, Button, Checkbox, SegmentedControl, Select, Switch } from "@/components/ui";
 import { updateDataProtection } from "@/actions/privacy.actions";
 import type { DataProtection } from "@/lib/privacy/data-protection";
 import { PHOTO_DAY_CHOICES, RETENTION_COUNTRY_LABEL, RETENTION_YEARS, retentionYears, type RetentionCountry } from "@/lib/privacy/retention-rules";
@@ -22,13 +22,16 @@ type Change = {
   anonymise?: Partial<DataProtection["anonymise"]>;
   retention?: Partial<DataProtection["retention"]>;
   leaverPhotos?: Partial<DataProtection["leaverPhotos"]>;
+  liveBoardsOff?: boolean;
+  clockPhotos?: DataProtection["clockPhotos"];
 };
 
 const TITLE: CSSProperties = { font: "var(--weight-semibold) 14px/20px var(--font-sans)", color: "var(--text-primary)" };
 const LINE: CSSProperties = { font: "var(--type-body2)", color: "var(--text-secondary)", textWrap: "pretty" };
 
 /** `canReview`: the caller may also export people's data, which the review downloads. */
-export function DataProtectionPanel({ initial, canReview }: { initial: DataProtection; canReview: boolean }) {
+/** `sites`: the company's sites, for turning photos off at some of them. */
+export function DataProtectionPanel({ initial, canReview, sites }: { initial: DataProtection; canReview: boolean; sites: { id: string; name: string }[] }) {
   const [reviewing, setReviewing] = useState(false);
   const [settings, setSettings] = useState(initial);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +47,8 @@ export function DataProtectionPanel({ initial, canReview }: { initial: DataProte
       anonymise: { ...settings.anonymise, ...change.anonymise },
       retention: { ...settings.retention, ...change.retention },
       leaverPhotos: { ...settings.leaverPhotos, ...change.leaverPhotos },
+      liveBoardsOff: change.liveBoardsOff ?? settings.liveBoardsOff,
+      clockPhotos: change.clockPhotos ?? settings.clockPhotos,
     });
     startTransition(async () => {
       const res = await updateDataProtection(change);
@@ -56,6 +61,20 @@ export function DataProtectionPanel({ initial, canReview }: { initial: DataProte
       setSaved(true);
     });
   }
+
+  const offNames = sites.filter((x) => settings.clockPhotos.siteIds.includes(x.id)).map((x) => x.name);
+  const photosOutcome =
+    settings.clockPhotos.off === "ALL"
+      ? "Off at every site. The time clocks are told not to take a photo, and CloudTime shows none."
+      : settings.clockPhotos.off === "SOME"
+        ? offNames.length
+          ? `Off for people based at ${offNames.join(", ")}. The time clocks are told not to take their photo, and CloudTime does not show it.`
+          : "Choose the sites below. Until then photos are taken everywhere."
+        : "Taken at every site, as today.";
+  const toggleSite = (id: string, on: boolean) => {
+    const ids = on ? [...settings.clockPhotos.siteIds, id] : settings.clockPhotos.siteIds.filter((x) => x !== id);
+    save({ clockPhotos: { off: "SOME", siteIds: ids } });
+  };
 
   const years = retentionYears(settings.retention);
   const countryYears = settings.retention.country ? RETENTION_YEARS[settings.retention.country] : null;
@@ -83,7 +102,7 @@ export function DataProtectionPanel({ initial, canReview }: { initial: DataProte
             Data Protection
           </h2>
           <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)", textWrap: "pretty" }}>
-            For companies whose people work in the EU or the UK. Off for a company that does not use it.
+            For companies whose people work in the EU or the UK. A company that has not changed these works as it always has.
           </span>
         </span>
       </div>
@@ -102,6 +121,59 @@ export function DataProtectionPanel({ initial, canReview }: { initial: DataProte
           </span>
         </span>
         <Switch checked={settings.noMedicalNotes} onChange={(on) => save({ noMedicalNotes: on })} disabled={pending} label={<span className="sr-only">Keep medical details out of sick leave</span>} />
+      </div>
+
+      <div className="flex items-start gap-3 py-3" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span style={TITLE}>Live Attendance</span>
+          <span style={LINE}>
+            {settings.liveBoardsOff
+              ? "Off. Live Attendance is closed for everyone in the company, admins included. Time clocks and gates keep working."
+              : "On. People whose role includes Live Attendance see who is in the building."}
+          </span>
+        </span>
+        <Switch
+          checked={!settings.liveBoardsOff}
+          onChange={(on) => save({ liveBoardsOff: !on })}
+          disabled={pending}
+          label={<span className="sr-only">Live Attendance</span>}
+        />
+      </div>
+
+      <div className="flex flex-col gap-1.5 py-3" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
+        <span style={TITLE}>Time clock photos</span>
+        <div className="self-start">
+          <SegmentedControl
+            items={[
+              { value: "NONE", label: "Every site" },
+              ...(sites.length > 1 ? [{ value: "SOME", label: "Some sites" }] : []),
+              { value: "ALL", label: "No site" },
+            ]}
+            value={settings.clockPhotos.off}
+            onChange={(v) => save({ clockPhotos: { off: v as DataProtection["clockPhotos"]["off"], siteIds: v === "SOME" ? settings.clockPhotos.siteIds : [] } })}
+            ariaLabel="Time clock photos"
+          />
+        </div>
+        <span style={LINE}>{photosOutcome}</span>
+        {settings.clockPhotos.off === "SOME" && (
+          <div className="flex flex-col gap-1.5 pl-4 pt-1" style={{ borderLeft: "2px solid var(--stroke-divider)", marginLeft: 2 }}>
+            <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>No photos for people based at</span>
+            {sites.map((x) => (
+              <Checkbox
+                key={x.id}
+                checked={settings.clockPhotos.siteIds.includes(x.id)}
+                onChange={(on) => toggleSite(x.id, on)}
+                disabled={pending}
+                label={<span className="truncate" style={{ font: "var(--type-body1)", color: "var(--text-primary)" }}>{x.name}</span>}
+              />
+            ))}
+          </div>
+        )}
+        {settings.clockPhotos.off !== "NONE" && (
+          <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)", textWrap: "pretty" }}>
+            The time clock app has to be updated to follow this. Photos already taken stay until they are removed.
+          </span>
+        )}
       </div>
 
       <div className="flex items-start gap-3 py-3" style={{ borderTop: "1px solid var(--stroke-divider)" }}>

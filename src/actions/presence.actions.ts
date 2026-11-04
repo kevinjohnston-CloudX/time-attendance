@@ -6,6 +6,7 @@ import { getPresenceBoard, getPresenceDetail, getViewableSites } from "@/lib/pre
 import { getScanLog, type ScanLogInput } from "@/lib/presence/scan-log.service";
 import { getSiteDay } from "@/lib/presence/movements.service";
 import { MAX_PHOTO_BYTES, removePhoto, savePhoto } from "@/lib/presence/photos";
+import { photoOffIds } from "@/lib/privacy/data-protection";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { MAX_PICKED, peopleByIds, reachable, resolveNames, suggestPeople } from "@/lib/presence/people-search.service";
 import { gateReadsCloudTimeSchedule } from "@/lib/presence/gate-schedule";
@@ -207,6 +208,7 @@ export const updateEmployeePhoto = withRBAC("PRESENCE_PHOTO_EDIT", async ({ tena
     select: { id: true, barcode: true, wmsId: true, employeeCode: true },
   });
   if (!person) throw new Error("NOT_FOUND");
+  if ((await photoOffIds(tenantId, [person.id])).size) throw new Error("Time clock photos are turned off for this person's site in Company Settings.");
 
   const saved = await savePhoto(tenantId, person, new Uint8Array(await photo.arrayBuffer()));
   await writeAuditLog({

@@ -8,6 +8,7 @@ import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { WMS_TERMINATION_ENDS_EMPLOYMENT, employmentEnded, madeActiveAt } from "@/lib/presence/employment";
 import { CLIENT_DEPARTMENT_SHOWN, isClientBadge } from "@/lib/utils/client-badge";
+import { cachedDataProtection, photoOffAt } from "@/lib/privacy/data-protection";
 
 /**
  * May this badge scan right now, and who is it?
@@ -241,6 +242,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     });
   }
 
+  // Data Protection may turn the time clock photo off for the person's site.
+  // Read from memory (a minute per server), so the check costs no query.
+  const takePhoto = !photoOffAt(await cachedDataProtection(employee.tenantId), employee.siteId);
+
   // The tablet greets people by the name the floor knows them by: the WMS name
   // when the roster sync has one, else the legal name (see shown-name.ts).
   const name = shownNameOrNull(employee) ?? "";
@@ -273,6 +278,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     /// legacy check — the site is not gated, or its gate has gone quiet, and in
     /// neither case does CloudTime's silence say anything about the person.
     gateActive,
+    /// Whether the kiosk may take this person's photo. False only where the
+    /// company turned time clock photos off for their site (Data Protection).
+    /// The kiosk has to honour it; a build that does not read it still takes one.
+    takePhoto,
     timezone,
     asOf: today,
   });

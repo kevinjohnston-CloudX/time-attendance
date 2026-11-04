@@ -48,6 +48,19 @@ export interface DataProtection {
   };
   /** A leaver's time clock photo is listed for deletion this many days after they leave. */
   leaverPhotos: { enabled: boolean; days: number };
+  /**
+   * Live Attendance closed for the whole company, admins included, for a
+   * company whose works council has not agreed to it. The time clocks and
+   * gates keep working; only the boards and what they show go.
+   */
+  liveBoardsOff: boolean;
+  /**
+   * Where the time clock takes a photo. NONE: every site, as today. SOME: not
+   * at the sites listed. ALL: at no site. Follows the person's own site. The
+   * tablet is told with each badge check and has to honour it; CloudTime
+   * stops showing and replacing the photo of anyone it is off for.
+   */
+  clockPhotos: { off: "NONE" | "SOME" | "ALL"; siteIds: string[] };
 }
 
 export { isYears, PHOTO_DAY_CHOICES, RETENTION_COUNTRY_LABEL, RETENTION_YEARS, retentionYears, type RetentionCountry } from "./retention-rules";
@@ -57,6 +70,8 @@ export const NO_DATA_PROTECTION: DataProtection = {
   anonymise: { enabled: false, deletePhoto: true, deleteDocuments: true, history: "REPLACE" },
   retention: { enabled: false, country: null, years: null },
   leaverPhotos: { enabled: false, days: 30 },
+  liveBoardsOff: false,
+  clockPhotos: { off: "NONE", siteIds: [] },
 };
 
 /** Reads the stored value, treating anything missing or unexpected as off. */
@@ -64,6 +79,7 @@ export function parseDataProtection(raw: unknown): DataProtection {
   const v = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const a = v.anonymise && typeof v.anonymise === "object" ? (v.anonymise as Record<string, unknown>) : {};
   const r = v.retention && typeof v.retention === "object" ? (v.retention as Record<string, unknown>) : {};
+  const cp = v.clockPhotos && typeof v.clockPhotos === "object" ? (v.clockPhotos as Record<string, unknown>) : {};
   const ph = v.leaverPhotos && typeof v.leaverPhotos === "object" ? (v.leaverPhotos as Record<string, unknown>) : {};
   const d = NO_DATA_PROTECTION.anonymise;
   return {
@@ -83,6 +99,11 @@ export function parseDataProtection(raw: unknown): DataProtection {
       enabled: ph.enabled === true,
       days: PHOTO_DAY_CHOICES.includes(ph.days as never) ? (ph.days as number) : NO_DATA_PROTECTION.leaverPhotos.days,
     },
+    liveBoardsOff: v.liveBoardsOff === true,
+    clockPhotos: {
+      off: cp.off === "SOME" || cp.off === "ALL" ? cp.off : "NONE",
+      siteIds: Array.isArray(cp.siteIds) ? cp.siteIds.filter((x): x is string => typeof x === "string") : [],
+    },
   };
 }
 
@@ -90,6 +111,62 @@ export async function companyDataProtection(tenantId: string | null | undefined)
   if (!tenantId) return NO_DATA_PROTECTION;
   const t = await db.tenant.findUnique({ where: { id: tenantId }, select: { dataProtection: true } });
   return parseDataProtection(t?.dataProtection);
+}
+
+/**
+ * The company's settings for checks that run on every request (permissions,
+ * photos, the tablet's badge check), kept a minute per server so those cost
+ * a lookup in memory, not a query. A change reaches every server within that
+ * minute; the server that saved it forgets at once.
+ */
+const CACHE_MS = 60_000;
+const cached = new Map<string, { at: number; value: Promise<DataProtection> }>();
+
+export function cachedDataProtection(tenantId: string | null | undefined): Promise<DataProtection> {
+  if (!tenantId) return Promise.resolve(NO_DATA_PROTECTION);
+  const hit = cached.get(tenantId);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
+  const value = companyDataProtection(tenantId).catch(() => {
+    // A failed read is not kept, and counts as nothing switched on.
+    cached.delete(tenantId);
+    return NO_DATA_PROTECTION;
+  });
+  cached.set(tenantId, { at: Date.now(), value });
+  return value;
+}
+
+export function forgetDataProtection(tenantId: string): void {
+  cached.delete(tenantId);
+}
+
+/**
+ * The permissions a company's switches take away from everyone in it: the
+ * Live Attendance ones while the boards are off. Empty for every company
+ * that has not switched anything, and asked only for those permissions, so
+ * every other check costs nothing.
+ */
+export async function companyBlocks(tenantId: string | null | undefined, permission: string): Promise<boolean> {
+  if (!tenantId || !permission.startsWith("PRESENCE_")) return false;
+  return (await cachedDataProtection(tenantId)).liveBoardsOff;
+}
+
+/** Whether the time clock photo is off for someone based at this site. */
+export function photoOffAt(settings: DataProtection, siteId: string | null | undefined): boolean {
+  const { off, siteIds } = settings.clockPhotos;
+  return off === "ALL" || (off === "SOME" && !!siteId && siteIds.includes(siteId));
+}
+
+/**
+ * Of these people, the ones whose time clock photo is off. No query for a
+ * company that has not turned photos off anywhere; one for some sites.
+ */
+export async function photoOffIds(tenantId: string, ids: string[]): Promise<Set<string>> {
+  const { off, siteIds } = (await cachedDataProtection(tenantId)).clockPhotos;
+  if (off === "NONE" || ids.length === 0) return new Set();
+  if (off === "ALL") return new Set(ids);
+  if (siteIds.length === 0) return new Set();
+  const rows = await db.employee.findMany({ where: { tenantId, id: { in: ids }, siteId: { in: siteIds } }, select: { id: true } });
+  return new Set(rows.map((r) => r.id));
 }
 
 /** Whether a leave type of this category takes no note in a company with these settings. */

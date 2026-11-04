@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { buildPeopleWorkbook, buildPersonWorkbook, collectPersonData, type PersonExport } from "@/lib/privacy/person-export";
 import {
   companyDataProtection,
+  forgetDataProtection,
   isYears,
   PHOTO_DAY_CHOICES,
   RETENTION_YEARS,
@@ -58,7 +59,7 @@ async function photoFor(tenantId: string, employeeId: string): Promise<PersonExp
     select: { id: true, barcode: true, wmsId: true, employeeCode: true },
   });
   if (!emp) return null;
-  const url = (await photoUrls(tenantId, [emp])).get(emp.id);
+  const url = (await photoUrls(tenantId, [emp], { evenWhereOff: true })).get(emp.id);
   if (!url) return null;
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
@@ -121,6 +122,8 @@ export const updateDataProtection = withRBAC(
       anonymise?: Partial<DataProtection["anonymise"]>;
       retention?: Partial<DataProtection["retention"]>;
       leaverPhotos?: Partial<DataProtection["leaverPhotos"]>;
+      liveBoardsOff?: boolean;
+      clockPhotos?: DataProtection["clockPhotos"];
     },
   ) => {
     if (!ctx.tenantId) throw new NotFoundError("This company isn't available to you.");
@@ -133,6 +136,16 @@ export const updateDataProtection = withRBAC(
     if (r.years !== undefined && r.years !== null && !isYears(r.years)) throw new Error("Choose between 1 and 10 years.");
     if (ph.enabled !== undefined && typeof ph.enabled !== "boolean") throw new Error("Choose on or off.");
     if (ph.days !== undefined && !PHOTO_DAY_CHOICES.includes(ph.days as never)) throw new Error("Choose a number of days from the list.");
+    if (input?.liveBoardsOff !== undefined && typeof input.liveBoardsOff !== "boolean") throw new Error("Choose on or off.");
+    const cp = input?.clockPhotos;
+    if (cp !== undefined) {
+      if (!cp || !["NONE", "SOME", "ALL"].includes(cp.off) || !Array.isArray(cp.siteIds) || cp.siteIds.some((x) => typeof x !== "string")) {
+        throw new Error("Choose where photos are taken.");
+      }
+      // Only this company's sites.
+      const own = await db.site.count({ where: { tenantId: ctx.tenantId, id: { in: cp.siteIds } } });
+      if (own !== new Set(cp.siteIds).size) throw new NotFoundError("A site you chose isn't available. Reload the page and try again.");
+    }
     for (const k of ["enabled", "deletePhoto", "deleteDocuments"] as const) {
       if (a[k] !== undefined && typeof a[k] !== "boolean") throw new Error("Choose on or off.");
     }
@@ -143,6 +156,8 @@ export const updateDataProtection = withRBAC(
       anonymise: { ...before.anonymise, ...a },
       retention: { ...before.retention, ...r, country: (r.country !== undefined ? r.country : before.retention.country) as RetentionCountry | null },
       leaverPhotos: { ...before.leaverPhotos, ...ph },
+      liveBoardsOff: input?.liveBoardsOff ?? before.liveBoardsOff,
+      clockPhotos: cp ? { off: cp.off, siteIds: cp.off === "SOME" ? [...new Set(cp.siteIds)] : [] } : before.clockPhotos,
     };
     // Retention anonymises, so it cannot be on while anonymising is off.
     if (!after.anonymise.enabled) after.retention.enabled = false;
@@ -158,6 +173,7 @@ export const updateDataProtection = withRBAC(
       entityId: ctx.tenantId,
       changes: { before: { dataProtection: before }, after: { dataProtection: after } },
     });
+    forgetDataProtection(ctx.tenantId);
     revalidatePath("/admin/settings");
     return after;
   }
@@ -188,7 +204,7 @@ export const getAnonymisePreview = withRBAC(
     // company-scope-ok: anonymiseContext holds the person to the caller's reach (assertRecordInReach)
     const { tenantId, settings } = await anonymiseContext(ctx, input.employeeId);
     const emp = await db.employee.findFirst({ where: { id: input.employeeId, tenantId }, select: { id: true, barcode: true, wmsId: true, employeeCode: true } });
-    const photo = emp ? (await photoUrls(tenantId, [emp])).get(emp.id) : null;
+    const photo = emp ? (await photoUrls(tenantId, [emp], { evenWhereOff: true })).get(emp.id) : null;
     const plan = await planAnonymise(tenantId, input.employeeId, settings, ctx.employeeId, !!photo);
     if (!plan) throw new NotFoundError("This employee isn't available to you.");
     return { ...plan, exportedAt: plan.exportedAt?.toISOString() ?? null, settings: settings.anonymise };

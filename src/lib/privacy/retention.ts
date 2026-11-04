@@ -93,7 +93,7 @@ export async function photosDue(reach: Reach, settings: DataProtection, now: Dat
     orderBy: [{ terminatedAt: "asc" }, { employeeCode: "asc" }],
     select: { id: true, employeeCode: true, barcode: true, wmsId: true, terminatedAt: true, user: { select: { name: true } } },
   });
-  const urls = await photoUrls(reach.tenantId, rows);
+  const urls = await photoUrls(reach.tenantId, rows, { evenWhereOff: true });
   const withPhoto = rows.filter((r) => urls.get(r.id));
   return { count: withPhoto.length, batch: withPhoto.slice(0, RETENTION_BATCH).map(asDue) };
 }

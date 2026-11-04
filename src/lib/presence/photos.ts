@@ -1,6 +1,7 @@
 import { CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { db } from "@/lib/db";
+import { photoOffIds } from "@/lib/privacy/data-protection";
 
 /**
  * The time clock tablets' photos, one per person, kept in a private S3 bucket
@@ -175,13 +176,28 @@ async function photoKeys(
   return out;
 }
 
-/** A signed photo link per person id, or null where there is no photo to point at. */
-export async function photoUrls(tenantId: string, people: PhotoPerson[]): Promise<Map<string, string | null>> {
+/**
+ * A signed photo link per person id, or null where there is no photo to point at.
+ *
+ * <p>Null too for someone whose site has time clock photos turned off in Data
+ * Protection, so no screen shows it. `evenWhereOff` is for the privacy tools
+ * only (a person's data export, anonymising, the retention review), which
+ * must find the photo because it is still stored.
+ */
+export async function photoUrls(tenantId: string, people: PhotoPerson[], { evenWhereOff = false }: { evenWhereOff?: boolean } = {}): Promise<Map<string, string | null>> {
   const store = s3();
   const out = new Map<string, string | null>();
   if (!store || people.length === 0) {
     for (const p of people) out.set(p.id, null);
     return out;
+  }
+  if (!evenWhereOff) {
+    const off = await photoOffIds(tenantId, people.map((p) => p.id));
+    if (off.size) {
+      for (const id of off) out.set(id, null);
+      people = people.filter((p) => !off.has(p.id));
+      if (people.length === 0) return out;
+    }
   }
 
   let keys: Map<string, string | null>;
