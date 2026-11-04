@@ -51,6 +51,8 @@ type CapacitorBridge = {
       getBrightness(): Promise<{ brightness: number }> | { brightness: number };
       setBrightness(options: { brightness: number }): Promise<void> | void;
     };
+    // The iPhone shell's own (SceneDelegate.swift): saves and puts back the level itself.
+    BadgeScreen?: { raise(): Promise<void> | void; restore(): Promise<void> | void };
     PushNotifications?: {
       checkPermissions(): Promise<{ receive: PermissionState }> | { receive: PermissionState };
       requestPermissions(): Promise<{ receive: PermissionState }> | { receive: PermissionState };
@@ -424,41 +426,72 @@ export function onReturnAfterAway(cb: () => void): () => void {
 
 /**
  * Full brightness while a badge is on screen, so the door reader sees the
- * code at once; the returned function puts the screen back. Leaving the app
- * returns the phone to its own setting by itself on iOS, so coming back asks
- * for full brightness again. Nothing happens in a browser, which cannot change
- * the screen, or in an app build without the plugin.
+ * code at once; the returned function puts the screen back. iOS keeps a level
+ * an app sets even after the app leaves, so the person's own level must go
+ * back on every way out: leaving the page, the app switcher, locking, closing.
+ * The iPhone shell does that natively (BadgeScreen), since the page may not
+ * run once the phone locks. Builds without it, and Android, use the plugin:
+ * Android's level belongs to the app's window and ends with it. Nothing
+ * happens in a browser, which cannot change the screen.
  */
 export function brightenScreen(): () => void {
+  const native = bridge()?.Plugins.BadgeScreen;
+  if (native) {
+    void settle(() => native.raise());
+    return () => void settle(() => native.restore());
+  }
   const sb = bridge()?.Plugins.ScreenBrightness;
   if (!sb) return () => {};
   const android = bridge()?.getPlatform?.() === "android";
-  let before: number | undefined;
   let done = false;
-  void settle(() => sb.getBrightness()).then((r) => {
+  void brightness.raise(sb);
+  const stopWatch = onAppActive((active) => {
     if (done) return;
-    before = r?.brightness;
-    void settle(() => sb.setBrightness({ brightness: 1 }));
-  });
-  const stopReturn = onAppActive(() => {
-    if (!done) void settle(() => sb.setBrightness({ brightness: 1 }));
+    void (active ? brightness.raise(sb) : brightness.putBack(sb, android));
   });
   return () => {
     done = true;
-    stopReturn();
-    // Android takes -1 as "the system's own"; iOS has no such value, so it
-    // gets back what it had.
-    const back = android ? -1 : before;
-    if (back !== undefined) void settle(() => sb.setBrightness({ brightness: back }));
+    stopWatch();
+    void brightness.putBack(sb, android);
   };
 }
 
-function onAppActive(cb: () => void): () => void {
+type Brightness = NonNullable<CapacitorBridge["Plugins"]["ScreenBrightness"]>;
+
+/**
+ * One saved level for the whole page, kept until it is put back, and every
+ * change run in order. Opening the badge twice, or coming back before the
+ * last put back landed, never saves the full level as the person's own.
+ */
+const brightness = (() => {
+  let saved: number | undefined;
+  let queue: Promise<unknown> = Promise.resolve();
+  const inOrder = (step: () => Promise<unknown>) => (queue = queue.then(step, step));
+  return {
+    raise: (sb: Brightness) =>
+      inOrder(async () => {
+        if (saved === undefined) {
+          saved = (await settle(() => sb.getBrightness()))?.brightness;
+          if (saved === undefined) return; // cannot put it back, so do not raise it
+        }
+        await settle(() => sb.setBrightness({ brightness: 1 }));
+      }),
+    putBack: (sb: Brightness, android: boolean) =>
+      inOrder(async () => {
+        if (saved === undefined) return;
+        // Android takes -1 as "the system's own"; iOS gets back what it had.
+        await settle(() => sb.setBrightness({ brightness: android ? -1 : saved! }));
+        saved = undefined;
+      }),
+  };
+})();
+
+function onAppActive(cb: (active: boolean) => void): () => void {
   const app = bridge()?.Plugins.App;
   if (!app) return () => {};
   let listener: Listener | undefined;
   let removed = false;
-  void settle(() => app.addListener("appStateChange", (s) => { if (s.isActive) cb(); })).then((l) => {
+  void settle(() => app.addListener("appStateChange", (s) => cb(s.isActive === true))).then((l) => {
     if (removed) void settle(() => l?.remove());
     else listener = l;
   });
