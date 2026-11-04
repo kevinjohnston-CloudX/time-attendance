@@ -9,7 +9,19 @@ import { ChevronLeft, ChevronRight, Eye, LogOut, Menu as MenuIcon, Search, X } f
 import { useRouter } from "@/components/layout/navigation-progress";
 import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
 import { SegmentedControl } from "@/components/ui";
-import { inPhoneApp, pushAllowedByPhone, pushChosen, resumePushNotifications, stopPushNotifications } from "@/lib/native-app";
+import {
+  appLockOn,
+  forgetAppLock,
+  inPhoneApp,
+  pushAllowedByPhone,
+  pushChosen,
+  resumePushNotifications,
+  setAppLock,
+  stopPushNotifications,
+  unlockMethod,
+  verifyOwner,
+  type UnlockMethod,
+} from "@/lib/native-app";
 import type { WaitingItem } from "@/lib/dashboard/dashboard-data";
 import { LIVE_ATTENDANCE_ONLY_HREFS } from "@/lib/constants";
 import { BrandTile, CloudTimeWordmark } from "./cloudtime-logo";
@@ -343,8 +355,12 @@ function PhoneMenu({
             type="button"
             className={styles.row}
             onClick={async () => {
-              // In the app, this phone stops getting this person's notifications first.
-              if (inPhoneApp()) await stopPushNotifications(false);
+              // In the app, this phone stops getting this person's notifications
+              // first, and the Face ID lock is left for whoever signs in next.
+              if (inPhoneApp()) {
+                await stopPushNotifications(false);
+                forgetAppLock();
+              }
               await signOut({ callbackUrl: "/login" });
             }}
           >
@@ -393,6 +409,7 @@ function PhoneMenu({
         </section>
 
         <NotificationsChoice />
+        <AppLockChoice />
       </div>
     </div>
   );
@@ -438,6 +455,57 @@ function NotificationsChoice() {
         <p className={styles.choiceNote}>
           {blocked && on ? "Turned off in your phone's settings. Turn them on there to get them." : "Time off requests and decisions, on this phone."}
         </p>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The phone app only, on a phone with Face ID, Touch ID or a fingerprint set
+ * up: the lock on this phone, on or off. Turning it on asks once, so it is
+ * never on for a phone that cannot unlock.
+ */
+function AppLockChoice() {
+  const hydrated = useHydrated();
+  const [method, setMethod] = useState<UnlockMethod | null>(null);
+  // Drawn only after hydration and once the phone answers (below), so reading the choice here is safe.
+  const [on, setOn] = useState(() => typeof window !== "undefined" && appLockOn());
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!inPhoneApp()) return;
+    void unlockMethod().then(setMethod);
+  }, []);
+
+  if (!hydrated || !method) return null;
+  return (
+    <section aria-label="App lock">
+      <h2 className={styles.groupLabel}>App lock</h2>
+      <div className={`${styles.card} ${styles.cardPadded}`}>
+        <SegmentedControl
+          ariaLabel={`${method} on this phone`}
+          fullWidth
+          value={on ? "on" : "off"}
+          onChange={async (v) => {
+            if (busy) return;
+            if (v === "off") {
+              setAppLock(false);
+              setOn(false);
+              return;
+            }
+            setBusy(true);
+            const ok = await verifyOwner();
+            setBusy(false);
+            if (!ok) return;
+            setAppLock(true);
+            setOn(true);
+          }}
+          items={[
+            { value: "on", label: "On" },
+            { value: "off", label: "Off" },
+          ]}
+        />
+        <p className={styles.choiceNote}>Asks for {method} when CloudTime opens, or after 15 minutes away.</p>
       </div>
     </section>
   );

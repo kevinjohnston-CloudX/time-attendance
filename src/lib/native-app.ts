@@ -29,7 +29,21 @@ type CapacitorBridge = {
   Plugins: {
     App?: {
       addListener(event: "appUrlOpen", cb: (e: { url: string }) => void): Promise<Listener> | Listener;
+      addListener(event: "appStateChange", cb: (s: { isActive?: boolean }) => void): Promise<Listener> | Listener;
       getLaunchUrl(): Promise<{ url: string } | undefined> | { url: string } | undefined;
+    };
+    // @capgo/capacitor-native-biometric: Face ID, Touch ID or fingerprint. Rejects when the person does not pass.
+    NativeBiometric?: {
+      isAvailable(options: { useFallback: boolean }):
+        | Promise<{ isAvailable?: boolean; biometryType?: number }>
+        | { isAvailable?: boolean; biometryType?: number };
+      verifyIdentity(options: {
+        reason: string;
+        title: string;
+        negativeButtonText: string;
+        useFallback: boolean;
+        maxAttempts: number;
+      }): Promise<void> | void;
     };
     SplashScreen?: { hide(): Promise<void> | void };
     PushNotifications?: {
@@ -257,4 +271,137 @@ export async function stopPushNotifications(remember: boolean): Promise<void> {
 export async function resumePushNotifications(open: (href: string) => void): Promise<void> {
   store(PUSH_CHOICE_KEY, null);
   await startPushNotifications(open);
+}
+
+// ─── App lock ───────────────────────────────────────────────────────────────
+
+/**
+ * Face ID, Touch ID or fingerprint before the app shows anything, when it
+ * opens or after 15 minutes away (components/layout/app-lock.tsx). Each person
+ * turns it on for their own phone. Privacy on the phone, not access control:
+ * the session and every server check stay exactly as they are.
+ *
+ * <p>"On" lives in this phone's storage until sign out. "Unlocked" lives in
+ * session storage, which the phone empties when the app is closed, so a fresh
+ * start always asks.
+ */
+const LOCK_KEY = "cloudtime.app-lock";
+const LOCK_OFFERED_KEY = "cloudtime.app-lock-offered";
+const UNLOCKED_KEY = "cloudtime.unlocked";
+const AWAY_KEY = "cloudtime.away-since";
+
+/** Away this long and the app asks again. */
+export const LOCK_AFTER_MS = 15 * 60 * 1000;
+
+/** How this phone unlocks, for the words on the buttons. */
+export type UnlockMethod = "Face ID" | "Touch ID" | "fingerprint" | "passcode";
+
+/** What this phone can unlock with, or null when it has nothing set up (or this is not the app). */
+export async function unlockMethod(): Promise<UnlockMethod | null> {
+  const bio = bridge()?.Plugins.NativeBiometric;
+  if (!bio) return null;
+  // An iPhone reports Face ID as its kind even with no face set up, so the
+  // name comes from the check without the passcode, and the passcode only
+  // when that is all the phone has.
+  const face = await settle(() => bio.isAvailable({ useFallback: false }));
+  if (face?.isAvailable) {
+    // The plugin's BiometryType: 1 Touch ID, 2 Face ID, 3 fingerprint.
+    if (face.biometryType === 2) return "Face ID";
+    if (face.biometryType === 1) return "Touch ID";
+    if (face.biometryType === 3) return "fingerprint";
+  }
+  const any = await settle(() => bio.isAvailable({ useFallback: true }));
+  return any?.isAvailable ? "passcode" : null;
+}
+
+/** Asks the phone. True only when the person passed. */
+export async function verifyOwner(): Promise<boolean> {
+  const bio = bridge()?.Plugins.NativeBiometric;
+  if (!bio) return false;
+  try {
+    await Promise.resolve(
+      bio.verifyIdentity({ reason: "Unlock CloudTime", title: "Unlock CloudTime", negativeButtonText: "Cancel", useFallback: true, maxAttempts: 3 }),
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function appLockOn(): boolean {
+  return stored(LOCK_KEY) === "on";
+}
+
+/** Turned on only after the person passed once, so it is never on for a phone that cannot unlock. */
+export function setAppLock(on: boolean) {
+  store(LOCK_KEY, on ? "on" : null);
+  store(LOCK_OFFERED_KEY, "1");
+  if (on) markUnlocked();
+}
+
+/** Whether this phone was already asked once since sign in. */
+export function appLockOffered(): boolean {
+  return stored(LOCK_OFFERED_KEY) === "1";
+}
+
+/** Locked now: on, and not unlocked since the app started. */
+export function appLocked(): boolean {
+  if (!appLockOn()) return false;
+  try {
+    return sessionStorage.getItem(UNLOCKED_KEY) !== "1";
+  } catch {
+    return true;
+  }
+}
+
+export function markUnlocked() {
+  try {
+    sessionStorage.setItem(UNLOCKED_KEY, "1");
+  } catch {}
+}
+
+function markLocked() {
+  try {
+    sessionStorage.removeItem(UNLOCKED_KEY);
+  } catch {}
+}
+
+/** Sign out: the lock and its one time offer belong to whoever signs in next. */
+export function forgetAppLock() {
+  store(LOCK_KEY, null);
+  store(LOCK_OFFERED_KEY, null);
+  markLocked();
+}
+
+/**
+ * Calls back when the app returns after LOCK_AFTER_MS or more in the
+ * background with the lock on, already marked locked. Returns the cleanup.
+ */
+export function onReturnAfterAway(cb: () => void): () => void {
+  const app = bridge()?.Plugins.App;
+  if (!app) return () => {};
+  let listener: Listener | null = null;
+  let removed = false;
+  void settle(() =>
+    app.addListener("appStateChange", (s) => {
+      if (!appLockOn()) return;
+      if (!s?.isActive) {
+        store(AWAY_KEY, String(Date.now()));
+        return;
+      }
+      const since = Number(stored(AWAY_KEY) ?? 0);
+      store(AWAY_KEY, null);
+      if (since && Date.now() - since >= LOCK_AFTER_MS) {
+        markLocked();
+        cb();
+      }
+    }),
+  ).then((l) => {
+    listener = l ?? null;
+    if (removed) void settle(() => listener?.remove());
+  });
+  return () => {
+    removed = true;
+    void settle(() => listener?.remove());
+  };
 }
