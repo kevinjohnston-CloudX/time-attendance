@@ -9,6 +9,7 @@
     "icons": "capacitor-assets generate --iconBackgroundColor '#0860AA' --splashBackgroundColor '#0860AA'"
   },
   "dependencies": {
+    "@capacitor-community/screen-brightness": "^8.0.0",
     "@capacitor/android": "^8.6.0",
     "@capacitor/app": "^8.1.2",
     "@capacitor/browser": "^8.0.5",
