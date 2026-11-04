@@ -2139,42 +2139,6 @@ export const getAuditActors = withRBAC("AUDIT_VIEW", async ({ tenantId }, _input
     .sort((a, b) => a.name.localeCompare(b.name));
 });
 
-// ─── Reports ──────────────────────────────────────────────────────────────────
-
-export const getHoursReport = withRBAC(
-  "PAY_PERIOD_MANAGE",
-  async (_actor, input: { payPeriodId: string }) => {
-    const payPeriod = await db.payPeriod.findUniqueOrThrow({
-      where: { id: input.payPeriodId },
-    });
-
-    const [timesheets, ptoBalances] = await Promise.all([
-      db.timesheet.findMany({
-        where: { payPeriodId: input.payPeriodId },
-        include: {
-          employee: { include: { user: true, department: true, site: true } },
-          overtimeBuckets: true,
-        },
-        orderBy: { employee: { user: { name: "asc" } } },
-      }),
-      db.leaveBalance.findMany({
-        where: {
-          leaveType: { category: "PTO" },
-          accrualYear: payPeriod.startDate.getFullYear(),
-        },
-      }),
-    ]);
-
-    const ptoByEmployee: Record<string, number> = {};
-    for (const bal of ptoBalances) {
-      ptoByEmployee[bal.employeeId] =
-        (ptoByEmployee[bal.employeeId] ?? 0) + bal.balanceMinutes;
-    }
-
-    return { payPeriod, timesheets, ptoByEmployee };
-  }
-);
-
 // ─── Bulk CSV employee import ───────────────────────────────────────────────
 
 export const bulkCreateEmployees = withRBAC(

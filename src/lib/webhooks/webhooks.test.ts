@@ -38,6 +38,8 @@ describe("addresses", () => {
       expect(isPrivateAddress(a), a).toBe(true);
     }
     for (const a of ["8.8.8.8", "52.1.2.3", "2606:4700::1111"]) expect(isPrivateAddress(a), a).toBe(false);
+    // NAT64, 6to4 and Teredo can lead back to private IPv4 addresses.
+    for (const a of ["64:ff9b::a9fe:a9fe", "2002:a9fe:a9fe::1", "2001:0:4136:e378::1", "100::1"]) expect(isPrivateAddress(a), a).toBe(true);
   });
 
   it("refuses addresses that are not https, carry a password, or point inside", async () => {
