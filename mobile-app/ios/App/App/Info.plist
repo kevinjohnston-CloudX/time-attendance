@@ -68,6 +68,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>CloudTime uses the camera to take employee photos.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>CloudTime uses Face ID to unlock the app, if you turn it on.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
