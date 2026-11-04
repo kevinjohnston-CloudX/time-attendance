@@ -85,6 +85,7 @@ export default function LoginPage() {
   async function handleGoogleSignIn() {
     setError("");
     setLoading(true);
+    rememberedEmailStore.saveAfterSignIn(remember);
     // Google refuses to sign in inside an app, so the app signs in through
     // the phone's own browser and comes back here.
     if (inPhoneApp()) {
@@ -120,6 +121,7 @@ export default function LoginPage() {
 
     if (remember) rememberedEmailStore.save(email.trim());
     else rememberedEmailStore.forget();
+    rememberedEmailStore.saveAfterSignIn(false);
 
     // Deliberately left loading: the page is about to be replaced, and
     // re-enabling the button first invites a second submit into the gap.
