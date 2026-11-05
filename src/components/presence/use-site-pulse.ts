@@ -14,6 +14,8 @@ const PULSE_MS = 2_000;
 export interface SitePulse {
   scans: string | null;
   refusals: string | null;
+  /** When the server's check began: a board built after it holds what the check found. */
+  checkedAt?: string;
 }
 
 /**

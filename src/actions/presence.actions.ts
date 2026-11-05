@@ -83,10 +83,14 @@ export const getOnSiteSites = withRBAC(
 
 export const getOnSiteBoard = withRBAC(
   "PRESENCE_VIEW_ANY",
-  async ({ tenantId, employeeId, role }, input: { siteId: string }) => {
+  async ({ tenantId, employeeId, role }, input: { siteId: string; reuse?: { after?: string | null } }) => {
     if (!tenantId) throw new Error("NOT_FOUND");
     await assertSite(tenantId, { employeeId, role }, input.siteId);
-    const board = await getPresenceBoard(tenantId, input.siteId);
+    // A refresh the board makes on its own may take the copy another screen
+    // of this building just made (see getPresenceBoard). Anything else is built fresh.
+    const after = typeof input.reuse?.after === "string" ? new Date(input.reuse.after) : null;
+    const reuse = input.reuse && typeof input.reuse === "object" ? { after: after && !Number.isNaN(after.getTime()) ? after : null } : undefined;
+    const board = await getPresenceBoard(tenantId, input.siteId, reuse);
     if (!board) throw new Error("NOT_FOUND");
     return board;
   },

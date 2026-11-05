@@ -111,7 +111,46 @@ export async function getViewableSites(
  * scoped by tenant, so a stray id answers null rather than another company's
  * building.
  */
-export async function getPresenceBoard(tenantId: string, siteId: string): Promise<PresenceBoard | null> {
+/**
+ * One building's board, shared by every screen watching that building. The
+ * board is the same for every viewer allowed to open it (the caller checks
+ * that first), and 9 to 11 screens stay open on Live Attendance day and
+ * night, each asking every 30 seconds and again after every new scan, so a
+ * board built per screen was most of the database's work (CPU audit, Nov 5).
+ *
+ * <p>Only a caller that says it can take a shared copy gets one: the
+ * 30 second poll (`reuse` with no `after`), and the reload a new scan sets off
+ * (`after` the moment the pulse check that found it began: the scan was
+ * saved by then, so a copy built later holds it).
+ * A load the person asked for (the page, a building change, after anything
+ * they did) is always built fresh, and becomes the copy others share. A
+ * build that is still running is shared rather than started twice.
+ */
+const BOARD_SHARE_MS = 15_000;
+/** Slack between two servers' clocks when comparing a build's start with a pulse check's. */
+const AFTER_SLACK_MS = 250;
+const boards = new Map<string, { at: number; value: Promise<PresenceBoard | null> }>();
+
+export async function getPresenceBoard(
+  tenantId: string,
+  siteId: string,
+  reuse?: { after?: Date | null },
+): Promise<PresenceBoard | null> {
+  const key = `${tenantId}|${siteId}`;
+  const hit = boards.get(key);
+  if (reuse && hit && Date.now() - hit.at < BOARD_SHARE_MS && (!reuse.after || hit.at >= reuse.after.getTime() + AFTER_SLACK_MS)) {
+    return hit.value;
+  }
+  const entry = { at: Date.now(), value: buildPresenceBoard(tenantId, siteId) };
+  boards.set(key, entry);
+  // A failed build is not kept, so the next ask tries again.
+  entry.value.catch(() => {
+    if (boards.get(key) === entry) boards.delete(key);
+  });
+  return entry.value;
+}
+
+async function buildPresenceBoard(tenantId: string, siteId: string): Promise<PresenceBoard | null> {
   // Both are small reads of the sites table, asked together rather than one
   // after the other. The scope is only used once the site is known to exist.
   const [site, scope] = await Promise.all([
@@ -140,26 +179,37 @@ export async function getPresenceBoard(tenantId: string, siteId: string): Promis
     // Taken at every building: a person whose newest gate scan is at another
     // building is there, not here, and the time clock follows the person
     // (see below).
+    //
+    // The newest scan is picked first and its punch looked up after, by id,
+    // for those rows only. Joining the punches before picking read the whole
+    // punches table on every board (CPU audit, Nov 5); each scan has at most
+    // one punch and each correction at most one, so the rows are the same.
     db.$queryRaw<(LatestRow & { here: boolean })[]>`
-      SELECT DISTINCT ON (s."employeeId", s."stream")
-             ${here}                   AS here,
-             s."employeeId"            AS "employeeId",
-             s."stream"::text          AS stream,
-             s."direction"::text       AS direction,
-             s."directionSource"::text AS source,
-             s."scanTime"              AS "scanTime",
+      SELECT s.here, s."employeeId", s.stream, s.direction, s.source, s."scanTime",
              COALESCE(${EFFECTIVE_STATE_SQL}, s."timecardStateAfter") AS "stateAfter",
-             s."site"                  AS "siteCode",
-             e."siteId"                AS "homeSiteId"
-      FROM   "scan_events" s
-      JOIN   "employees" e ON e.id = s."employeeId"
+             s."siteCode", s."homeSiteId"
+      FROM (
+        SELECT DISTINCT ON (s."employeeId", s."stream")
+               ${here}                   AS here,
+               s."employeeId"            AS "employeeId",
+               s."stream"::text          AS stream,
+               s."direction"::text       AS direction,
+               s."directionSource"::text AS source,
+               s."scanTime"              AS "scanTime",
+               s."timecardStateAfter"    AS "timecardStateAfter",
+               s."punchId"               AS "punchId",
+               s."site"                  AS "siteCode",
+               e."siteId"                AS "homeSiteId"
+        FROM   "scan_events" s
+        JOIN   "employees" e ON e.id = s."employeeId"
+        WHERE  s."tenantId" = ${tenantId}
+          AND  e."tenantId" = ${tenantId}
+          AND  s."scanTime" >= ${windowStart}
+          AND  s."direction" IN ('IN', 'OUT')
+          AND  NOT (s."stream" = 'TIME_CLOCK' AND s."outcome"::text IN ('PUNCH_REJECTED', 'ERROR', 'PENDING'))
+        ORDER  BY s."employeeId", s."stream", s."scanTime" DESC
+      ) s
       ${PUNCH_CHAIN_JOINS}
-      WHERE  s."tenantId" = ${tenantId}
-        AND  e."tenantId" = ${tenantId}
-        AND  s."scanTime" >= ${windowStart}
-        AND  s."direction" IN ('IN', 'OUT')
-        AND  NOT (s."stream" = 'TIME_CLOCK' AND s."outcome"::text IN ('PUNCH_REJECTED', 'ERROR', 'PENDING'))
-      ORDER  BY s."employeeId", s."stream", s."scanTime" DESC
     `,
     // What each person actually did at a reader today. System rows are left
     // out: an auto-close at 11 PM last night is not somebody leaving today.

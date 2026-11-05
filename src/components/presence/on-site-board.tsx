@@ -373,11 +373,11 @@ export function OnSiteBoard({
   }, [changed]);
 
   const refresh = useCallback(
-    async (forSite: string, opts: { switching?: boolean } = {}) => {
+    async (forSite: string, opts: { switching?: boolean; reuse?: { after?: string | null } } = {}) => {
       if (inFlight.current && !opts.switching) return;
       inFlight.current = true;
       try {
-        const res = await getOnSiteBoard({ siteId: forSite });
+        const res = await getOnSiteBoard(opts.reuse ? { siteId: forSite, reuse: opts.reuse } : { siteId: forSite });
         // A slow answer for a site somebody has already moved away from is
         // dropped, not drawn over the one they are looking at now.
         if (siteRef.current !== forSite) return;
@@ -413,7 +413,9 @@ export function OnSiteBoard({
     pulse?.scans,
     !!siteId,
     () => {
-      if (siteId) void refresh(siteId);
+      // Every screen of this building hears the same new scan: one build
+      // made after it serves them all.
+      if (siteId) void refresh(siteId, { reuse: { after: pulse?.checkedAt ?? new Date().toISOString() } });
     },
     PULSE_RELOAD_GAP_MS,
   );
@@ -422,14 +424,14 @@ export function OnSiteBoard({
   useEffect(() => {
     if (!siteId) return;
     const tick = () => {
-      if (document.visibilityState === "visible") void refresh(siteId);
+      if (document.visibilityState === "visible") void refresh(siteId, { reuse: {} });
     };
     const id = window.setInterval(tick, POLL_MS);
     const onVisibility = () => {
       const visible = document.visibilityState === "visible";
       // Coming back to a tab that has been asleep: catch up straight away
       // instead of showing old faces for up to another 30 seconds.
-      if (visible && Date.now() - lastOkRef.current > POLL_MS) void refresh(siteId);
+      if (visible && Date.now() - lastOkRef.current > POLL_MS) void refresh(siteId, { reuse: {} });
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => {

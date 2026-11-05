@@ -25,6 +25,11 @@ export interface SitePulse {
   scans: string | null;
   /** ISO time today's gate refusals here last changed, or null (also when not asked for, or switched off). */
   refusals: string | null;
+  /**
+   * When the check began. Anything it found was already saved by then, so a
+   * board built after this moment holds it (see getPresenceBoard).
+   */
+  checkedAt: string;
 }
 
 const KEEP_MS = 60_000;
@@ -59,7 +64,27 @@ async function scopeOf(tenantId: string, siteId: string): Promise<SiteScope> {
 }
 
 /** The caller has checked the viewer may see this building ({@link canViewSite}). */
-export async function getSitePulse(tenantId: string, siteId: string, withRefusals: boolean): Promise<SitePulse> {
+/**
+ * Every open screen asks every 2 seconds, and 9 to 11 stay open across a
+ * few buildings, so one answer per building is shared for 2 seconds, and a
+ * check still running is shared rather than started twice (CPU audit, Nov 5).
+ */
+const SHARE_MS = 2_000;
+const pulses = new Map<string, { at: number; value: Promise<SitePulse> }>();
+
+export function getSitePulse(tenantId: string, siteId: string, withRefusals: boolean): Promise<SitePulse> {
+  const key = `${tenantId}|${siteId}|${withRefusals ? 1 : 0}`;
+  const hit = pulses.get(key);
+  if (hit && Date.now() - hit.at < SHARE_MS) return hit.value;
+  const entry = { at: Date.now(), value: checkSitePulse(tenantId, siteId, withRefusals) };
+  pulses.set(key, entry);
+  entry.value.catch(() => {
+    if (pulses.get(key) === entry) pulses.delete(key);
+  });
+  return entry.value;
+}
+
+async function checkSitePulse(tenantId: string, siteId: string, withRefusals: boolean): Promise<SitePulse> {
   const scope = await scopeOf(tenantId, siteId);
   const since = new Date(Date.now() - LOOK_BACK_MS);
   // Today's refusals by work date, and a building's today is never more than
@@ -73,6 +98,8 @@ export async function getSitePulse(tenantId: string, siteId: string, withRefusal
                   WHERE g."tenantId" = ${tenantId} AND g."siteId" = ${siteId} AND g."workDate" >= ${fromDay}
                     AND st."gateAlertsOnSince" IS NOT NULL AND g."lastAt" >= st."gateAlertsOnSince")`
     : Prisma.sql`NULL::timestamp`;
+  // Taken just before the query, so nothing the query sees was saved after it.
+  const checkedAt = new Date().toISOString();
   const [row] = await db.$queryRaw<{ scans: Date | null; refusals: Date | null }[]>`
     SELECT
       (SELECT max(s."createdAt")
@@ -87,5 +114,6 @@ export async function getSitePulse(tenantId: string, siteId: string, withRefusal
   return {
     scans: row?.scans ? new Date(row.scans).toISOString() : null,
     refusals: row?.refusals ? new Date(row.refusals).toISOString() : null,
+    checkedAt,
   };
 }
