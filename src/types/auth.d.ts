@@ -1,4 +1,7 @@
 import type { DefaultSession, DefaultJWT } from "next-auth";
+// Brings next-auth/jwt into every build, so the JWT block below adds to it.
+// Without this line the build only sees it when some other file imports it.
+import "next-auth/jwt";
 
 declare module "next-auth" {
   interface Session {
