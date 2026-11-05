@@ -17,6 +17,8 @@ interface SendReportParams {
   periodLabel?: string;
   /** The product's name, put first in the subject so the sender is plain. */
   brand?: string | null;
+  /** The schedule's time zone, for the time the message says it ran. */
+  timeZone?: string;
 }
 
 /**
@@ -34,6 +36,7 @@ export async function sendReportEmail({
   fileStem,
   periodLabel,
   brand,
+  timeZone,
 }: SendReportParams): Promise<void> {
   const ext = format.toLowerCase();
   const mimeTypes: Record<string, string> = {
@@ -48,7 +51,7 @@ export async function sendReportEmail({
   await sendMail({
     to: recipients,
     subject,
-    html: generateReportEmailHtml({ reportName, rowCount, shownRows, format, generatedAt: new Date(), periodLabel }),
+    html: generateReportEmailHtml({ reportName, rowCount, shownRows, format, generatedAt: new Date(), periodLabel, timeZone }),
     attachments: [{ content: fileBuffer, filename: `${safeName}.${ext}`, type: mimeTypes[ext] || "application/octet-stream" }],
   });
 }

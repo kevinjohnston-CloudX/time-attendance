@@ -6,6 +6,8 @@ interface ReportEmailParams {
   format: string;
   generatedAt: Date;
   periodLabel?: string;
+  /** The schedule's time zone. The server runs on UTC in production. */
+  timeZone?: string;
 }
 
 /** A report's name is typed by a person, so it is escaped before it goes into HTML. */
@@ -14,11 +16,13 @@ function esc(v: string): string {
 }
 
 export function generateReportEmailHtml(params: ReportEmailParams): string {
-  const { reportName, rowCount, shownRows, format, generatedAt, periodLabel } = params;
+  const { reportName, rowCount, shownRows, format, generatedAt, periodLabel, timeZone } = params;
   const cut = shownRows !== undefined && shownRows < rowCount;
+  // On the schedule's clock: a 9:00 AM Eastern run read 2:00 PM.
   const dateStr = generatedAt.toLocaleString("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
+    ...(timeZone ? { timeZone } : {}),
   });
 
   return `

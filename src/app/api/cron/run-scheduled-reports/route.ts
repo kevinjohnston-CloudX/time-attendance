@@ -94,6 +94,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         fileStem: reportFileStem(schedule.report.name, result, source.brand),
         periodLabel: result.period?.label,
         brand: source.brand,
+        timeZone: schedule.timezone,
       });
 
       await db.reportRun.update({
