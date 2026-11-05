@@ -139,10 +139,34 @@ export function buildNumber(version: string | null): number | null {
 const sendsBuilding = (version: string | null) => (buildNumber(version) ?? 0) >= SENDS_BUILDING_FROM;
 
 /** Every tablet seen in this building's live scans lately: its latest name, build and kind. */
-async function tabletsInScans(tenantId: string, warehouses: number[], days = LOOK_BACK_DAYS) {
-  if (warehouses.length === 0) return [];
+type ScannedTablet = { site: string; deviceName: string; appVersion: string | null; stream: string; at: Date };
+
+/**
+ * The tablets seen in recent scans, kept for 5 minutes per question. The
+ * query reads the whole scans table, and every open Live Attendance screen
+ * asked every minute, so it was the costliest thing on the database (CPU
+ * audit, Nov 5). A tablet only checks in every 5 minutes, so the list is no
+ * staler than it already was. A question still being answered is shared.
+ */
+const SCANNED_KEEP_MS = 5 * 60_000;
+const scannedCache = new Map<string, { at: number; value: Promise<ScannedTablet[]> }>();
+
+function tabletsInScans(tenantId: string, warehouses: number[], days = LOOK_BACK_DAYS): Promise<ScannedTablet[]> {
+  if (warehouses.length === 0) return Promise.resolve([]);
+  const key = `${tenantId}|${days}|${[...warehouses].sort((a, b) => a - b).join(",")}`;
+  const hit = scannedCache.get(key);
+  if (hit && Date.now() - hit.at < SCANNED_KEEP_MS) return hit.value;
+  const entry = { at: Date.now(), value: readTabletsInScans(tenantId, warehouses, days) };
+  scannedCache.set(key, entry);
+  entry.value.catch(() => {
+    if (scannedCache.get(key) === entry) scannedCache.delete(key);
+  });
+  return entry.value;
+}
+
+async function readTabletsInScans(tenantId: string, warehouses: number[], days: number): Promise<ScannedTablet[]> {
   const since = new Date(Date.now() - days * 86_400_000);
-  return db.$queryRaw<{ site: string; deviceName: string; appVersion: string | null; stream: string; at: Date }[]>`
+  return db.$queryRaw<ScannedTablet[]>`
     SELECT DISTINCT ON (site, lower("deviceName"))
            site, "deviceName", "appVersion", stream::text AS stream, "createdAt" AS at
     FROM   scan_events

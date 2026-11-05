@@ -228,6 +228,8 @@ model ScanEvent {
   /// Drives the discrepancy sweep, which looks for anything that is not a
   /// clean PUNCH_RECORDED within a date window.
   @@index([tenantId, outcome, scanTime(sort: Desc)])
+  // Also "scan_events_tablets_idx", a partial index for the tablet list that
+  // Prisma cannot describe: made in migration 20261105150000. Never drop it.
   @@map("scan_events")
 }
 

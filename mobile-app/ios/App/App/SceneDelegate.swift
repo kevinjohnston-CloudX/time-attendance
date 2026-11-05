@@ -37,5 +37,87 @@ class CloudTimeBridgeViewController: CAPBridgeViewController {
             webView.scrollView.topEdgeEffect.isHidden = true
             webView.scrollView.bottomEdgeEffect.isHidden = true
         }
+        bridge?.registerPluginInstance(BadgeScreenPlugin())
+    }
+}
+
+/// Full brightness while the badge is on screen, and the person's own level
+/// back on every way out. iOS keeps whatever level an app sets, even after the
+/// app leaves, and the page may not get to run when the phone locks or the app
+/// is closed, so the putting back happens here.
+///
+/// The level saved is the one from before the first raise, kept on disk until
+/// it is put back: a second raise never saves the full level as the original,
+/// and a level left behind by a crash is put back at the next start.
+@objc(BadgeScreenPlugin)
+class BadgeScreenPlugin: CAPPlugin, CAPBridgedPlugin {
+    let identifier = "BadgeScreenPlugin"
+    let jsName = "BadgeScreen"
+    let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "raise", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "restore", returnType: CAPPluginReturnPromise)
+    ]
+
+    private static let savedKey = "cloudtime.badge.brightness.original"
+    /// The badge page is open and wants full brightness while the app is in front.
+    private var wanted = false
+    private var watching = false
+
+    override func load() {
+        // Left behind by a crash. Only put back while the screen is still at
+        // our full level; anything else is the person's own choice since.
+        if UserDefaults.standard.object(forKey: Self.savedKey) != nil, UIScreen.main.brightness < 0.99 {
+            UserDefaults.standard.removeObject(forKey: Self.savedKey)
+        }
+        putBack()
+        watch()
+    }
+
+    private func watch() {
+        if watching { return }
+        watching = true
+        let center = NotificationCenter.default
+        center.addObserver(self, selector: #selector(leaving), name: UIApplication.willResignActiveNotification, object: nil)
+        center.addObserver(self, selector: #selector(leaving), name: UIApplication.willTerminateNotification, object: nil)
+        center.addObserver(self, selector: #selector(back), name: UIApplication.didBecomeActiveNotification, object: nil)
+    }
+
+    @objc func raise(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.watch()
+            self.wanted = true
+            self.lift()
+            call.resolve()
+        }
+    }
+
+    @objc func restore(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.wanted = false
+            self.putBack()
+            call.resolve()
+        }
+    }
+
+    /// Locking, the app switcher, another app, or closing it.
+    @objc private func leaving() { putBack() }
+
+    /// Back in front with the badge still open: save the level as it is now,
+    /// which the person may have changed while away, and raise again.
+    @objc private func back() { if wanted { lift() } }
+
+    private func lift() {
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: Self.savedKey) == nil {
+            defaults.set(Double(UIScreen.main.brightness), forKey: Self.savedKey)
+        }
+        UIScreen.main.brightness = 1
+    }
+
+    private func putBack() {
+        let defaults = UserDefaults.standard
+        guard let original = defaults.object(forKey: Self.savedKey) as? Double else { return }
+        UIScreen.main.brightness = CGFloat(original)
+        defaults.removeObject(forKey: Self.savedKey)
     }
 }

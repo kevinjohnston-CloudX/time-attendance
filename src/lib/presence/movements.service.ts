@@ -111,31 +111,38 @@ export async function getSiteDay(
     // Taken at every building, not just this one: somebody whose last scan
     // was at another building is not still inside this one, even when this
     // building never saw them leave.
+    // The newest scan is picked first and its punch looked up after, by id,
+    // for those rows only, as on the board (CPU audit, Nov 5). Same rows.
     db.$queryRaw<(CarryRow & { here: boolean })[]>`
-      SELECT DISTINCT ON (s."employeeId", s."stream")
-             ${scansHereSql(scope)}      AS here,
-             s."employeeId"              AS "employeeId",
-             s.id                        AS id,
-             s."scanTime"                AS "scanTime",
-             s."stream"::text            AS stream,
-             s."direction"::text         AS direction,
-             s."directionSource"::text   AS "directionSource",
-             s."timecardPunchType"       AS "timecardPunchType",
-             ${EFFECTIVE_TYPE_SQL}       AS "currentPunchType",
-             s."deviceName"              AS "deviceName",
-             s."outcome"::text           AS outcome,
-             s."site"                    AS "siteCode",
-             e."siteId"                  AS "homeSiteId"
-      FROM   "scan_events" s
-      JOIN   "employees" e ON e.id = s."employeeId"
+      SELECT s.here, s."employeeId", s.id, s."scanTime", s.stream, s.direction, s."directionSource",
+             s."timecardPunchType", ${EFFECTIVE_TYPE_SQL} AS "currentPunchType",
+             s."deviceName", s.outcome, s."siteCode", s."homeSiteId"
+      FROM (
+        SELECT DISTINCT ON (s."employeeId", s."stream")
+               ${scansHereSql(scope)}      AS here,
+               s."employeeId"              AS "employeeId",
+               s.id                        AS id,
+               s."scanTime"                AS "scanTime",
+               s."stream"::text            AS stream,
+               s."direction"::text         AS direction,
+               s."directionSource"::text   AS "directionSource",
+               s."timecardPunchType"       AS "timecardPunchType",
+               s."punchId"                 AS "punchId",
+               s."deviceName"              AS "deviceName",
+               s."outcome"::text           AS outcome,
+               s."site"                    AS "siteCode",
+               e."siteId"                  AS "homeSiteId"
+        FROM   "scan_events" s
+        JOIN   "employees" e ON e.id = s."employeeId"
+        WHERE  s."tenantId" = ${tenantId}
+          AND  e."tenantId" = ${tenantId}
+          AND  s."scanTime" >= ${new Date(dayStart.getTime() - LOOKBACK_MS)}
+          AND  s."scanTime" < ${dayStart}
+          AND  s."direction" IN ('IN', 'OUT')
+          AND  NOT (s."stream" = 'TIME_CLOCK' AND s."outcome"::text IN ('PUNCH_REJECTED', 'ERROR', 'PENDING'))
+        ORDER  BY s."employeeId", s."stream", s."scanTime" DESC
+      ) s
       ${PUNCH_CHAIN_JOINS}
-      WHERE  s."tenantId" = ${tenantId}
-        AND  e."tenantId" = ${tenantId}
-        AND  s."scanTime" >= ${new Date(dayStart.getTime() - LOOKBACK_MS)}
-        AND  s."scanTime" < ${dayStart}
-        AND  s."direction" IN ('IN', 'OUT')
-        AND  NOT (s."stream" = 'TIME_CLOCK' AND s."outcome"::text IN ('PUNCH_REJECTED', 'ERROR', 'PENDING'))
-      ORDER  BY s."employeeId", s."stream", s."scanTime" DESC
     `,
     // Whether this building's gate reports at all, around this day.
     db.scanEvent.findFirst({
