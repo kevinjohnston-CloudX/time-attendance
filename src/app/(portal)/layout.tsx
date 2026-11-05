@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { ShieldCheck } from "lucide-react";
 import { cookies, headers } from "next/headers";
+import { liveIdentity } from "@/lib/rbac/identity";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { Sidebar } from "@/components/layout/sidebar";
@@ -129,30 +130,23 @@ export default async function PortalLayout({
     sidebarRole = "SYSTEM_ADMIN";
   }
 
-  // Determine user's rank for filtering view-as options
-  let userRank: number | null = null;
-  if (!isPrivileged && canUseViewAs && customRoleId) {
-    const cr = await db.customRole.findUnique({ where: { id: customRoleId }, select: { rank: true } });
-    userRank = cr?.rank ?? 0;
-  }
-
-  // Fetch available view-as roles (lower rank than user, or all for privileged)
-  const effectiveTenantId = session.user.tenantId ?? null;
+  // The roles View As offers are the ones validViewAsId accepts: in the
+  // company being viewed (a super admin's chosen one) and ranked below the
+  // viewer. A super admin inside a company used to see "No roles available",
+  // and a System Admin was offered roles of their own rank that then did
+  // nothing.
   let viewAsOptions: { id: string; name: string; rank: number }[] = [];
-  if (canUseViewAs && effectiveTenantId) {
+  const me = canUseViewAs && session.user.id ? await liveIdentity(session.user.id) : null;
+  if (me) {
     const cookieStore = await cookies();
-    const tenantOverride = cookieStore.get(SUPER_ADMIN_TENANT_COOKIE)?.value;
-    const lookupTenantId = tenantOverride ?? effectiveTenantId;
-
-    viewAsOptions = await db.customRole.findMany({
-      where: {
-        tenantId: lookupTenantId,
-        isActive: true,
-        ...(userRank !== null ? { rank: { lt: userRank } } : {}),
-      },
-      select: { id: true, name: true, rank: true },
-      orderBy: { rank: "desc" },
-    });
+    const lookupTenantId = me.isSuperAdmin ? cookieStore.get(SUPER_ADMIN_TENANT_COOKIE)?.value ?? null : me.tenantId;
+    if (lookupTenantId) {
+      viewAsOptions = await db.customRole.findMany({
+        where: { tenantId: lookupTenantId, isActive: true, rank: { lt: me.rank } },
+        select: { id: true, name: true, rank: true },
+        orderBy: { rank: "desc" },
+      });
+    }
   }
 
   // View-as role override — reads cookie and uses real DB permissions
