@@ -63,9 +63,9 @@ export function RunPayrollScreen({ frequencies, periods, ruleSets, payCategories
   const [from, setFrom] = useState(initial?.defaultFrom ?? "");
   const [to, setTo] = useState(initial?.defaultTo ?? "");
   const [codes, setCodes] = useState<RunCodes>(savedCodes);
-  const [filters, setFilters] = useState({ badgeIds: "", ruleSetIds: [] as string[], payCategoryIds: [] as string[], siteIds: [] as string[], departmentIds: [] as string[], agencyIds: [] as string[], excludeMissedPunches: false });
+  const [filters, setFilters] = useState({ badgeIds: "", ruleSetIds: [] as string[], payCategoryIds: [] as string[], siteIds: [] as string[], departmentIds: [] as string[], agencyIds: [] as string[], status: "ALL" as "ALL" | "ACTIVE" | "INACTIVE", excludeMissedPunches: false });
   const [preview, setPreview] = useState<RunPreview | null>(null);
-  const [result, setResult] = useState<{ csv: string; filename: string; summary: EpiSummary; locked: number; leftOpen: number } | null>(null);
+  const [result, setResult] = useState<{ csv: string; filename: string; summary: EpiSummary; locked: number; periodsLocked: number; leftOpen: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
 
@@ -134,8 +134,8 @@ export function RunPayrollScreen({ frequencies, periods, ruleSets, payCategories
 
   const summary = result?.summary ?? preview?.summary ?? null;
   const otherMinutes = summary ? summary.byCode.reduce((n, c) => n + c.minutes, 0) : 0;
-  const lockCount = preview?.toLock.length ?? 0;
-  const outside = preview?.toLock.reduce((n, p) => n + p.alsoOutsideFilters, 0) ?? 0;
+  const lockCount = preview?.toLock.reduce((n, p) => n + p.timecards, 0) ?? 0;
+  const staysOpen = preview?.toLock.reduce((n, p) => n + p.staysOpen, 0) ?? 0;
   const missedInFile = preview?.summary.missedPunches.filter((m) => !m.excluded).length ?? 0;
   const missedLeftOut = preview?.summary.missedPunches.filter((m) => m.excluded).length ?? 0;
 
@@ -210,6 +210,13 @@ export function RunPayrollScreen({ frequencies, periods, ruleSets, payCategories
           <MultiSelectFilter label="Rule set (pay policy)" value={filters.ruleSetIds} onChange={(v) => setFilter("ruleSetIds", v)} options={ruleSets} />
           <MultiSelectFilter label="Pay category" value={filters.payCategoryIds} onChange={(v) => setFilter("payCategoryIds", v)} options={payCategories} />
           <MultiSelectFilter label="Agency" value={filters.agencyIds} onChange={(v) => setFilter("agencyIds", v)} options={agencies} />
+          <Field label="Status">
+            <Select value={filters.status} onChange={(e) => setFilter("status", e.target.value as typeof filters.status)} style={{ width: "100%" }}>
+              <option value="ALL">Active and inactive</option>
+              <option value="ACTIVE">Active only</option>
+              <option value="INACTIVE">Inactive only</option>
+            </Select>
+          </Field>
           <Input label="Employees" value={filters.badgeIds} onChange={(e) => setFilter("badgeIds", e.target.value)} placeholder="All, or Badge IDs: 636554, 630622" />
           <div style={{ gridColumn: "1 / -1" }} className="flex flex-col gap-1">
             <Checkbox
@@ -228,7 +235,7 @@ export function RunPayrollScreen({ frequencies, periods, ruleSets, payCategories
         <Banner
           tone="success"
           title="Payroll file generated"
-          body={`${result.filename}: ${result.summary.employees} employees, ${result.summary.rows} rows.${result.locked ? ` Locked ${result.locked} pay ${result.locked === 1 ? "group" : "groups"}.` : ""}${result.leftOpen ? ` ${result.leftOpen} ${result.leftOpen === 1 ? "timecard was" : "timecards were"} left out for missed punches and kept unlocked.` : ""}`}
+          body={`${result.filename}: ${result.summary.employees} employees, ${result.summary.rows} rows.${result.locked ? ` Locked ${result.locked} ${result.locked === 1 ? "timecard" : "timecards"}${result.periodsLocked ? `, and ${result.periodsLocked} pay ${result.periodsLocked === 1 ? "period" : "periods"} now fully locked` : ""}.` : ""}${result.leftOpen ? ` ${result.leftOpen} ${result.leftOpen === 1 ? "timecard was" : "timecards were"} left out for missed punches and kept unlocked.` : ""}`}
           actions={
             <Button size="sm" hierarchy="secondary" onClick={() => download(result.csv, result.filename)} leadingIcon={<Download className="h-3.5 w-3.5" aria-hidden="true" />}>
               Download again
@@ -259,6 +266,13 @@ export function RunPayrollScreen({ frequencies, periods, ruleSets, payCategories
               tone="warning"
               title="Some hours are on pay codes with no ADP or Express code, and will be left out. Add an ADP code under Company Setup → Pay Codes."
               body={summary.leftOut.map((l) => `${l.label}: ${hrs(l.minutes)} h, ${l.people} ${l.people === 1 ? "person" : "people"}`).join(" · ")}
+            />
+          )}
+          {summary.notPaid.length > 0 && (
+            <Banner
+              tone="info"
+              title="Hours on pay codes set to Not paid stay on the timecards but are left out of the file. Change this under Company Setup → Pay Codes."
+              body={summary.notPaid.map((l) => `${l.label}: ${hrs(l.minutes)} h, ${l.people} ${l.people === 1 ? "person" : "people"}`).join(" · ")}
             />
           )}
           {summary.noAdpCode.length > 0 && (
@@ -361,8 +375,8 @@ export function RunPayrollScreen({ frequencies, periods, ruleSets, payCategories
           <div className="flex flex-col gap-3">
             <p className="m-0">
               {lockCount > 0
-                ? `This locks ${lockCount} pay ${lockCount === 1 ? "group" : "groups"} (${preview.toLock.map((p) => p.name).join(", ")}) and every timecard in them${outside > 0 ? `, including ${outside} ${outside === 1 ? "timecard" : "timecards"} outside your filters` : ""}${missedLeftOut > 0 ? `, except the ${missedLeftOut} left out for missed punches` : ""}, posts their accruals and approved leave, then generates the ADP file for ${preview.summary.employees} employees.`
-                : `These pay groups are already locked. This generates the ADP file for ${preview.summary.employees} employees.`}
+                ? `This locks the ${lockCount} ${lockCount === 1 ? "timecard" : "timecards"} in the file (${preview.toLock.map((p) => p.name).join(", ")})${missedLeftOut > 0 ? `, except the ${missedLeftOut} left out for missed punches` : ""}, posts their accruals and approved leave, then generates the ADP file for ${preview.summary.employees} employees.${staysOpen > 0 ? ` The other ${staysOpen} ${staysOpen === 1 ? "timecard" : "timecards"} in these pay groups, outside your filters, stay open for their own run.` : ""}`
+                : `These timecards are already locked. This generates the ADP file for ${preview.summary.employees} employees.`}
             </p>
             {missedInFile > 0 && (
               <p className="m-0" style={{ color: "var(--text-warning)", fontWeight: "var(--weight-medium)" }}>

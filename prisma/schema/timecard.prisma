@@ -12,6 +12,9 @@ model PayCode {
   /// Maps to the PayBucket enum for overtime/payroll classification
   payBucket      PayBucket?
   countsTowardOt Boolean    @default(true)
+  /// Off: the hours stay on timecards and in reports but are left out of the
+  /// payroll file (FMLA, which payroll does not pay).
+  isPaid         Boolean    @default(true)
   isActive  Boolean @default(true)
   sortOrder Int     @default(0)
   createdAt DateTime @default(now())

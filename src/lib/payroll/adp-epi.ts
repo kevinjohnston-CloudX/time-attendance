@@ -21,7 +21,9 @@ import type { ExceptionType, PayBucket, Prisma } from "@prisma/client";
  *   for its regular hours;
  * - a pay code whose ADP code is HR, ADP's regular hours code, goes to Reg
  *   Hours whatever its kind (PTO Payout);
- * - unpaid time (unpaid meals, unpaid time off) is left out.
+ * - unpaid time (unpaid meals, unpaid time off) is left out, and so is any
+ *   pay code switched to Not paid (FMLA), meal premiums too; the preview
+ *   lists those hours.
  * File # is the employee's Badge ID. A person with no Badge ID is skipped.
  *
  * <p>Open exceptions never keep anyone out on their own; they are counted for
@@ -40,6 +42,8 @@ export type EpiFilters = {
   siteIds?: string[];
   departmentIds?: string[];
   agencyIds?: string[];
+  /** Active or inactive people only, as their status is now; left out, both. */
+  status?: "ACTIVE" | "INACTIVE";
   excludeMissedPunches?: boolean;
 };
 
@@ -81,6 +85,8 @@ export type EpiSummary = {
   byCode: { code: string; minutes: number }[];
   noBadge: { name: string; minutes: number }[];
   leftOut: { label: string; minutes: number; people: number }[];
+  /** Hours on pay codes switched to Not paid, left out of the file on purpose. */
+  notPaid: { label: string; minutes: number; people: number }[];
   /** Hours sent under a pay code's Express code because it has no ADP code. */
   noAdpCode: { label: string; code: string; minutes: number; people: number }[];
   unlockedLeftOut: number;
@@ -140,6 +146,7 @@ export function employeeWhere(tenantId: string, f: EpiFilters): Prisma.EmployeeW
     ...(f.siteIds?.length ? { siteId: { in: f.siteIds } } : {}),
     ...(f.departmentIds?.length ? { departmentId: { in: f.departmentIds } } : {}),
     ...(f.agencyIds?.length ? { agencyId: { in: f.agencyIds } } : {}),
+    ...(f.status ? { isActive: f.status === "ACTIVE" } : {}),
   };
 }
 
@@ -160,7 +167,7 @@ export async function buildAdpEpi(opts: {
   const [payCodes, timesheets] = await Promise.all([
     db.payCode.findMany({
       where: { tenantId },
-      select: { id: true, code: true, label: true, expressCode: true, adpCode: true, payBucket: true, isActive: true },
+      select: { id: true, code: true, label: true, expressCode: true, adpCode: true, payBucket: true, isActive: true, isPaid: true },
       orderBy: { code: "asc" },
     }),
     db.timesheet.findMany({
@@ -195,6 +202,7 @@ export async function buildAdpEpi(opts: {
   const people = new Map<string, Person>();
   const noBadge = new Map<string, number>();
   const leftOut = new Map<string, { minutes: number; people: Set<string> }>();
+  const notPaid = new Map<string, { minutes: number; people: Set<string> }>();
   const noAdp = new Map<string, { label: string; code: string; minutes: number; people: Set<string> }>();
   let unlockedLeftOut = 0;
   // Double time goes under the Double Time pay code's ADP code.
@@ -262,6 +270,14 @@ export async function buildAdpEpi(opts: {
       const bucket = (seg.payBucketOverride ?? seg.payBucket) as PayBucket;
       const pc = seg.payCodeId ? codeById.get(seg.payCodeId) : undefined;
 
+      if (pc && !pc.isPaid) {
+        const label = `${pc.code} ${pc.label}`;
+        const e = notPaid.get(label) ?? { minutes: 0, people: new Set<string>() };
+        e.minutes += m;
+        e.people.add(file || name);
+        notPaid.set(label, e);
+        continue;
+      }
       if (seg.segmentType === "MEAL_PREMIUM") {
         const mp = pc?.adpCode?.trim();
         if (mp) addCode(mp, m);
@@ -356,6 +372,7 @@ export async function buildAdpEpi(opts: {
       byCode: [...byCode.entries()].map(([code, minutes]) => ({ code, minutes })).sort((a, b) => b.minutes - a.minutes),
       noBadge: [...noBadge.entries()].map(([name, minutes]) => ({ name, minutes })).sort((a, b) => a.name.localeCompare(b.name)),
       leftOut: [...leftOut.entries()].map(([label, v]) => ({ label, minutes: v.minutes, people: v.people.size })),
+      notPaid: [...notPaid.entries()].map(([label, v]) => ({ label, minutes: v.minutes, people: v.people.size })),
       noAdpCode: [...noAdp.values()]
         .map((v) => ({ label: v.label, code: v.code, minutes: v.minutes, people: v.people.size }))
         .sort((a, b) => b.minutes - a.minutes),

@@ -190,8 +190,11 @@ export function computeRate(
  *
  * When a LeaveBalance row is created for the first time, the policy's
  * startingHours are credited as the initial balance.
+ *
+ * `employeeIds` narrows it to the people whose timecards were just locked
+ * (lock-period.ts); left out, every active employee of the company.
  */
-export async function postAccruals(payPeriodId: string): Promise<void> {
+export async function postAccruals(payPeriodId: string, employeeIds?: string[]): Promise<void> {
   const payPeriod = await db.payPeriod.findUniqueOrThrow({
     where: { id: payPeriodId },
   });
@@ -207,7 +210,7 @@ export async function postAccruals(payPeriodId: string): Promise<void> {
 
   const [employees, leaveTypes, rules, siteLinks, catPolicyLinks] = await Promise.all([
     db.employee.findMany({
-      where: { isActive: true, tenantId: payPeriod.tenantId },
+      where: { isActive: true, tenantId: payPeriod.tenantId, ...(employeeIds ? { id: { in: employeeIds } } : {}) },
       select: {
         id: true, siteId: true, payCategoryId: true, hireDate: true,
         adjustedHireDate: true, titleChangeDate: true,
