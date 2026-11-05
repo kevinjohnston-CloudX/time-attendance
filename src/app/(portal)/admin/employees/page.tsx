@@ -80,7 +80,7 @@ export default async function EmployeesPage({
   if (!employeesResult.success || !refDataResult.success) redirect("/admin");
 
   const { employees, total, pageSize } = employeesResult.data;
-  const { sites, departments, ruleSets, customRoles: allRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies, nextVisitorBadge, visitorDepartment } = refDataResult.data;
+  const { sites, departments, ruleSets, customRoles: allRoles, builtinRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies, nextVisitorBadge, visitorDepartment } = refDataResult.data;
   // A new account only offers the roles this person may give (Loss Prevention and
   // other Live Attendance roles are a System Admin's); the save checks again.
   const customRoles = allRoles.filter((r) => r.givable);
@@ -119,6 +119,7 @@ export default async function EmployeesPage({
                   departments={departments}
                   ruleSets={ruleSets}
                   customRoles={customRoles}
+                  builtinRoles={builtinRoles}
                   shifts={shifts}
                   holidayRules={holidayRules}
                   payCategories={payCategories ?? []}

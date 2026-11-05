@@ -127,6 +127,8 @@ type EmployeeListItem = {
   payType?: string | null;
   /** The day they started, "yyyy-MM-dd": no day before it is an absence. */
   startedOn?: string;
+  /** Their last day if terminated, "yyyy-MM-dd": no day after it is an absence. */
+  endedOn?: string | null;
   // optional period-dependent fields (present when loaded via batch payroll view)
   timesheetId?: string;
   status?: string;
@@ -228,6 +230,7 @@ type TimecardDetail = {
     payRate: number | null;
     payType: string | null;
     startedOn: string;
+    endedOn?: string | null;
     shift: { mealConfig: { autoDeduct?: boolean; minMealMinutes?: number; maxMealMinutes?: number; meals?: { workAtLeastHours: number; deductMinutes: number }[] } | null } | null;
     ruleSet: { overtimeRequiresAuth: boolean; allowTimesheetOtAuth: boolean; defaultPayCodeId: string | null };
   };
@@ -1151,7 +1154,9 @@ export function TimecardViewer({
       setPhoneFor(employeeId);
       if (employeeId === selectedEmployeeId) return;
     }
-    navigate(employeeId);
+    // On the period on screen: without it the page went back to today's, whose
+    // list leaves out someone terminated before it, and opened somebody else.
+    navigate(employeeId, selectedPeriodId);
   }
 
   function backToList() {
@@ -1734,6 +1739,10 @@ export function TimecardViewer({
         if (!timesheetId) return;
 
         // ── Collect per-day change descriptions before saving ────────
+        // Reason codes only: every other change here notes its own day on the
+        // server as it is saved, with the reason typed for it (change-note.ts,
+        // and the meal waivers in timesheet.actions). Noting them here too put
+        // each change on the day twice.
         const dayChanges = new Map<string, string[]>();
         function addChange(dayKey: string, desc: string) {
           const list = dayChanges.get(dayKey) ?? [];
@@ -1741,71 +1750,11 @@ export function TimecardViewer({
           dayChanges.set(dayKey, list);
         }
 
-        for (const [key, payCodeId] of pendingPayCodes.entries()) {
-          if (key.startsWith("absent:")) {
-            const segmentDate = key.slice(7);
-            const oldSeg = timecard?.segments.find(
-              (s) =>
-                format(parseUtcDate(s.segmentDate), "yyyy-MM-dd") === segmentDate &&
-                s.segmentType === "LEAVE" &&
-                s.durationMinutes === 0
-            );
-            const oldLabel = oldSeg?.payCode?.label ?? "None";
-            const newLabel = payCodes.find((c) => c.id === payCodeId)?.label ?? (payCodeId ? "Unknown" : "Cleared");
-            addChange(segmentDate, `Pay code: ${oldLabel} → ${newLabel}`);
-          } else {
-            const seg = timecard?.segments.find((s) => s.id === key);
-            if (seg) {
-              const segDate = format(parseUtcDate(seg.segmentDate), "yyyy-MM-dd");
-              const oldLabel = seg.payCode?.label ?? "None";
-              const newLabel = payCodes.find((c) => c.id === payCodeId)?.label ?? (payCodeId ? "Unknown" : "Cleared");
-              addChange(segDate, `Pay code: ${oldLabel} → ${newLabel}`);
-            }
-          }
-        }
-
         for (const [segmentDate, reasonCodeId] of pendingReasonCodes.entries()) {
           const oldReason = timecard?.dayReasons.find((dr) => dr.segmentDate === segmentDate);
           const oldLabel = oldReason?.reasonCode.label ?? "None";
           const newLabel = reasonCodes.find((r) => r.id === reasonCodeId)?.label ?? (reasonCodeId ? "Unknown" : "Cleared");
           addChange(segmentDate, `Reason code: ${oldLabel} → ${newLabel}`);
-        }
-
-        for (const [punchId, newDate] of pendingPunchEdits.entries()) {
-          const punch = timecard?.punches.find((p) => p.id === punchId);
-          if (punch) {
-            const dayKey = format(atSite(punch.roundedTime), "yyyy-MM-dd");
-            const typeLabel = PUNCH_TYPE_LABEL[punch.punchType as PunchTypeValue] ?? punch.punchType;
-            const oldTime = format(atSite(punch.roundedTime), "h:mm a");
-            const newTime = format(newDate, "h:mm a");
-            addChange(dayKey, `${typeLabel} corrected: ${oldTime} → ${newTime}`);
-          }
-        }
-
-        for (const { dayKey, punchType, punchDate } of pendingNewPunches) {
-          const typeLabel = punchType === "CLOCK_IN" ? "Clock In" : "Clock Out";
-          addChange(dayKey, `${typeLabel} added: ${format(punchDate, "h:mm a")}`);
-        }
-
-        for (const segmentDate of pendingWaiverToggles) {
-          const hasWaiver = timecard?.mealWaivers.some((w) => w.segmentDate === segmentDate);
-          addChange(segmentDate, hasWaiver ? "Meal waiver removed" : "Meal waiver added");
-        }
-
-        for (const { dayKey, inTime, outTime } of pendingDeletions) {
-          const timeRange = [inTime, outTime].filter(Boolean).join(" – ");
-          addChange(dayKey, `Entry deleted${timeRange ? `: ${timeRange}` : ""}`);
-        }
-        for (const { dayKey, hours } of pendingHoursEntries) {
-          addChange(dayKey, `Manual hours added: ${hours}h`);
-        }
-        if (reason) {
-          const reasonDays = new Set<string>(pendingDeletions.map((d) => d.dayKey));
-          for (const punchId of pendingPunchEdits.keys()) {
-            const punch = timecard?.punches.find((p) => p.id === punchId);
-            if (punch) reasonDays.add(format(atSite(punch.roundedTime), "yyyy-MM-dd"));
-          }
-          for (const dayKey of reasonDays) addChange(dayKey, `Reason: ${reason}`);
         }
         // ─────────────────────────────────────────────────────────────
 
@@ -2753,6 +2702,7 @@ export function TimecardViewer({
                       const isSalaryEmployee =
                         (timecard?.employee.payType ?? listEmpForSalary?.payType) === "SALARY";
                       const startDay = timecard?.employee.startedOn ?? listEmpForSalary?.startedOn;
+                      const endDay = timecard?.employee.endedOn ?? listEmpForSalary?.endedOn ?? null;
                       const SALARY_VIRTUAL_MINS = 480;
                       // Pay weeks, counted from the first day on screen (the
                       // period's start, or the custom range's), the same weeks
@@ -2827,8 +2777,10 @@ export function TimecardViewer({
                       // Before they started: not absent, and no salary hours (the
                       // timecard engine's rule, startedOn in segment-builder).
                       const beforeStart = !!startDay && dayStr < startDay;
+                      // After their last day: the same, for someone terminated.
+                      const afterEnd = !!endDay && dayStr > endDay;
                       const isSalaryVirtualDay =
-                        !timecard && isSalaryEmployee && !isWeekend && !isTodayRow && isPast && !beforeStart;
+                        !timecard && isSalaryEmployee && !isWeekend && !isTodayRow && isPast && !beforeStart && !afterEnd;
                       const isAbsent =
                         !isWeekend &&
                         !isTodayRow &&
@@ -2837,7 +2789,8 @@ export function TimecardViewer({
                         leaveSegments.length === 0 &&
                         daySegments.length === 0 &&
                         !isSalaryVirtualDay &&
-                        !beforeStart;
+                        !beforeStart &&
+                        !afterEnd;
 
                       const mainPunchIds = [firstIn?.id, lastOut?.id].filter(Boolean) as string[];
                       const isMainRowPendingDelete = mainPunchIds.length > 0 && pendingDeletions.some(

@@ -1,4 +1,3 @@
-import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { parseUtcDate, startOfDayInTz, toSiteClock } from "@/lib/utils/date";
 import type { BadgeTone } from "@/components/ui";
@@ -199,7 +198,14 @@ export interface Presence {
   byDept: PresenceDept[];
 }
 
-type StateRow = { employeeId: string; state: string; dept: string | null };
+type StateRow = { employeeId: string; state: string };
+
+/**
+ * How far back a punch can still have someone on the clock: the window Live
+ * Attendance uses (on-site.service LOOKBACK_MS), so both say the same about
+ * who is in. Long enough for a night shift clocked in yesterday evening.
+ */
+export const PRESENCE_WINDOW_MS = 36 * 60 * 60 * 1000;
 
 /**
  * Who is on the clock right now, by department.
@@ -208,51 +214,53 @@ type StateRow = { employeeId: string; state: string; dept: string | null };
  * has a few hundred active people, and the per-employee helper would be that
  * many round trips on every dashboard load.
  *
- * <p>Employees who have never punched do not appear in the state query at all,
- * which is why the department totals come from a separate count — without it
- * "not in" would silently exclude everyone who has not badged this year.
+ * <p>Only punches inside PRESENCE_WINDOW_MS are read. The query read every
+ * punch the company ever had (73,000 on 2026-11-05) on each Dashboard and
+ * Team Overview load, and took 22 seconds a time the morning the database
+ * ran out of CPU. Someone whose last punch is older is not in: the nightly
+ * auto clock out has closed it, and one it missed is a stuck record, not a
+ * person on the floor.
+ *
+ * <p>Employees with no punch in the window do not appear in the state query
+ * at all, which is why the department totals come from a separate count:
+ * without it "not in" would silently leave them out.
  */
-/**
- * Each person's newest punch, read through their own (employeeId,
- * roundedTime) index. The same rows as picking the newest of every punch,
- * which read and sorted the whole punches table on every Dashboard: 1.5
- * seconds and a spill to disk for the whole company (CPU audit, Nov 5).
- * Someone with no punch is left out, as before.
- */
-const NEWEST_PUNCH_STATE = Prisma.sql`
-  SELECT p."stateAfter"::text AS state
-  FROM "punches" p
-  WHERE p."employeeId" = e.id
-    AND p."isRejected" = false
-    AND p."correctedById" IS NULL
-  ORDER BY p."roundedTime" DESC
-  LIMIT 1`;
-
-export async function getPresence(tenantId: string, supervisorId: string | null): Promise<Presence> {
+export async function getPresence(tenantId: string, supervisorId: string | null, now = new Date()): Promise<Presence> {
   const scoped = supervisorId
     ? { tenantId, isActive: true, ...directReportsOf(supervisorId) }
     : { tenantId, isActive: true };
+  const since = new Date(now.getTime() - PRESENCE_WINDOW_MS);
 
   const [states, headcount] = await Promise.all([
     supervisorId
       ? db.$queryRaw<StateRow[]>`
-          SELECT e.id AS "employeeId", lp.state, d.name AS dept
-          FROM "employees" e
-          LEFT JOIN "departments" d ON d.id = e."departmentId"
-          CROSS JOIN LATERAL (${NEWEST_PUNCH_STATE}) lp
+          SELECT DISTINCT ON (p."employeeId")
+                 p."employeeId"       AS "employeeId",
+                 p."stateAfter"::text AS state
+          FROM "punches" p
+          JOIN "employees" e ON e.id = p."employeeId"
           WHERE e."tenantId" = ${tenantId}
             AND e."isActive" = true
             AND (e."supervisorId" = ${supervisorId}
                  OR EXISTS (SELECT 1 FROM "employee_supervisors" es
                             WHERE es."employeeId" = e.id AND es."supervisorId" = ${supervisorId}))
+            AND p."isRejected" = false
+            AND p."correctedById" IS NULL
+            AND p."roundedTime" >= ${since}
+          ORDER BY p."employeeId", p."roundedTime" DESC
         `
       : db.$queryRaw<StateRow[]>`
-          SELECT e.id AS "employeeId", lp.state, d.name AS dept
-          FROM "employees" e
-          LEFT JOIN "departments" d ON d.id = e."departmentId"
-          CROSS JOIN LATERAL (${NEWEST_PUNCH_STATE}) lp
+          SELECT DISTINCT ON (p."employeeId")
+                 p."employeeId"       AS "employeeId",
+                 p."stateAfter"::text AS state
+          FROM "punches" p
+          JOIN "employees" e ON e.id = p."employeeId"
           WHERE e."tenantId" = ${tenantId}
             AND e."isActive" = true
+            AND p."isRejected" = false
+            AND p."correctedById" IS NULL
+            AND p."roundedTime" >= ${since}
+          ORDER BY p."employeeId", p."roundedTime" DESC
         `,
     db.employee.findMany({
       where: scoped,

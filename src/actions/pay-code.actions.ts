@@ -7,6 +7,15 @@ import { TIMECARD_EDITORS } from "@/lib/rbac/permissions";
 import { reconcileLeaveDeductions, reconcileSalarySegmentDeduction } from "@/lib/engines/leave-deduction";
 import { openClockInOnDay, shiftClockIn } from "@/lib/engines/shift-clock-in";
 import { assertPayCodeAllowed } from "@/lib/pay-code-availability";
+import { noteTimecardChange } from "@/lib/timecards/change-note";
+
+/** A note on the day for a pay code set or cleared on it (change-note). */
+async function notePayCode(timesheetId: string, day: string, actorId: string | null | undefined, payCodeId: string | null) {
+  const label = payCodeId ? (await db.payCode.findUnique({ where: { id: payCodeId }, select: { label: true } }))?.label : null;
+  await noteTimecardChange({ timesheetId, day, actorId, change: label ? `Changed the pay code to ${label}` : "Cleared the pay code" });
+}
+
+const BUCKET_WORD: Record<string, string> = { REG: "regular", OT: "overtime", DT: "double time", UNPAID: "unpaid" };
 import { z } from "zod";
 
 // ─── List pay codes for tenant ──────────────────────────────────────────────
@@ -56,13 +65,14 @@ const createPayCodeSchema = z.object({
   adpCode: ADP_CODE,
   payBucket: z.string().nullable().optional(),
   countsTowardOt: z.boolean().optional().default(true),
+  isPaid: z.boolean().optional().default(true),
   sortOrder: z.number().int().min(0).optional(),
 });
 
 export const createPayCode = withRBAC(
   "PAY_PERIOD_MANAGE",
   async (ctx, input: unknown) => {
-    const { code, label, expressCode, adpCode, payBucket, countsTowardOt, sortOrder } = createPayCodeSchema.parse(input);
+    const { code, label, expressCode, adpCode, payBucket, countsTowardOt, isPaid, sortOrder } = createPayCodeSchema.parse(input);
     const tenantId = ctx.tenantId;
     if (!tenantId) throw new Error("No tenant");
 
@@ -92,6 +102,7 @@ export const createPayCode = withRBAC(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         payBucket: payBucket ? (payBucket as any) : null,
         countsTowardOt,
+        isPaid,
         sortOrder: nextOrder,
         isActive: true,
       },
@@ -124,6 +135,7 @@ const updatePayCodeSchema = z.object({
   adpCode: ADP_CODE,
   payBucket: z.string().nullable().optional(),
   countsTowardOt: z.boolean().optional().default(true),
+  isPaid: z.boolean().optional().default(true),
   sortOrder: z.number().int().min(0),
   isActive: z.boolean(),
 });
@@ -131,7 +143,7 @@ const updatePayCodeSchema = z.object({
 export const updatePayCode = withRBAC(
   "PAY_PERIOD_MANAGE",
   async (ctx, input: unknown) => {
-    const { payCodeId, code, label, expressCode, adpCode, payBucket, countsTowardOt, sortOrder, isActive } =
+    const { payCodeId, code, label, expressCode, adpCode, payBucket, countsTowardOt, isPaid, sortOrder, isActive } =
       updatePayCodeSchema.parse(input);
     const tenantId = ctx.tenantId;
     if (!tenantId) throw new Error("No tenant");
@@ -157,6 +169,7 @@ export const updatePayCode = withRBAC(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         payBucket: payBucket ? (payBucket as any) : null,
         countsTowardOt,
+        isPaid,
         sortOrder,
         isActive,
       },
@@ -303,6 +316,9 @@ export const setSegmentPayCode = withRBAC(
         }
       }
     }
+    if ((payCodeId ?? null) !== (current.payCodeId ?? null)) {
+      await notePayCode(segment.timesheetId, segment.segmentDate.toISOString().slice(0, 10), ctx.employeeId, payCodeId ?? null);
+    }
 
     return { success: true };
   }
@@ -319,13 +335,19 @@ export const setSegmentPayBucket = withRBAC(
   TIMECARD_EDITORS,
   async (ctx, input: z.infer<typeof setSegmentPayBucketSchema>) => {
     const { segmentId, payBucket } = setSegmentPayBucketSchema.parse(input);
-    const { timesheetId } = await db.workSegment.findUniqueOrThrow({ where: { id: segmentId }, select: { timesheetId: true } });
+    const { timesheetId, segmentDate } = await db.workSegment.findUniqueOrThrow({ where: { id: segmentId }, select: { timesheetId: true, segmentDate: true } });
     await editableTimesheetInScope(ctx, timesheetId);
 
     await db.workSegment.update({
       where: { id: segmentId },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       data: { payBucketOverride: payBucket ? (payBucket as any) : null },
+    });
+    await noteTimecardChange({
+      timesheetId,
+      day: segmentDate.toISOString().slice(0, 10),
+      actorId: ctx.employeeId,
+      change: payBucket ? `Paid the hours as ${BUCKET_WORD[payBucket] ?? payBucket}` : "Paid the hours as calculated again",
     });
 
     return { success: true };
@@ -430,6 +452,7 @@ export const setAbsentDayPayCode = withRBAC(
       if (loneClockIn) {
         await db.punch.update({ where: { id: loneClockIn }, data: { payCodeId: null } });
       }
+      if (existing?.payCodeId) await notePayCode(timesheetId, segmentDate, ctx.employeeId, null);
       return { success: true };
     }
 
@@ -489,6 +512,7 @@ export const setAbsentDayPayCode = withRBAC(
         data: { payCodeId },
       });
     }
+    if (payCodeId !== (existing?.payCodeId ?? null)) await notePayCode(timesheetId, segmentDate, ctx.employeeId, payCodeId);
 
     return { success: true };
   }

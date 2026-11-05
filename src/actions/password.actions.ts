@@ -23,7 +23,9 @@ const LOGIN_MANAGERS = ["SYSTEM_ADMIN", "HR_ADMIN", "PAYROLL_ADMIN", "SUPER_ADMI
  * <p>Only an admin, only inside their own company, never their own login
  * (another admin resets it), and only for
  * somebody junior to them. Without the last rule a payroll admin could set a
- * system admin's password and sign in as them. A super admin may reset anyone.
+ * system admin's password and sign in as them. A System Admin's login takes
+ * another System Admin: HR Admin shares the rank, but not that. A super admin
+ * may reset anyone.
  */
 async function manageableLogin(employeeId: string) {
   const session = await auth();
@@ -42,7 +44,7 @@ async function manageableLogin(employeeId: string) {
   }
   const target = await db.employee.findFirst({
     where: { id: employeeId, ...(caller.isSuperAdmin ? {} : { tenantId: caller.tenantId ?? "" }) },
-    select: { id: true, tenantId: true, userId: true, user: { select: { id: true, name: true, email: true, workEmail: true, isSuperAdmin: true } } },
+    select: { id: true, tenantId: true, userId: true, role: true, user: { select: { id: true, name: true, email: true, workEmail: true, isSuperAdmin: true } } },
   });
   if (!target) return { error: "This employee isn't available to you. Reload the page and try again." } as const;
   // A super admin's login reaches every company, so only a super admin
@@ -58,6 +60,9 @@ async function manageableLogin(employeeId: string) {
     const rank = await employeeRank(target.id, target.tenantId);
     if (rank === null || rank > caller.rank || (rank === caller.rank && !editsPeers(caller.rank))) {
       return { error: "Only someone more senior than this person can reset their password." } as const;
+    }
+    if (target.role === "SYSTEM_ADMIN" && caller.role !== "SYSTEM_ADMIN") {
+      return { error: "Only a System Admin can reset a System Admin's password." } as const;
     }
   }
   return { target } as const;

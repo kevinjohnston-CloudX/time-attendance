@@ -6,16 +6,18 @@ import { withRBAC } from "@/lib/rbac/guard";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { buildAdpEpi, employeeWhere, type EpiFilters, type EpiSummary } from "@/lib/payroll/adp-epi";
 import { missingAdpCodes } from "@/lib/payroll/adp-codes";
-import { lockPeriod } from "@/lib/payroll/lock-period";
+import { lockTimecards } from "@/lib/payroll/lock-period";
 import { dayKey, FREQ_LABEL, periodLastDay } from "@/lib/pay-period-display";
 import type { PayFrequency } from "@prisma/client";
 import { batchLabel } from "@/lib/payroll/run-codes";
 
 /**
- * Run Payroll: lock the pay periods of one frequency that fall inside a date
- * range, and build the ADP EPI file for them. A company runs a period per rule
- * set, so one run takes in every rule set's period of that frequency inside
- * the dates; the filters narrow who goes in the file.
+ * Run Payroll: build the ADP EPI file for the pay periods of one frequency
+ * that fall inside a date range, and lock the timecards in it. A company runs
+ * a period per rule set, so one run takes in every rule set's period of that
+ * frequency inside the dates; the filters narrow who goes in the file, and
+ * only their timecards are locked (lockTimecards). A period locks once all of
+ * its timecards have been.
  */
 
 const FREQUENCIES: PayFrequency[] = ["WEEKLY", "BIWEEKLY", "SEMIMONTHLY", "MONTHLY"];
@@ -114,6 +116,7 @@ const runSchema = z.object({
     siteIds: z.array(z.string()).default([]),
     departmentIds: z.array(z.string()).default([]),
     agencyIds: z.array(z.string()).default([]),
+    status: z.enum(["ALL", "ACTIVE", "INACTIVE"]).default("ALL"),
     excludeMissedPunches: z.boolean().default(false),
   }),
   /** Process only: go ahead although timecards in the file have open missed punches. */
@@ -134,6 +137,7 @@ function parseFilters(f: z.infer<typeof runSchema>["filters"]): EpiFilters {
     siteIds: f.siteIds,
     departmentIds: f.departmentIds,
     agencyIds: f.agencyIds,
+    status: f.status === "ALL" ? undefined : f.status,
     excludeMissedPunches: f.excludeMissedPunches,
   };
 }
@@ -164,9 +168,20 @@ async function periodsInRun(tenantId: string, periodIds: string[], filters: EpiF
 
 export type RunPreview = {
   summary: EpiSummary;
-  toLock: { name: string; timecards: number; alsoOutsideFilters: number }[];
+  /** Per pay group: the timecards Process locks, and the open ones outside the filters, which stay open. */
+  toLock: { name: string; timecards: number; staysOpen: number }[];
   alreadyLocked: string[];
 };
+
+/** Open timecards per period, of the people these filters take in (all, with none). */
+async function openTimecards(tenantId: string, periodIds: string[], filters: EpiFilters) {
+  const rows = await db.timesheet.groupBy({
+    by: ["payPeriodId"],
+    where: { payPeriodId: { in: periodIds }, status: { not: "LOCKED" }, employee: employeeWhere(tenantId, filters) },
+    _count: { _all: true },
+  });
+  return new Map(rows.map((r) => [r.payPeriodId, r._count._all]));
+}
 
 export const previewPayrollRun = withRBAC("PAYROLL_RUN", async ({ tenantId }, input: RunPayrollInput): Promise<RunPreview> => {
   if (!tenantId) throw new Error("Tenant context required");
@@ -174,7 +189,11 @@ export const previewPayrollRun = withRBAC("PAYROLL_RUN", async ({ tenantId }, in
   const filters = parseFilters(parsed.filters);
   const periods = await periodsInRange(tenantId, parsed.frequency, parsed.from, parsed.to);
   const ids = periods.map((p) => p.id);
-  const [inRun, totals] = await Promise.all([periodsInRun(tenantId, ids, withoutMissedPunchFilter(filters)), periodsInRun(tenantId, ids, {})]);
+  const [inRun, openInRun, openAll] = await Promise.all([
+    periodsInRun(tenantId, ids, withoutMissedPunchFilter(filters)),
+    openTimecards(tenantId, ids, withoutMissedPunchFilter(filters)),
+    openTimecards(tenantId, ids, {}),
+  ]);
 
   const { summary } = await buildAdpEpi({ tenantId, payPeriodIds: ids, filters, codes: parsed.codes, mode: "preview" });
 
@@ -182,13 +201,13 @@ export const previewPayrollRun = withRBAC("PAYROLL_RUN", async ({ tenantId }, in
   return {
     summary,
     toLock: periods
-      .filter((p) => inRun.has(p.id) && p.status !== "LOCKED")
+      .filter((p) => (openInRun.get(p.id) ?? 0) > 0)
       .map((p) => ({
         name: label(p),
-        timecards: totals.get(p.id) ?? 0,
-        alsoOutsideFilters: (totals.get(p.id) ?? 0) - (inRun.get(p.id) ?? 0),
+        timecards: openInRun.get(p.id) ?? 0,
+        staysOpen: (openAll.get(p.id) ?? 0) - (openInRun.get(p.id) ?? 0),
       })),
-    alreadyLocked: periods.filter((p) => inRun.has(p.id) && p.status === "LOCKED").map(label),
+    alreadyLocked: periods.filter((p) => inRun.has(p.id) && !openInRun.get(p.id)).map(label),
   };
 });
 
@@ -216,7 +235,7 @@ export const draftPayrollFile = withRBAC(
 
 export const processPayrollRun = withRBAC(
   "PAYROLL_RUN",
-  async (ctx, input: RunPayrollInput): Promise<{ csv: string; filename: string; summary: EpiSummary; locked: number; leftOpen: number }> => {
+  async (ctx, input: RunPayrollInput): Promise<{ csv: string; filename: string; summary: EpiSummary; locked: number; periodsLocked: number; leftOpen: number }> => {
     const { tenantId, employeeId } = ctx;
     if (!tenantId) throw new Error("Tenant context required");
     const parsed = runSchema.parse(input);
@@ -237,13 +256,18 @@ export const processPayrollRun = withRBAC(
     }
 
     // Left out for a missed punch: their timecards stay unlocked to be corrected.
+    // Everyone else the filters take in is locked, and no one outside them.
     const leftOut = check.summary.missedPunches.filter((m) => m.excluded);
+    const keepOpen = new Set(leftOut.map((m) => m.timesheetId));
     const inRun = await periodsInRun(tenantId, periodIds, withoutMissedPunchFilter(filters));
-    const toLock = periods.filter((p) => inRun.has(p.id) && p.status !== "LOCKED");
-    for (const p of toLock) {
-      await lockPeriod(p.id, ctx, leftOut.filter((m) => m.payPeriodId === p.id).map((m) => m.timesheetId));
-    }
-    const leftOpen = leftOut.filter((m) => toLock.some((p) => p.id === m.payPeriodId)).length;
+    const toLock = (
+      await db.timesheet.findMany({
+        where: { payPeriodId: { in: periodIds }, status: { not: "LOCKED" }, employee: employeeWhere(tenantId, withoutMissedPunchFilter(filters)) },
+        select: { id: true, payPeriodId: true },
+      })
+    ).filter((t) => !keepOpen.has(t.id));
+    const periodsLocked = await lockTimecards(toLock.map((t) => t.id), ctx);
+    const leftOpen = leftOut.length;
 
     const { csv, summary } = await buildAdpEpi({ tenantId, payPeriodIds: periodIds, filters, codes: parsed.codes, mode: "final" });
     // Named as ADP takes it and NovaTime wrote it: EPI, the company code, the
@@ -268,7 +292,7 @@ export const processPayrollRun = withRBAC(
             filters: parsed.filters,
             employees: summary.employees,
             rows: summary.rows,
-            lockedByThisRun: toLock.some((t) => t.id === p.id),
+            timecardsLockedByThisRun: toLock.filter((t) => t.payPeriodId === p.id).length,
             openMissedPunchesInFile: missedInFile.filter((m) => m.payPeriodId === p.id).length,
             leftOutForMissedPunches: leftOut.filter((m) => m.payPeriodId === p.id).length,
           },
@@ -276,6 +300,6 @@ export const processPayrollRun = withRBAC(
       });
     }
 
-    return { csv, filename, summary, locked: toLock.length, leftOpen };
+    return { csv, filename, summary, locked: toLock.length, periodsLocked, leftOpen };
   },
 );

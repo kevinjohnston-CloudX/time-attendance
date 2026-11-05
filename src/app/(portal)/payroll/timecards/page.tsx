@@ -192,11 +192,14 @@ export default async function TimecardsPage({
     const periodIds = new Set(periods.map((p) => p.id));
 
     if (!selectedPeriodId || !periodIds.has(selectedPeriodId)) {
-      // URL period doesn't belong to this employee's rule set — find their current period
-      const current = periods.find(
-        (p) => new Date(p.startDate) <= now && new Date(p.endDate) > now
-      );
-      selectedPeriodId = current?.id ?? periods[periods.length - 1]?.id ?? null;
+      // URL period doesn't belong to this employee's rule set (another pay
+      // group's): their own period over the same days, else their current one.
+      const asked = selectedPeriodId
+        ? await db.payPeriod.findFirst({ where: { id: selectedPeriodId, ...(t ? { tenantId: t } : {}) }, select: { startDate: true } })
+        : null;
+      const at = asked ? new Date(asked.startDate.getTime() + 12 * 3_600_000) : now;
+      const covering = (d: Date) => periods.find((p) => new Date(p.startDate) <= d && new Date(p.endDate) > d);
+      selectedPeriodId = (covering(at) ?? covering(now))?.id ?? periods[periods.length - 1]?.id ?? null;
     }
   }
 
@@ -260,6 +263,7 @@ export default async function TimecardsPage({
           payRate: !canSeePay ? null : periodRate != null ? periodRate : timecard.employee.payRate ? Number(timecard.employee.payRate) : null,
           payType: timecard.employee.payType,
           startedOn: timecard.employee.startedOn,
+          endedOn: timecard.employee.endedOn,
           shift: timecard.employee.shift
             ? { mealConfig: timecard.employee.shift.mealConfig as { autoDeduct?: boolean; meals?: { workAtLeastHours: number; deductMinutes: number }[] } | null }
             : null,

@@ -131,6 +131,7 @@ export function PayCodesManager({ payCodes }: { payCodes: PayCode[] }) {
       adpCode: String(form.get("adpCode") ?? "").trim() || null,
       payBucket: String(form.get("payBucket") ?? "") || null,
       countsTowardOt: form.get("countsTowardOt") !== "false",
+      isPaid: form.get("isPaid") !== "false",
     };
     setError(null);
     startTransition(async () => {
@@ -194,6 +195,7 @@ export function PayCodesManager({ payCodes }: { payCodes: PayCode[] }) {
                 <TH>ADP code</TH>
                 <TH>Pay bucket</TH>
                 <TH>Overtime</TH>
+                <TH>Payroll</TH>
                 <TH>Status</TH>
               </TR>
             </THead>
@@ -273,6 +275,7 @@ export function PayCodesManager({ payCodes }: { payCodes: PayCode[] }) {
                     {p.payBucket ? (PAY_BUCKET_LABEL[p.payBucket] ?? p.payBucket) : <Muted />}
                   </TD>
                   <TD style={{ color: "var(--text-secondary)" }}>{p.countsTowardOt ? "Counts" : <Muted>Excluded</Muted>}</TD>
+                  <TD style={{ color: "var(--text-secondary)" }}>{p.isPaid ? "Paid" : <Muted>Not paid</Muted>}</TD>
                   <TD>
                     <StatusBadge active={p.isActive} />
                   </TD>
@@ -304,6 +307,7 @@ function PayCodeDialog({
   onClose: () => void;
 }) {
   const [counts, setCounts] = useState(p?.countsTowardOt ?? true);
+  const [paid, setPaid] = useState(p?.isPaid ?? true);
   return (
     <SetupDialog
       title={p ? `${p.code} ${p.label}` : "Add pay code"}
@@ -367,6 +371,22 @@ function PayCodeDialog({
           counts
             ? "These hours add up toward the daily and weekly overtime thresholds."
             : "These hours stay regular, whatever the daily or weekly totals."
+        }
+      />
+
+      <ChoiceField
+        label="Payroll"
+        name="isPaid"
+        defaultValue={paid ? "true" : "false"}
+        onChange={(v) => setPaid(v === "true")}
+        options={[
+          { value: "true", label: "Paid" },
+          { value: "false", label: "Not paid" },
+        ]}
+        hint={
+          paid
+            ? "These hours go in the payroll file."
+            : "These hours stay on timecards and in reports, but are left out of the payroll file."
         }
       />
 

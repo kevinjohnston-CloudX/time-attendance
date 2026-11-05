@@ -24,6 +24,9 @@ import {
 import type { Punch } from "@prisma/client";
 import { PUNCH_TYPE_LABEL, type PunchTypeValue } from "@/lib/state-machines/labels";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { clockAt, dayAt, noteTimecardChange } from "@/lib/timecards/change-note";
+
+const punchWord = (t: string) => (t === "CLOCK_IN" ? "clock in" : t === "CLOCK_OUT" ? "clock out" : t === "MEAL_START" ? "meal start" : t === "MEAL_END" ? "meal end" : "punch");
 
 
 // ─── recordPunch ─────────────────────────────────────────────────────────────
@@ -198,7 +201,7 @@ export const deletePunch = withRBAC(
     if (scoped.employeeId === actorId) throw new Error("You can't change your own punches");
     const original = await db.punch.findUniqueOrThrow({
       where: { id: scoped.id },
-      include: { employee: { include: { ruleSet: true } } },
+      include: { employee: { include: { ruleSet: true, site: { select: { timezone: true } } } } },
     });
 
     if (original.correctedById) {
@@ -249,6 +252,14 @@ export const deletePunch = withRBAC(
     });
 
     await rebuildSegments(original.timesheetId!, original.employee.ruleSet);
+    const tz = personTimeZone(original.employee, "UTC");
+    await noteTimecardChange({
+      timesheetId: original.timesheetId!,
+      day: dayAt(original.punchTime, tz),
+      actorId,
+      change: `Removed ${punchWord(original.punchType)} ${clockAt(original.punchTime, tz)}`,
+      note: reason,
+    });
 
     revalidatePath("/time/history");
     revalidatePath("/payroll/timecards");
@@ -268,6 +279,10 @@ export const correctPunch = withRBAC(
     const scoped = await punchInScope(ctx, originalPunchId, TIMECARD_EDITORS_COMPANY);
     if (scoped.employeeId === supervisorId) throw new Error("You can't change your own punches");
     const newPunchTime = new Date(newPunchTimeStr);
+    const before = await db.punch.findUniqueOrThrow({
+      where: { id: originalPunchId },
+      select: { punchType: true, punchTime: true, employee: { select: { timeZone: true, site: { select: { timezone: true } } } } },
+    });
 
     const { correction, timesheetId, ruleSet } = await db.$transaction(
       async (tx) =>
@@ -280,6 +295,14 @@ export const correctPunch = withRBAC(
     );
 
     await rebuildSegments(timesheetId, ruleSet);
+    const tz = personTimeZone(before.employee, "UTC");
+    await noteTimecardChange({
+      timesheetId,
+      day: dayAt(before.punchTime, tz),
+      actorId: supervisorId,
+      change: `Changed ${punchWord(before.punchType)} from ${clockAt(before.punchTime, tz)} to ${clockAt(newPunchTime, tz)}`,
+      note: reason,
+    });
 
     revalidatePath("/time/history");
     revalidatePath("/supervisor");

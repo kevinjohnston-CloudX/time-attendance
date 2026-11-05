@@ -112,6 +112,7 @@ const NAMED: Record<string, string> = {
   LOGIN_FAILED: "Sign in failed",
   SETTINGS_UPDATE: "Company settings updated",
   LOCK: "Pay period locked",
+  TIMECARDS_LOCKED: "Timecards locked by Run Payroll",
   REOPEN: "Pay period reopened",
   MARK_READY: "Pay period marked ready",
 };
