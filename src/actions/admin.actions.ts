@@ -23,7 +23,7 @@ import { encryptPiiFields, decryptPiiFields } from "@/lib/crypto/pii";
 import { activeChangeEvent, queueEmployeeEvent, sendSoon } from "@/lib/webhooks/employee-events";
 import { currentIdentity } from "@/lib/rbac/current";
 import { employeeRank, forgetIdentity, type LiveIdentity } from "@/lib/rbac/identity";
-import { ROLE_RANK, isValidRole, givesLiveAttendanceRoles, editsPeers } from "@/lib/rbac/roles";
+import { ROLE_RANK, isValidRole, givesLiveAttendanceRoles, givesRank, editsPeers } from "@/lib/rbac/roles";
 import { todayKey } from "@/lib/pay-rates";
 import { personTimeZone, timeZoneLabel } from "@/lib/utils/person-time-zone";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
@@ -36,8 +36,9 @@ import { assertBalanceChangeAllowed, assertNotSenior, assertRecordInReach, asser
 // Maps system custom role names to their legacy enum values
 /**
  * Whether the signed-in person may hand out this role: it must belong to
- * their company and sit below their own rank. Without it an HR admin could
- * make themselves, or a friend, System Admin. A super admin may give any role.
+ * their company and sit below their own rank, or for a System Admin at it
+ * (givesRank). Without it an HR admin could make themselves, or a friend,
+ * System Admin. A super admin may give any role.
  */
 async function assertAssignable(
   me: LiveIdentity | null,
@@ -58,8 +59,8 @@ async function assertAssignable(
     if (role === "SUPER_ADMIN" || !isValidRole(role)) throw new Error("That role cannot be given");
     rank = ROLE_RANK[role];
   }
-  if (!me.isSuperAdmin && rank !== null && rank >= me.rank) {
-    throw new Error("You can only give a role below your own");
+  if (rank !== null && !givesRank(me, rank)) {
+    throw new Error(rank === ROLE_RANK.SYSTEM_ADMIN ? "Only a System Admin can give this role" : "You can only give a role below your own");
   }
 }
 
@@ -247,9 +248,10 @@ export const getAdminRefData = withRBAC(
     const givesLimited = !!me && givesLiveAttendanceRoles(me);
     // Whether each role makes a sign in only account (no timecard), and whether
     // that account views a team (an agency viewer, who needs its agency).
+    // A role at or above their own rank is left out the same way (givesRank).
     const roles = customRoles.map(({ permissions, ...r }) => ({
       ...r,
-      givable: !r.liveAttendanceOnly || givesLimited,
+      givable: (!r.liveAttendanceOnly || givesLimited) && !!me && givesRank(me, r.rank),
       signInOnly: isSignInOnlyRole({ isSystem: r.isSystem, permissions }),
       seesTeam: seesTeam({ permissions }),
       visitor: isVisitorRole({ isSystem: r.isSystem, permissions }),
@@ -260,8 +262,10 @@ export const getAdminRefData = withRBAC(
       roles.some((r) => r.visitor) ? previewClientBadge(db) : null,
       db.department.findFirst({ where: { tenantId: t, name: VISITOR_DEPARTMENT, isActive: true }, select: { id: true, name: true } }),
     ]);
+    // The built-in roles New Employee offers, by the same rule.
+    const builtinRoles = ROLES.filter((r) => !!me && givesRank(me, ROLE_RANK[r]));
     return {
-      sites, departments, ruleSets, employees, customRoles: roles, shifts, holidayRules, payCategories, payTypes, jobTitles,
+      sites, departments, ruleSets, employees, customRoles: roles, builtinRoles, shifts, holidayRules, payCategories, payTypes, jobTitles,
       nextVisitorBadge, visitorDepartment,
       // The default markup as a plain number: a Decimal does not cross to the browser.
       agencies: agencies.map((a) => ({ ...a, defaultMarkupPct: a.defaultMarkupPct == null ? null : Number(a.defaultMarkupPct) })),
@@ -762,6 +766,12 @@ export const updateEmployee = withRBAC(
         if (theirs === null || theirs > me.rank) throw new Error("Only someone more senior can edit this person");
         if (theirs === me.rank && !editsPeers(me.rank) && (sensitive || personalChanged || workChanged)) {
           throw new Error("Only someone more senior can change this person's email, role, status or pay");
+        }
+        // Either email signs them in, so a System Admin's are a System Admin's
+        // to change: an HR Admin (the same rank) could otherwise point one at
+        // their own address and sign in as them.
+        if ((personalChanged || workChanged) && current.role === "SYSTEM_ADMIN" && me.role !== "SYSTEM_ADMIN") {
+          throw new Error("Only a System Admin can change a System Admin's sign-in emails");
         }
       }
     }
@@ -2199,14 +2209,14 @@ export const bulkCreateEmployees = withRBAC(
       db.employee.findMany({ where: { tenantId }, select: { id: true, employeeCode: true } }),
       db.customRole.findMany({ where: { tenantId }, select: { id: true, name: true, rank: true, liveAttendanceOnly: true } }),
     ]);
-    // The same rules as one at a time: only roles below the importer's own,
+    // The same rules as one at a time: only roles the importer may give (givesRank),
     // and a role limited to Live Attendance only from a System Admin.
     const me = await currentIdentity();
     if (!me) throw new Error("FORBIDDEN");
     const roleRankById = new Map(customRoles.map((cr) => [cr.id, cr.rank]));
     const limitedRoleIds = new Set(customRoles.filter((cr) => cr.liveAttendanceOnly).map((cr) => cr.id));
     const givesLimited = givesLiveAttendanceRoles(me);
-    const tooSenior = (rank: number) => !me.isSuperAdmin && rank >= me.rank;
+    const tooSenior = (rank: number) => !givesRank(me, rank);
 
     const siteMap = new Map(sites.map((s) => [s.name.toLowerCase(), s.id]));
     const deptMap = new Map(departments.map((d) => [d.name.toLowerCase(), d.id]));

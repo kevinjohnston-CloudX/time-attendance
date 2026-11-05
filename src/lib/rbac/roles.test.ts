@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ROLE_RANK, editsPeers } from "./roles";
+import { ROLE_RANK, editsPeers, givesRank } from "./roles";
 
 describe("changing the record of someone at your own level", () => {
   it("is open to HR Admins and System Admins (John Raefski adding Juan Munoz's work email)", () => {
@@ -9,5 +9,27 @@ describe("changing the record of someone at your own level", () => {
 
   it("still takes someone more senior below them", () => {
     expect([ROLE_RANK.EMPLOYEE, ROLE_RANK.SUPERVISOR, ROLE_RANK.PAYROLL_ADMIN].map(editsPeers)).toEqual([false, false, false]);
+  });
+});
+
+describe("giving a role", () => {
+  const sysAdmin = { isSuperAdmin: false, rank: ROLE_RANK.SYSTEM_ADMIN, role: "SYSTEM_ADMIN" };
+  // HR Admin is at System Admin's rank in Bergen's roles
+  const hrAdmin = { isSuperAdmin: false, rank: ROLE_RANK.SYSTEM_ADMIN, role: "HR_ADMIN" };
+
+  it("lets a System Admin make another System Admin", () => {
+    expect(givesRank(sysAdmin, ROLE_RANK.SYSTEM_ADMIN)).toBe(true);
+    expect(givesRank(sysAdmin, ROLE_RANK.SUPER_ADMIN)).toBe(false);
+  });
+
+  it("keeps an HR Admin at the same rank to the roles below it", () => {
+    expect(givesRank(hrAdmin, ROLE_RANK.SYSTEM_ADMIN)).toBe(false);
+    expect(givesRank(hrAdmin, ROLE_RANK.PAYROLL_ADMIN)).toBe(true);
+  });
+
+  it("gives a System Admin viewing as Payroll Admin only what Payroll Admin could", () => {
+    const viewing = { ...sysAdmin, rank: ROLE_RANK.PAYROLL_ADMIN };
+    expect(givesRank(viewing, ROLE_RANK.PAYROLL_ADMIN)).toBe(false);
+    expect(givesRank(viewing, ROLE_RANK.SUPERVISOR)).toBe(true);
   });
 });

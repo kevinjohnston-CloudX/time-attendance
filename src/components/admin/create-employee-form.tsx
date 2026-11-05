@@ -103,6 +103,8 @@ interface Props {
   employees?: EmployeeOption[];
   /** signInOnly, seesTeam and visitor: see sign-in-only.ts. */
   customRoles: { id: string; name: string; signInOnly?: boolean; seesTeam?: boolean; visitor?: boolean }[];
+  /** The built-in roles this person may give (givesRank). Left out, all of them. */
+  builtinRoles?: readonly string[];
   /** The badge the next visitor gets (a preview: it is taken at the save). */
   nextVisitorBadge?: string | null;
   /** The department every visitor is filed in. */
@@ -192,7 +194,7 @@ function Row({ cols = 2, children }: { cols?: 1 | 2 | 3 | 4; children: ReactNode
   );
 }
 
-export function CreateEmployeeForm({ sites, departments, ruleSets, employees, customRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies, nextVisitorBadge, visitorDepartment, copyFrom }: Props) {
+export function CreateEmployeeForm({ sites, departments, ruleSets, employees, customRoles, builtinRoles, shifts, holidayRules, payCategories, payTypes, jobTitles, agencies, nextVisitorBadge, visitorDepartment, copyFrom }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -696,7 +698,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                       </Row>
                       <Row>
                         <SelectField label="Role" name="role" defaultValue={copy?.role}>
-                          {BUILTIN_ROLES.map((r) => (
+                          {BUILTIN_ROLES.filter((r) => !builtinRoles || builtinRoles.includes(r.value)).map((r) => (
                             <option key={r.value} value={r.value}>{r.label}</option>
                           ))}
                           {customRoles.map((r) => (
