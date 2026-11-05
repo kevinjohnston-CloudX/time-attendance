@@ -38,7 +38,7 @@ import { LeaveApprovalButtons } from "@/components/supervisor/leave-approval-but
 import { LeaveReverseButton } from "@/components/supervisor/leave-reverse-button";
 import { HrApproveButtons } from "@/components/supervisor/hr-approve-buttons";
 import { LEAVE_STATUS_LABEL, type LeaveRequestStatusValue } from "@/lib/state-machines/labels";
-import { getTeamMembersForLeave, createLeaveRequestForEmployee } from "@/actions/leave.actions";
+import { getTeamMembersForLeave, getLeaveTypesForEmployee, createLeaveRequestForEmployee } from "@/actions/leave.actions";
 import { LeaveDayPicker, type DaySelection, type ShiftInfo } from "@/components/leave/leave-day-picker";
 import { shiftMeal } from "@/lib/shift-meal";
 import { Overlay } from "@/components/ui/overlay";
@@ -89,6 +89,8 @@ interface Headcount {
 }
 
 interface LeaveTabsProps {
+  /** The viewer's own employee record: their own requests are reviewed by someone else. */
+  viewerEmployeeId?: string | null;
   pending: LeaveRequestRow[];
   hrPending: LeaveRequestRow[];
   upcoming: LeaveRequestRow[];
@@ -215,6 +217,7 @@ function shortName(name: string): string {
 }
 
 export function LeaveTabs({
+  viewerEmployeeId = null,
   pending,
   hrPending,
   upcoming,
@@ -293,6 +296,9 @@ export function LeaveTabs({
   // Form state
   const [targetEmployeeId, setTargetEmployeeId] = useState("");
   const [leaveTypeId, setLeaveTypeId] = useState("");
+  // The types the chosen person's leave policies allow; null while unknown.
+  const [allowedTypeIds, setAllowedTypeIds] = useState<string[] | null>(null);
+  const offeredTypes = allowedTypeIds ? leaveTypes.filter((t) => allowedTypeIds.includes(t.id)) : leaveTypes;
   const [selectedDays, setSelectedDays] = useState<DaySelection[]>([]);
   const [note, setNote] = useState("");
 
@@ -317,8 +323,7 @@ export function LeaveTabs({
         if (result.success) {
           setTeamEmployees(result.data.employees as TeamEmployee[]);
           setLeaveTypes(result.data.leaveTypes);
-          if (result.data.employees.length > 0) setTargetEmployeeId(result.data.employees[0].id);
-          if (result.data.leaveTypes.length > 0) setLeaveTypeId(result.data.leaveTypes[0].id);
+          if (result.data.employees.length > 0) handleEmployeeChange(result.data.employees[0].id, result.data.leaveTypes);
         }
       } catch { /* swallow */ }
       setLoadingTeam(false);
@@ -333,9 +338,18 @@ export function LeaveTabs({
     setNote("");
   }
 
-  function handleEmployeeChange(id: string) {
+  function handleEmployeeChange(id: string, types = leaveTypes) {
     setTargetEmployeeId(id);
     setSelectedDays([]); // reset days when employee changes — shift may differ
+    // Offer only the leave types this person may take; the first of them is picked.
+    setAllowedTypeIds(null);
+    getLeaveTypesForEmployee({ targetEmployeeId: id })
+      .then((r) => {
+        if (!r.success) return;
+        setAllowedTypeIds(r.data);
+        setLeaveTypeId((current) => (r.data.includes(current) ? current : (types.find((t) => r.data.includes(t.id))?.id ?? "")));
+      })
+      .catch(() => {});
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -936,6 +950,7 @@ export function LeaveTabs({
                     req={req}
                     queue={queue}
                     canHrApprove={!!canHrApprove}
+                    own={!!viewerEmployeeId && req.employeeId === viewerEmployeeId}
                     conflictWith={conflictNames.get(req.id)}
                     selected={req.id === focused?.id}
                     onSelect={() => {
@@ -1367,7 +1382,7 @@ export function LeaveTabs({
                     style={{ width: "100%" }}
                   >
                     <option value="">Select type…</option>
-                    {leaveTypes.map((lt) => (
+                    {offeredTypes.map((lt) => (
                       <option key={lt.id} value={lt.id}>{lt.name}</option>
                     ))}
                   </Select>
@@ -1566,6 +1581,7 @@ function RequestCard({
   req,
   queue,
   canHrApprove,
+  own = false,
   conflictWith,
   selected,
   onSelect,
@@ -1573,6 +1589,8 @@ function RequestCard({
   req: LeaveRequestRow;
   queue: Queue;
   canHrApprove: boolean;
+  /** The viewer's own request: someone else reviews it, so no buttons. */
+  own?: boolean;
   conflictWith?: string[];
   selected: boolean;
   onSelect: () => void;
@@ -1731,6 +1749,12 @@ function RequestCard({
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
+          {own ? (
+            <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+              Your request. Someone else reviews it.
+            </span>
+          ) : (
+          <>
           {queue === "pending" && <LeaveApprovalButtons leaveRequestId={req.id} />}
           {queue === "hr-pending" &&
             (canHrApprove ? (
@@ -1740,6 +1764,8 @@ function RequestCard({
             ))}
           {queue === "upcoming" && req.status === "APPROVED" && (
             <LeaveReverseButton leaveRequestId={req.id} />
+          )}
+          </>
           )}
         </div>
       )}

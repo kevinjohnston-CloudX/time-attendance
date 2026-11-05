@@ -154,7 +154,32 @@ export const getTeamMembersForLeave = withRBAC(
     ]);
     const leaveTypes = types.map((t) => ({ id: t.id, name: t.name, noNote: leaveTypeTakesNoNote(protection, t.category) }));
 
-    return { employees, leaveTypes };
+    // Not yourself: your own leave goes through My Leave and your supervisor.
+    return { employees: employees.filter((e) => e.id !== actorId), leaveTypes };
+  }
+);
+
+/**
+ * The leave types this person may take, as their leave policies allow, for
+ * the "Submit leave for an employee" window to offer. It listed every type,
+ * and the server then refused the ones not on the person's policies.
+ */
+export const getLeaveTypesForEmployee = withRBAC(
+  "LEAVE_REQUEST_TEAM",
+  async ({ employeeId: actorId, tenantId }, input: { targetEmployeeId: string }) => {
+    const target = await db.employee.findFirst({
+      where: { id: input.targetEmployeeId, tenantId: ownCompany(tenantId) },
+      select: { id: true },
+    });
+    if (!target) throw new Error("NOT_FOUND");
+    const session = await auth();
+    const canSubmitForAny = session?.user ? await userHasPermission(session.user, "LEAVE_REQUEST_ANY") : false;
+    if (!canSubmitForAny && !(await getSubordinateIds(actorId, tenantId)).includes(target.id)) throw new Error("NOT_FOUND");
+    const [a, types] = await Promise.all([
+      availabilityFor(target.id),
+      db.leaveType.findMany({ where: { isActive: true, tenantId: ownCompany(tenantId) }, select: { id: true } }),
+    ]);
+    return types.filter((t) => leaveTypeAllowed(a, t.id)).map((t) => t.id);
   }
 );
 
@@ -172,6 +197,8 @@ export const createLeaveRequestForEmployee = withRBAC(
       select: { supervisorId: true, tenantId: true },
     });
     if (target.tenantId !== tenantId) throw new Error("NOT_FOUND");
+    // Your own leave goes through My Leave, so your supervisor sees it first.
+    if (targetEmployeeId === actorId) throw new Error("Request your own leave from My Leave.");
 
     // For team scope: must be in the subordinate tree. For any scope: bypass.
     const session = await auth();
@@ -350,14 +377,22 @@ export const rejectLeaveRequest = withRBAC(
     const transition = validateLeaveTransition(request.status, "REJECT");
     if (!transition.valid) throw new Error(transition.error);
 
-    const updated = await db.leaveRequest.update({
-      where: { id: leaveRequestId },
-      data: {
-        status: transition.newStatus,
-        reviewedAt: new Date(),
-        reviewedById: reviewerId,
-        reviewNote,
-      },
+    // Only from the status it was read in, and an approved request gets its
+    // hours back in the same step. Two reviewers on one queue: one approved,
+    // the other's Reject then left it Rejected with its hours still taken off.
+    const updated = await db.$transaction(async (tx) => {
+      const { count } = await tx.leaveRequest.updateMany({
+        where: { id: leaveRequestId, status: request.status },
+        data: {
+          status: transition.newStatus,
+          reviewedAt: new Date(),
+          reviewedById: reviewerId,
+          reviewNote,
+        },
+      });
+      if (count === 0) throw new Error("This request was changed by someone else just now. Reload the page to see where it stands.");
+      if (request.status === "APPROVED") await reverseLeaveUsage(leaveRequestId, tx);
+      return tx.leaveRequest.findUniqueOrThrow({ where: { id: leaveRequestId } });
     });
 
     await writeAuditLog({

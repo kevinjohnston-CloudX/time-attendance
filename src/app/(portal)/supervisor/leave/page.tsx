@@ -72,6 +72,7 @@ export default async function SupervisorLeavePage({
 
   return (
     <LeaveTabs
+      viewerEmployeeId={session.user.employeeId ?? null}
       pending={pendingResult.data}
       hrPending={hrPendingResult.data}
       upcoming={upcomingResult.data}
