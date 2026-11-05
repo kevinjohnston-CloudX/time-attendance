@@ -85,10 +85,61 @@ export function SkeletonRows({ rows, h = 14 }: { rows: number; h?: number }) {
   );
 }
 
-/** The wrapper every one of these screens shares, announced as loading. */
+/** A filter or search row, as the shared Toolbar draws it. */
+export function SkeletonToolbar({ chips = 3 }: { chips?: number }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Bar w={260} h={32} r={8} />
+      {Array.from({ length: chips }, (_, i) => (
+        <Bar key={i} w={[96, 120, 84, 108][i % 4]} h={28} r={999} />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * A table card: its column header on the quiet band, then rows at the shared
+ * table's height, the columns at widths that vary the way real names do.
+ */
+export function SkeletonTable({ rows = 8, columns = 5 }: { rows?: number; columns?: number }) {
+  const widths = ["70%", "55%", "45%", "60%", "40%", "50%"];
+  const grid = { display: "grid", gridTemplateColumns: `1.6fr repeat(${columns - 1}, minmax(0, 1fr))`, gap: 16 };
+  return (
+    <section
+      style={{
+        background: "var(--surface-card)",
+        borderRadius: "var(--radius-l)",
+        boxShadow: "var(--shadow-card)",
+        overflow: "hidden",
+      }}
+    >
+      <div style={{ ...grid, alignItems: "center", height: 40, padding: "0 16px", borderBottom: "1px solid var(--stroke-divider)" }}>
+        {Array.from({ length: columns }, (_, c) => (
+          <Bar key={c} w={c ? 56 : 88} h={10} />
+        ))}
+      </div>
+      {Array.from({ length: rows }, (_, r) => (
+        <div
+          key={r}
+          style={{ ...grid, alignItems: "center", height: 48, padding: "0 16px", borderTop: r ? "1px solid var(--stroke-divider)" : undefined }}
+        >
+          {Array.from({ length: columns }, (_, c) => (
+            <Bar key={c} w={widths[(r + c * 2) % widths.length]} h={c ? 11 : 13} />
+          ))}
+        </div>
+      ))}
+    </section>
+  );
+}
+
+/**
+ * The wrapper every one of these screens shares, announced as loading. It
+ * stays invisible for its first 150ms (.ta-loading), so a page that arrives
+ * at once never flashes it.
+ */
 export function SkeletonPage({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-4" aria-busy="true" aria-label={label}>
+    <div className="ta-loading flex flex-col gap-4" aria-busy="true" aria-label={label}>
       {children}
     </div>
   );

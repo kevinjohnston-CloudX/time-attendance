@@ -5,6 +5,9 @@ import { getOnSiteBoard, getOnSiteSites } from "@/actions/presence.actions";
 import { getGateAlertsSetting } from "@/actions/gate-refusals.actions";
 import { OnSiteBoard } from "@/components/presence/on-site-board";
 import { gateReadsCloudTimeSchedule } from "@/lib/presence/gate-schedule";
+import { cachedDataProtection } from "@/lib/privacy/data-protection";
+import { DoorClosed } from "lucide-react";
+import { Card, EmptyState, PageHeader } from "@/components/ui";
 
 /**
  * On Site: who is in the building right now, for HR and loss prevention.
@@ -42,6 +45,23 @@ export default async function OnSitePage({
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
+  // Closed by the company in Data Protection. Said here rather than sent to
+  // the Dashboard, because a role limited to Live Attendance is sent back
+  // here from every other page.
+  if ((await cachedDataProtection(session.user.tenantId)).liveBoardsOff) {
+    return (
+      <div className="flex flex-col gap-3.5">
+        <PageHeader pinned title="Live Attendance" />
+        <Card>
+          <EmptyState
+            icon={<DoorClosed className="h-8 w-8" />}
+            title="Live Attendance is turned off"
+            body="Your company has turned off Live Attendance. Time clocks and gates keep working as usual."
+          />
+        </Card>
+      </div>
+    );
+  }
   if (!(await userHasPermission(session.user, "PRESENCE_VIEW_ANY"))) redirect("/dashboard");
 
   const params = (await searchParams) ?? {};

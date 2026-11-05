@@ -204,7 +204,7 @@ export function ScheduleDayDialog({
             <Button hierarchy="secondary" onClick={onClose} disabled={saving}>
               Cancel
             </Button>
-            <Button onClick={() => void save()} disabled={!ready || saving}>
+            <Button pending={saving} onClick={() => void save()} disabled={!ready || saving}>
               {saving ? "Saving…" : "Add to schedule"}
             </Button>
           </span>

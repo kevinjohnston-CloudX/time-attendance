@@ -27,6 +27,7 @@ import {
   House,
   ClipboardCheck,
   LibraryBig,
+  QrCode,
 } from "lucide-react";
 
 /**
@@ -92,10 +93,11 @@ export const SECTIONS: NavSection[] = [
     icon: CircleUser,
     railLabel: "Me",
     label: "Me",
-    prefixes: ["/dashboard", "/time", "/leave", "/documents", "/accruals", "/knowledge-base"],
+    prefixes: ["/dashboard", "/time", "/badge", "/leave", "/documents", "/accruals", "/knowledge-base"],
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { label: "Punch Clock", href: "/time/punch", icon: Clock, permission: "PUNCH_OWN" },
+      { label: "My Badge", href: "/badge", icon: QrCode },
       // Only for someone with time of their own: a sign in only login (an
       // agency viewer, Loss Prevention) has no timesheet or punches.
       { label: "My Timesheet", href: "/time/timesheet", icon: ClipboardList, permission: ["PUNCH_OWN", "TIMESHEET_SUBMIT_OWN"] },
@@ -311,8 +313,10 @@ export function phoneTabs({
   const approvals: PhoneTab = { label: "Approvals", href: APPROVALS_HREF, icon: ClipboardCheck, approvals: true };
   const attendance: PhoneTab = { label: "Attendance", href: "/supervisor/on-site", icon: DoorOpen };
 
-  // Live Attendance and their guides: the only two pages these roles open.
-  if (liveAttendanceOnly) return [attendance, { label: "Guides", href: "/knowledge-base", icon: LibraryBig }];
+  // Live Attendance, their badge and their guides: the only pages these roles open.
+  if (liveAttendanceOnly) {
+    return [attendance, { label: "Badge", href: "/badge", icon: QrCode }, { label: "Guides", href: "/knowledge-base", icon: LibraryBig }];
+  }
   if (inactive) {
     return [
       { label: "Timesheet", href: "/time/timesheet", icon: ClipboardList },

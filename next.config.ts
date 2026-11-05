@@ -35,9 +35,53 @@ const localDevHosts = ["127.0.0.1"];
  */
 const unbundled = ["pdfmake", "pdfkit"];
 
+/**
+ * Security headers on every response (security audit 2026-11, M3).
+ *
+ * <p>Enforced now: no other site may show CloudTime inside a frame, where a
+ * hidden button can be lined up under someone's click (approve, reset a
+ * password). CloudTime may still frame itself, which the page sweeps use.
+ * Browsers must not guess file types, links carry only the address's origin
+ * to other sites, and the camera (photo retakes) is CloudTime's alone.
+ *
+ * <p>The content security policy is report only for now: the browser logs
+ * what it would block in the console and blocks nothing. Once a release has
+ * run clean it moves to the enforced header. Photos come from S3 signed
+ * links; documents open on Supabase by redirect, which needs no entry here.
+ */
+const isDev = process.env.NODE_ENV === "development";
+const reportOnlyPolicy = [
+  "default-src 'self'",
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https://*.amazonaws.com https://*.supabase.co",
+  "font-src 'self' data:",
+  `connect-src 'self' https://*.amazonaws.com https://*.supabase.co${isDev ? " ws: wss:" : ""}`,
+  "media-src 'self' blob:",
+  "worker-src 'self' blob:",
+  "frame-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self' https://accounts.google.com",
+  "frame-ancestors 'self'",
+].join("; ");
+
+const securityHeaders = [
+  { key: "Content-Security-Policy", value: "frame-ancestors 'self'" },
+  { key: "X-Frame-Options", value: "SAMEORIGIN" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=(), payment=(), usb=()" },
+  { key: "Content-Security-Policy-Report-Only", value: reportOnlyPolicy },
+];
+
 const nextConfig: NextConfig = {
   allowedDevOrigins: localDevHosts,
   serverExternalPackages: unbundled,
+  poweredByHeader: false,
+  async headers() {
+    return [{ source: "/(.*)", headers: securityHeaders }];
+  },
   experimental: {
     serverActions: {
       bodySizeLimit: "10mb",

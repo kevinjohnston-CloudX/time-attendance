@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { db } from "@/lib/db";
+import { companyDataProtection, leaveTypeTakesNoNote } from "@/lib/privacy/data-protection";
 import { auth } from "@/lib/auth";
 import { withRBAC } from "@/lib/rbac/guard";
 import { userHasPermission } from "@/lib/rbac/check-permission";
@@ -30,6 +32,8 @@ import {
   type ReviewLeaveInput,
   type SubmitLeaveForEmployeeInput,
 } from "@/lib/validators/leave.schema";
+import { ownCompany } from "@/lib/rbac/company";
+import { alertLeaveDecided, alertLeaveSubmitted, alertLeaveWaitingOnHr } from "@/lib/push/leave-alerts";
 
 // ─── Employee actions ─────────────────────────────────────────────────────────
 
@@ -74,6 +78,8 @@ export const submitLeaveRequest = withRBAC(
   async ({ employeeId, tenantId }, input: LeaveRequestIdInput) => {
     const { leaveRequestId } = leaveRequestIdSchema.parse(input);
     const updated = await submitLeaveRequestCore(employeeId, tenantId, leaveRequestId);
+    // After the response: a phone notification never slows or fails the submit.
+    after(() => alertLeaveSubmitted(leaveRequestId));
     revalidatePath("/leave");
     return updated;
   }
@@ -121,7 +127,7 @@ export const getTeamMembersForLeave = withRBAC(
     }
 
     const employees = await db.employee.findMany({
-      where: { isActive: true, tenantId: tenantId ?? undefined, ...idFilter },
+      where: { isActive: true, tenantId: ownCompany(tenantId), ...idFilter },
       select: {
         id: true,
         wmsId: true,
@@ -138,11 +144,15 @@ export const getTeamMembersForLeave = withRBAC(
       orderBy: { user: { name: "asc" } },
     });
 
-    const leaveTypes = await db.leaveType.findMany({
-      where: { isActive: true, tenantId: tenantId ?? undefined },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    });
+    const [types, protection] = await Promise.all([
+      db.leaveType.findMany({
+        where: { isActive: true, tenantId: ownCompany(tenantId) },
+        select: { id: true, name: true, category: true },
+        orderBy: { name: "asc" },
+      }),
+      companyDataProtection(tenantId),
+    ]);
+    const leaveTypes = types.map((t) => ({ id: t.id, name: t.name, noNote: leaveTypeTakesNoNote(protection, t.category) }));
 
     return { employees, leaveTypes };
   }
@@ -192,6 +202,7 @@ export const createLeaveRequestForEmployee = withRBAC(
       action: "CREATED",
       changes: { note: `Submitted on behalf of employee by supervisor` },
     });
+    after(() => alertLeaveWaitingOnHr(request.id, actorId));
 
     revalidatePath("/supervisor/leave");
     revalidatePath("/leave");
@@ -261,6 +272,7 @@ export const approveLeaveRequest = withRBAC(
       action: "APPROVED",
       changes: { before: request.status, after: transition.newStatus },
     });
+    after(() => alertLeaveWaitingOnHr(leaveRequestId, reviewerId));
 
     revalidatePath("/supervisor/leave");
     revalidatePath("/leave");
@@ -316,6 +328,7 @@ export const hrApproveLeaveRequest = withRBAC(
       action: "APPROVED",
       changes: { before: request.status, after: transition.newStatus },
     });
+    after(() => alertLeaveDecided(leaveRequestId));
 
     revalidatePath("/supervisor/leave");
     revalidatePath("/leave");
@@ -357,6 +370,7 @@ export const rejectLeaveRequest = withRBAC(
     });
 
     await syncLeaveSegments(leaveRequestId);
+    after(() => alertLeaveDecided(leaveRequestId));
 
     revalidatePath("/supervisor/leave");
     revalidatePath("/leave");

@@ -11,6 +11,7 @@
  * change stay in one place.
  */
 export { Button, type ButtonProps } from "./button";
+export { SubmitButton } from "./submit-button";
 export { LinkButton } from "./link-button";
 export { Badge, statusTone, exceptionTone, leaveTone, punchTone, payPeriodTone, type BadgeTone } from "./badge";
 export { Card } from "./card";
@@ -26,4 +27,5 @@ export { StatCard, type StatTone } from "./stat";
 export { Banner, type BannerTone } from "./banner";
 export { ConfirmDialog } from "./confirm-dialog";
 export { Overlay } from "./overlay";
+export { PendingRegion } from "./pending-region";
 export { LanguagePicker } from "./language-picker";

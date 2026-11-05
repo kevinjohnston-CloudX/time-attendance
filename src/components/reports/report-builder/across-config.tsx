@@ -2,12 +2,14 @@
 
 import { Select } from "@/components/ui";
 import type { AcrossSpec } from "@/lib/reports/across";
+import { leftOutSentence } from "@/lib/reports/left-out";
 
 interface Column {
   id: string;
   label: string;
   type: string;
   across?: boolean;
+  varies?: boolean;
 }
 
 /**
@@ -35,9 +37,12 @@ export function AcrossConfig({
   const field = fields.find((c) => c.id === across?.field);
   const value = values.find((c) => c.id === across?.value) ?? values.find((c) => selected.includes(c.id)) ?? values[0];
   const labelOf = new Map(columns.map((c) => [c.id, c.label]));
+  const dayByDay = (id: string) => !!columns.find((c) => c.id === id)?.varies;
   const rowsBy = selected
-    .filter((id) => id !== field?.id && columns.find((c) => c.id === id)?.type !== "number")
+    .filter((id) => id !== field?.id && columns.find((c) => c.id === id)?.type !== "number" && !dayByDay(id))
     .map((id) => labelOf.get(id) ?? id);
+  // Picked, but left out once the days are added up (see ColumnDef.varies).
+  const leftOut = field ? selected.filter((id) => id !== field.id && dayByDay(id)).map((id) => labelOf.get(id) ?? id) : [];
 
   return (
     <div className="flex flex-col gap-2">
@@ -83,6 +88,9 @@ export function AcrossConfig({
             : `Pick a column such as Employee to have a row for each.`
           : "For example, a column for each day of the week, with the hours worked that day."}
       </span>
+      {leftOut.length > 0 && (
+        <span style={{ font: "var(--type-caption1)", color: "var(--text-warning)" }}>{leftOutSentence(leftOut)}</span>
+      )}
     </div>
   );
 }

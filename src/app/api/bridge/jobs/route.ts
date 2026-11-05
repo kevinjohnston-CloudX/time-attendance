@@ -45,7 +45,9 @@ export async function GET(req: Request) {
   const limit = Math.min(Number(url.searchParams.get("limit") ?? DEFAULT_LIMIT) || DEFAULT_LIMIT, MAX_LIMIT);
 
   const jobs = await db.bridgeJob.findMany({
-    where: { status: "PENDING", kind: { in: kinds } },
+    // Only work for the company the bridge belongs to; anything queued for
+    // another company before the switch existed is left unanswered.
+    where: { status: "PENDING", kind: { in: kinds }, tenant: { wmsConnected: true } },
     orderBy: { createdAt: "asc" },
     take: limit,
     select: { id: true, kind: true, payload: true, createdAt: true },

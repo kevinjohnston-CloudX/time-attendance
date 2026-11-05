@@ -53,7 +53,7 @@ function CardSkeleton() {
 
 export default function Loading() {
   return (
-    <div className="flex flex-col gap-4" aria-busy="true" aria-label="Loading team leave">
+    <div className="ta-loading flex flex-col gap-4" aria-busy="true" aria-label="Loading team leave">
       <div className="flex flex-col gap-2">
         <Bar w="220px" h={28} />
         <Bar w="320px" />

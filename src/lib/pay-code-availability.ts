@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { assertOwn } from "@/lib/rbac/company";
 
 /**
  * The pay codes and leave types a person may be given, from their leave
@@ -71,6 +72,7 @@ async function whose(employeeId: string): Promise<{ name: string; category: stri
 
 /** Refuses a pay code none of the person's leave policies gives them. */
 export async function assertPayCodeAllowed(employeeId: string, payCodeId: string): Promise<void> {
+  await assertSameCompany(employeeId, "payCode", payCodeId);
   if (payCodeAllowed(await availabilityFor(employeeId), payCodeId)) return;
   const [code, who] = await Promise.all([
     db.payCode.findUniqueOrThrow({ where: { id: payCodeId }, select: { label: true } }),
@@ -81,8 +83,19 @@ export async function assertPayCodeAllowed(employeeId: string, payCodeId: string
   );
 }
 
+/**
+ * A pay code or leave type of the person's own company. One of another
+ * company's could be put on a timecard or a request by its id, and a type
+ * no policy governs passed the checks below (security audit 2026-11, M1).
+ */
+async function assertSameCompany(employeeId: string, model: "payCode" | "leaveType", id: string): Promise<void> {
+  const person = await db.employee.findUnique({ where: { id: employeeId }, select: { tenantId: true } });
+  await assertOwn(person?.tenantId, { [model]: id });
+}
+
 /** Refuses a leave type none of the person's leave policies gives them. */
 export async function assertLeaveTypeAllowed(employeeId: string, leaveTypeId: string): Promise<void> {
+  await assertSameCompany(employeeId, "leaveType", leaveTypeId);
   if (leaveTypeAllowed(await availabilityFor(employeeId), leaveTypeId)) return;
   const [type, who] = await Promise.all([
     db.leaveType.findUniqueOrThrow({ where: { id: leaveTypeId }, select: { name: true } }),

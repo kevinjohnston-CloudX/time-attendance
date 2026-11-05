@@ -2,13 +2,27 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
 import { signOut } from "next-auth/react";
 import { useTheme } from "next-themes";
-import { ChevronLeft, ChevronRight, Eye, LogOut, Menu as MenuIcon, Search, X } from "lucide-react";
-import { useRouter } from "@/components/layout/navigation-progress";
+import { ChevronLeft, ChevronRight, Eye, LogOut, Menu as MenuIcon, QrCode, Search, ShieldCheck, X } from "lucide-react";
+import { LinkPendingSpinner, useRouter } from "@/components/layout/navigation-progress";
+import { useLinkStatus } from "next/link";
 import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
 import { SegmentedControl } from "@/components/ui";
+import {
+  appLockOn,
+  forgetAppLock,
+  inPhoneApp,
+  pushAllowedByPhone,
+  pushChosen,
+  resumePushNotifications,
+  setAppLock,
+  stopPushNotifications,
+  unlockMethod,
+  verifyOwner,
+  type UnlockMethod,
+} from "@/lib/native-app";
 import type { WaitingItem } from "@/lib/dashboard/dashboard-data";
 import { LIVE_ATTENDANCE_ONLY_HREFS } from "@/lib/constants";
 import { BrandTile, CloudTimeWordmark } from "./cloudtime-logo";
@@ -46,10 +60,13 @@ export function PhoneTopBar({
   waiting,
   helpOffered = true,
   userPhoto = null,
+  badgeOffered = false,
 }: {
   waiting: WaitingItem[];
   helpOffered?: boolean;
   userPhoto?: string | null;
+  /** The badge from any page, for an active person with an employee record. */
+  badgeOffered?: boolean;
 }) {
   const pathname = usePathname();
   const back = usePhoneBackState();
@@ -81,6 +98,12 @@ export function PhoneTopBar({
           {!back && !home && folded ? title : null}
         </div>
         <div className={styles.topActions}>
+          {/* Home has its own large button for it. */}
+          {badgeOffered && !home && pathname !== "/badge" && (
+            <Link href="/badge" className={styles.iconBtn} aria-label="My Badge">
+              <QrCode className="h-5 w-5" aria-hidden="true" />
+            </Link>
+          )}
           <button type="button" className={styles.iconBtn} onClick={openCommandPalette} aria-label="Search pages">
             <Search className="h-5 w-5" aria-hidden="true" />
           </button>
@@ -154,6 +177,21 @@ type PhoneNavProps = {
   approvalsCount: number;
 };
 
+/**
+ * A tab's icon, which turns into a ring while that tab's page is on its way:
+ * where the thumb just landed, at the icon's own size. Both wait 150ms, so a
+ * page that arrives at once never swaps them. Must sit inside the Link.
+ */
+function TabGlyph({ children }: { children: ReactNode }) {
+  const { pending } = useLinkStatus();
+  return (
+    <span className="ta-tab-glyph" data-pending={pending || undefined}>
+      {children}
+      {pending && <span className="ta-tab-ring" role="status" aria-label="Loading" />}
+    </span>
+  );
+}
+
 export function PhoneNav(props: PhoneNavProps) {
   const { permissions, isInactive = false, liveAttendanceOnly = false, approvalsCount } = props;
   const pathname = usePathname();
@@ -200,7 +238,9 @@ export function PhoneNav(props: PhoneNavProps) {
               onClick={() => setMenuOpen(false)}
             >
               <span className={styles.tabIcon}>
-                <t.icon className="h-[22px] w-[22px]" strokeWidth={on ? 2.2 : 1.8} aria-hidden="true" />
+                <TabGlyph>
+                  <t.icon className="h-[22px] w-[22px]" strokeWidth={on ? 2.2 : 1.8} aria-hidden="true" />
+                </TabGlyph>
                 {count > 0 && <span className={styles.tabCount}>{count > 99 ? "99+" : count}</span>}
               </span>
               <span className={styles.tabLabel}>{t.label}</span>
@@ -338,7 +378,19 @@ function PhoneMenu({
               )}
             </>
           )}
-          <button type="button" className={styles.row} onClick={() => signOut({ callbackUrl: "/login" })}>
+          <button
+            type="button"
+            className={styles.row}
+            onClick={async () => {
+              // In the app, this phone stops getting this person's notifications
+              // first, and the Face ID lock is left for whoever signs in next.
+              if (inPhoneApp()) {
+                await stopPushNotifications(false);
+                forgetAppLock();
+              }
+              await signOut({ callbackUrl: "/login" });
+            }}
+          >
             <LogOut className={styles.rowIcon} aria-hidden="true" />
             <span className={styles.rowLabel}>Sign out</span>
           </button>
@@ -368,6 +420,7 @@ function PhoneMenu({
                   >
                     <item.icon className={styles.rowIcon} aria-hidden="true" />
                     <span className={styles.rowLabel}>{item.label}</span>
+                    <LinkPendingSpinner />
                     <ChevronRight className={styles.rowChevron} aria-hidden="true" />
                   </Link>
                 );
@@ -382,8 +435,119 @@ function PhoneMenu({
             <ThemeChoice />
           </div>
         </section>
+
+        <NotificationsChoice />
+        <AppLockChoice />
+
+        {/* The app stores require the policy to be reachable inside the app. */}
+        <section aria-label="About">
+          <h2 className={styles.groupLabel}>About</h2>
+          <div className={styles.card}>
+            <Link href="/privacy" className={styles.row}>
+              <ShieldCheck className={styles.rowIcon} aria-hidden="true" />
+              <span className={styles.rowLabel}>Privacy Policy</span>
+              <ChevronRight className={styles.rowChevron} aria-hidden="true" />
+            </Link>
+          </div>
+        </section>
       </div>
     </div>
+  );
+}
+
+/**
+ * The phone app only: notifications on this phone, on or off. Off also
+ * removes the phone from the server, so nothing is sent to it at all. When
+ * the phone itself blocks them, one line says where to turn them back on.
+ */
+function NotificationsChoice() {
+  const router = useRouter();
+  const hydrated = useHydrated();
+  // Drawn only after hydration (below), so reading this phone's choice here is safe.
+  const [on, setOn] = useState(() => typeof window === "undefined" || pushChosen());
+  const [blocked, setBlocked] = useState(false);
+
+  useEffect(() => {
+    if (!inPhoneApp()) return;
+    void pushAllowedByPhone().then((allowed) => setBlocked(allowed === false));
+  }, []);
+
+  if (!hydrated || !inPhoneApp()) return null;
+  return (
+    <section aria-label="Notifications">
+      <h2 className={styles.groupLabel}>Notifications</h2>
+      <div className={`${styles.card} ${styles.cardPadded}`}>
+        <SegmentedControl
+          ariaLabel="Notifications on this phone"
+          fullWidth
+          value={on ? "on" : "off"}
+          onChange={(v) => {
+            const next = v === "on";
+            setOn(next);
+            if (next) void resumePushNotifications((href) => router.push(href)).then(() => pushAllowedByPhone()).then((allowed) => setBlocked(allowed === false));
+            else void stopPushNotifications(true);
+          }}
+          items={[
+            { value: "on", label: "On" },
+            { value: "off", label: "Off" },
+          ]}
+        />
+        <p className={styles.choiceNote}>
+          {blocked && on ? "Turned off in your phone's settings. Turn them on there to get them." : "Time off requests and decisions, on this phone."}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The phone app only, on a phone with Face ID, Touch ID or a fingerprint set
+ * up: the lock on this phone, on or off. Turning it on asks once, so it is
+ * never on for a phone that cannot unlock.
+ */
+function AppLockChoice() {
+  const hydrated = useHydrated();
+  const [method, setMethod] = useState<UnlockMethod | null>(null);
+  // Drawn only after hydration and once the phone answers (below), so reading the choice here is safe.
+  const [on, setOn] = useState(() => typeof window !== "undefined" && appLockOn());
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!inPhoneApp()) return;
+    void unlockMethod().then(setMethod);
+  }, []);
+
+  if (!hydrated || !method) return null;
+  return (
+    <section aria-label="App lock">
+      <h2 className={styles.groupLabel}>App lock</h2>
+      <div className={`${styles.card} ${styles.cardPadded}`}>
+        <SegmentedControl
+          ariaLabel={`${method} on this phone`}
+          fullWidth
+          value={on ? "on" : "off"}
+          onChange={async (v) => {
+            if (busy) return;
+            if (v === "off") {
+              setAppLock(false);
+              setOn(false);
+              return;
+            }
+            setBusy(true);
+            const ok = await verifyOwner();
+            setBusy(false);
+            if (!ok) return;
+            setAppLock(true);
+            setOn(true);
+          }}
+          items={[
+            { value: "on", label: "On" },
+            { value: "off", label: "Off" },
+          ]}
+        />
+        <p className={styles.choiceNote}>Asks for {method} when CloudTime opens, or after 15 minutes away.</p>
+      </div>
+    </section>
   );
 }
 

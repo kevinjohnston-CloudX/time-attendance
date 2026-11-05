@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { timeclockKeyValid } from "@/lib/api/timeclock-auth";
 import type { Prisma } from "@prisma/client";
 import { hasIdentity, readReport } from "@/lib/devices/check-in";
 import { recordCheckIn } from "@/lib/devices/device.service";
@@ -37,9 +38,7 @@ function notStored(error: string) {
 }
 
 export async function POST(req: NextRequest) {
-  const apiKey = req.headers.get("x-api-key");
-  const expectedKey = process.env.TIMECLOCK_API_KEY;
-  if (!expectedKey || !apiKey || apiKey !== expectedKey) {
+  if (!timeclockKeyValid(req)) {
     return unauthorized();
   }
 

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
-import { getTenantBySlug, toggleTenantActive, enterTenant } from "@/actions/super-admin.actions";
+import { getTenantBySlug, toggleTenantActive, enterTenant, setTenantIntegration } from "@/actions/super-admin.actions";
 import { format } from "date-fns";
 import {
   Badge,
@@ -70,6 +70,14 @@ export default async function TenantDetailPage({
     "use server";
     await enterTenant(tenant.id);
   }
+  async function toggleAdp() {
+    "use server";
+    await setTenantIntegration(tenant.id, "adp", !tenant.adpConnected);
+  }
+  async function toggleWms() {
+    "use server";
+    await setTenantIntegration(tenant.id, "wms", !tenant.wmsConnected);
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -101,7 +109,7 @@ export default async function TenantDetailPage({
           <Banner
             tone="warning"
             title="This tenant is deactivated"
-            body="Its records are all still here and this page still opens them, but nobody at this company can sign in until it is activated again."
+            body="Its records are all still here and this page still opens them. Until it is activated again nobody at this company can sign in, and its API keys, time clocks, webhooks and scheduled reports stop."
           />
         )}
 
@@ -125,6 +133,31 @@ export default async function TenantDetailPage({
           </div>
         </Card>
 
+        <Card title="Integrations" subtitle="There is one ADP connection and one WMS bridge. Only the company they belong to may use them.">
+          <div className="flex flex-col gap-3">
+            {([
+              ["ADP", tenant.adpConnected, toggleAdp, "Employee sync from ADP and the payroll push to ADP."],
+              ["WMS", tenant.wmsConnected, toggleWms, "Roster, schedules and gate status from Oracle, and its time clocks and gates. Off, the tablets stop finding this company's badges."],
+            ] as const).map(([name, on, toggle, line]) => (
+              <div key={name} className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex min-w-0 flex-col">
+                  <span className="flex items-center gap-2" style={{ font: "var(--weight-semibold) 14px/20px var(--font-sans)", color: "var(--text-primary)" }}>
+                    {name}
+                    <Badge tone={on ? "success" : "neutral"} size="sm" dot>
+                      {on ? "Connected" : "Not connected"}
+                    </Badge>
+                  </span>
+                  <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>{line}</span>
+                </div>
+                <form action={toggle}>
+                  <Button type="submit" hierarchy="secondary" tone={on ? "error" : "regular"} className="whitespace-nowrap">
+                    {on ? `Disconnect ${name}` : `Connect ${name}`}
+                  </Button>
+                </form>
+              </div>
+            ))}
+          </div>
+        </Card>
         <Card title="Sites" subtitle="Each site's time zone sets the time on its punches." padding={0}>
           {tenant.sites.length === 0 ? (
             <EmptyState

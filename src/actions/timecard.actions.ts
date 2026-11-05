@@ -7,6 +7,7 @@ import { assertEmployeeInScope, siteLimit, timesheetInScope } from "@/lib/rbac/s
 import { timecardList } from "@/lib/timecards/timecard-list";
 import { directReportsOf } from "@/lib/get-subordinate-ids";
 import { endedOn, startedOn } from "@/lib/engines/segment-builder";
+import { ownCompany } from "@/lib/rbac/company";
 
 // ─── Employee list (employee-centric timecard) ───────────────────────────────
 
@@ -29,7 +30,7 @@ export const getActiveEmployeesForTimecards = withRBAC(
     // the employee table across tenants.
     return timecardList(
       {
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: ownCompany(tenantId),
         ...(sites ? { siteId: { in: siteId ? sites.filter((s) => s === siteId) : sites } } : siteId ? { siteId } : {}),
         ...(departmentId ? { departmentId } : {}),
       },
@@ -49,7 +50,7 @@ export const getTeamEmployeesForTimecards = withRBAC(
     return timecardList(
       {
         ...directReportsOf(employeeId),
-        ...(tenantId ? { tenantId } : {}),
+        tenantId: ownCompany(tenantId),
         ...(siteId ? { siteId } : {}),
         ...(departmentId ? { departmentId } : {}),
       },

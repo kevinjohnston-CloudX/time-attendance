@@ -14,7 +14,7 @@ interface AuditParams {
 export async function writeAuditLog(params: AuditParams): Promise<void> {
   await db.auditLog.create({
     data: {
-      tenantId: params.tenantId ?? undefined,
+      tenantId: params.tenantId ?? undefined, // company-scope-ok: a row being written, not a filter
       actorId: params.actorId || undefined,
       action: params.action,
       entityType: params.entityType,

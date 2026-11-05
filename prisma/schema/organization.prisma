@@ -3,6 +3,10 @@ model Tenant {
   name      String
   slug      String   @unique
   isActive  Boolean  @default(true)
+  /// Data protection settings for EU companies, as JSON (see
+  /// src/lib/privacy/data-protection.ts). Null for every existing company,
+  /// which means every switch is off.
+  dataProtection Json?
 
   // Pay period configuration
   payFrequency        PayFrequency @default(BIWEEKLY)
@@ -12,6 +16,15 @@ model Tenant {
   /// (Site.gateAlertsOnSince). Nothing reads it now. Kept so a deploy cannot
   /// land between the migration and the code that reads the new column.
   gateAlertsOnSince DateTime?
+
+  /// Whether the platform's ADP connection (the ADP_* server settings) and its
+  /// WMS bridge belong to this company. There is one of each for the whole
+  /// platform, so only the company they belong to may use them: any other
+  /// company got that company's ADP workforce, payroll push and Oracle roster
+  /// (security audit 2026-11, H2). Off for a new company; a super admin turns
+  /// it on.
+  adpConnected Boolean @default(false)
+  wmsConnected Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

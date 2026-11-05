@@ -30,7 +30,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   const tenants = await db.tenant.findMany({
-    where: { isActive: true, employees: { some: { wmsId: { not: null } } } },
+    where: { isActive: true, wmsConnected: true, employees: { some: { wmsId: { not: null } } } },
     select: { id: true, slug: true },
   });
 

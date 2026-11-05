@@ -45,14 +45,34 @@ afterEach(cleanup);
 const open = (r = report()) => render(<ReportViewer report={r as never} filterOptions={options as never} source={source as never} />);
 
 describe("saved scan report page", () => {
-  it("downloads with the moving period, so a bookmarked link is always current", () => {
-    open();
-    for (const [label, fmt] of [["Excel", "xlsx"], ["CSV", "csv"], ["PDF", "pdf"]]) {
-      const href = (screen.getByTitle(`Download as ${label}`) as HTMLAnchorElement).getAttribute("href")!;
-      const url = new URL(href, "http://x");
-      expect(url.pathname).toBe("/api/reports/r1/export");
-      expect(url.searchParams.get("format")).toBe(fmt);
-      expect(JSON.parse(url.searchParams.get("range")!)).toEqual({ type: "calendar", unit: "month", which: "last" });
+  it("downloads with the moving period on screen, and says it is preparing the file", async () => {
+    // The page fetches the file so the button can show it is working (ticket 72637).
+    const fetched: string[] = [];
+    let finish: () => void = () => {};
+    const fetchMock = vi.fn((u: string) => {
+      fetched.push(u);
+      return new Promise<Response>((resolve) => {
+        finish = () => resolve(new Response("a,b", { headers: { "Content-Disposition": 'attachment; filename="r.csv"' } }));
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const createURL = vi.fn(() => "blob:x");
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: createURL, revokeObjectURL: vi.fn() }));
+    try {
+      open();
+      for (const [label, fmt] of [["Excel", "xlsx"], ["CSV", "csv"], ["PDF", "pdf"]]) {
+        fireEvent.click(screen.getByTitle(`Download as ${label}`));
+        await waitFor(() => expect(screen.getByText(`Preparing the ${label} file…`)).toBeTruthy());
+        const url = new URL(fetched.at(-1)!, "http://x");
+        expect(url.pathname).toBe("/api/reports/r1/export");
+        expect(url.searchParams.get("format")).toBe(fmt);
+        expect(JSON.parse(url.searchParams.get("range")!)).toEqual({ type: "calendar", unit: "month", which: "last" });
+        finish();
+        await waitFor(() => expect(screen.queryByText(/^Preparing the/)).toBeNull());
+      }
+      expect(createURL).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 

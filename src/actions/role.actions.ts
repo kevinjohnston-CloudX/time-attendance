@@ -5,12 +5,15 @@ import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { invalidateRoleCache } from "@/lib/rbac/permission-resolver";
+import { currentIdentity } from "@/lib/rbac/current";
+import { COMPANY_TOP_RANK } from "@/lib/rbac/roles";
 import {
   createRoleSchema,
   updateRoleSchema,
   type CreateRoleInput,
   type UpdateRoleInput,
 } from "@/lib/validators/role.schema";
+import { ownCompany } from "@/lib/rbac/company";
 
 /**
  * A role limited to Live Attendance never also gets View As: previewing other
@@ -20,12 +23,36 @@ function viewAsFor(liveAttendanceOnly: boolean | undefined, canViewAs: boolean |
   return liveAttendanceOnly ? false : canViewAs;
 }
 
+/**
+ * Who may set a role's rank, and touch a role at all.
+ *
+ * <p>Nobody gives a role a rank at or above their own, and nobody touches a
+ * role ranked above them; a super admin excepted. A System Admin is the top of
+ * their company, so they may keep a role at their own rank (their own role's
+ * description and permissions stay theirs to edit). Without this a System
+ * Admin raised their own role to 100, which outranked the super admin, and
+ * reset the super admin's password (security audit 2026-11, C1).
+ */
+async function assertRankAllowed(rank: number, existing?: { rank: number }) {
+  const me = await currentIdentity();
+  if (!me) throw new Error("FORBIDDEN");
+  if (rank > COMPANY_TOP_RANK) throw new Error("A role's rank goes from 0 (Employee) to 4 (System Admin).");
+  if (me.isSuperAdmin) return;
+  const top = me.rank >= COMPANY_TOP_RANK;
+  if (existing && existing.rank > me.rank) throw new Error("Only someone more senior can change this role.");
+  if (existing && existing.rank === me.rank && !top) throw new Error("Only someone more senior can change a role at your own rank.");
+  const unchanged = existing && rank === existing.rank;
+  if (!unchanged && (rank > me.rank || (rank === me.rank && !top))) {
+    throw new Error("You can only give a role a rank below your own.");
+  }
+}
+
 // ─── Queries ─────────────────────────────────────────────────────────────────
 
 export const getRoles = withRBAC(
   "ROLE_MANAGE",
   async ({ tenantId }, _input: void) => {
-    const t = tenantId ?? undefined;
+    const t = ownCompany(tenantId);
     return db.customRole.findMany({
       where: { tenantId: t },
       include: {
@@ -40,7 +67,7 @@ export const getRoleById = withRBAC(
   "ROLE_MANAGE",
   async ({ tenantId }, input: { id: string }) => {
     const role = await db.customRole.findFirst({
-      where: { id: input.id, tenantId: tenantId ?? undefined },
+      where: { id: input.id, tenantId: ownCompany(tenantId) },
       include: {
         permissions: true,
         _count: { select: { employees: true } },
@@ -58,6 +85,7 @@ export const createRole = withRBAC(
   async ({ employeeId: actorId, tenantId }, input: CreateRoleInput) => {
     if (!tenantId) throw new Error("Tenant context required");
     const data = createRoleSchema.parse(input);
+    await assertRankAllowed(data.rank);
 
     const role = await db.customRole.create({
       data: {
@@ -103,6 +131,7 @@ export const updateRole = withRBAC(
       include: { permissions: true },
     });
     if (!existing) throw new Error("This role isn't available. It may have been deleted. Reload the page and try again.");
+    await assertRankAllowed(data.rank ?? existing.rank, existing);
 
     // Block rename of system roles
     if (existing.isSystem && data.name && data.name !== existing.name) {
@@ -171,6 +200,7 @@ export const deleteRole = withRBAC(
     });
     if (!role) throw new Error("This role isn't available. It may have been deleted. Reload the page and try again.");
     if (role.isSystem) throw new Error("Built-in roles can't be deleted.");
+    await assertRankAllowed(role.rank, role);
     if (role._count.employees > 0) {
       throw new Error(
         `The role "${role.name}" cannot be deleted while ${role._count.employees} ${role._count.employees === 1 ? "employee is" : "employees are"} assigned to it.`
@@ -204,6 +234,7 @@ export const duplicateRole = withRBAC(
       include: { permissions: true },
     });
     if (!source) throw new Error("The role to copy isn't available. It may have been deleted. Reload the page and try again.");
+    await assertRankAllowed(source.rank);
 
     const role = await db.customRole.create({
       data: {

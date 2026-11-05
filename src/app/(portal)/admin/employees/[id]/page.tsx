@@ -5,6 +5,7 @@ import { getEmployeeById, getAdminRefData, getEmployeeAuditLogs, getHrSiteAccess
 import { EditEmployeeForm } from "@/components/admin/edit-employee-form";
 import { getPayRates } from "@/actions/pay-rate.actions";
 import { photoUrls } from "@/lib/presence/photos";
+import { getDataProtection } from "@/actions/privacy.actions";
 
 /**
  * One employee. The record opens to read, with Edit in the pinned header;
@@ -38,6 +39,11 @@ export default async function EditEmployeePage({
   if (!refResult.success) redirect("/admin/employees");
 
   const logs = logsResult.success ? logsResult.data : [];
+  // Anonymise is offered only for someone who has left, in a company that
+  // switched it on, to someone who may also export their data first.
+  const canExportData = await userHasPermission(session.user, "EMPLOYEE_DATA_EXPORT");
+  const protection = await getDataProtection();
+  const canAnonymise = canExportData && !empResult.data.isActive && protection.success && protection.data.anonymise.enabled;
   const employee = empResult.data;
   const hrSiteAccess = siteAccessResult.success ? siteAccessResult.data : [];
   const actorRole = session.user.role;
@@ -65,6 +71,8 @@ export default async function EditEmployeePage({
         // again by the save itself; this only decides whether to offer it.
         canEditPhoto={await userHasPermission(session.user, "PRESENCE_PHOTO_EDIT")}
         canRemovePhoto={await userHasPermission(session.user, "PRESENCE_PHOTO_REMOVE")}
+        canExportData={canExportData}
+        canAnonymise={canAnonymise}
         sites={sites}
         departments={departments}
         ruleSets={ruleSets}

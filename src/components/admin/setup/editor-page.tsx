@@ -375,7 +375,7 @@ export function EditorPage({
               </span>
             )}
             {/* On a phone, Save is the bar pinned under the form instead. */}
-            <Button type="submit" form={formId} className="ta-phone-hide" disabled={pending || (!isNew && !dirty)}>
+            <Button pending={pending} type="submit" form={formId} className="ta-phone-hide" disabled={pending || (!isNew && !dirty)}>
               {pending ? "Saving…" : submitLabel}
             </Button>
           </>
@@ -415,7 +415,7 @@ export function EditorPage({
               >
                 {status ?? (isNew ? "Not saved yet" : "No changes yet")}
               </span>
-              <Button type="submit" disabled={pending || (!isNew && !dirty)}>
+              <Button pending={pending} type="submit" disabled={pending || (!isNew && !dirty)}>
                 {pending ? "Saving…" : submitLabel}
               </Button>
             </div>

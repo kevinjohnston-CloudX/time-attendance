@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { emailHolders } from "@/lib/login-email";
 import { withRBAC } from "@/lib/rbac/guard";
+import { assertIntegrationConnected, integrationConnected } from "@/lib/integrations/connected";
 import { activeChangeEvent, queueEmployeeEvent, sendSoon } from "@/lib/webhooks/employee-events";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { AdpClient, getAdpConfig } from "@/lib/integrations/adp/client";
@@ -32,6 +33,7 @@ export const getAdpSyncStatus = withRBAC(
   async ({ tenantId }) => {
     if (!tenantId) throw new Error("NOT_FOUND");
     const config = getAdpConfig();
+    const connected = await integrationConnected(tenantId, "adp");
 
     const [lastSync, adpEmployeeCount, activeCount, activeLinkedCount, lastPush] = await Promise.all([
       db.auditLog.findFirst({
@@ -58,7 +60,9 @@ export const getAdpSyncStatus = withRBAC(
     ]);
 
     return {
-      isConfigured: config !== null,
+      // Not configured here when the connection belongs to another company.
+      isConfigured: config !== null && connected,
+      notForThisCompany: config !== null && !connected,
       lastSyncAt: lastSync?.createdAt ?? null,
       lastSyncResult: lastSync?.changes ?? null,
       adpEmployeeCount,
@@ -119,7 +123,8 @@ export const getAdpSyncOptions = withRBAC(
 /** Test ADP API connectivity by fetching the first page of workers. */
 export const testAdpConnection = withRBAC(
   "EMPLOYEE_MANAGE",
-  async () => {
+  async ({ tenantId }) => {
+    await assertIntegrationConnected(tenantId, "adp");
     const config = getAdpConfig();
     if (!config) throw new Error("ADP isn't connected yet, so nothing can be sent. Ask a system admin to set up the ADP connection.");
 
@@ -158,6 +163,7 @@ export const syncAdpEmployees = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: SyncInput) => {
     if (!tenantId) throw new Error("Tenant context required");
+    await assertIntegrationConnected(tenantId, "adp");
     const config = getAdpConfig();
     if (!config) throw new Error("ADP isn't connected yet, so nothing can be sent. Ask a system admin to set up the ADP connection.");
 
@@ -363,6 +369,7 @@ export const pushPayrollToAdp = withRBAC(
   "PAYROLL_RUN",
   async ({ employeeId: actorId, tenantId }, input: { payPeriodId: string }) => {
     if (!tenantId) throw new Error("NOT_FOUND");
+    await assertIntegrationConnected(tenantId, "adp");
     const config = getAdpConfig();
     if (!config) throw new Error("ADP isn't connected yet, so nothing can be sent. Ask a system admin to set up the ADP connection.");
 

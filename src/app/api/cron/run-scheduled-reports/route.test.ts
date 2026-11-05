@@ -19,6 +19,8 @@ vi.mock("@/lib/reports/data-sources", () => ({
   getDataSource: () => ({ execute, brand: "CloudTime" }),
 }));
 vi.mock("@/lib/reports/email/send-report", () => ({ sendReportEmail, isEmailConfigured }));
+// Everyone on these schedules is in the company; the recipient rule has its own tests.
+vi.mock("@/lib/reports/recipients", () => ({ recipientsOutsideCompany: vi.fn(async () => []) }));
 
 import { GET } from "./route";
 

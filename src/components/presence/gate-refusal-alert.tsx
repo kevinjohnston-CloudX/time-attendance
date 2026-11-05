@@ -390,7 +390,7 @@ export function GateRefusalAlert({
         {error && <p className={styles.peError}>{error}</p>}
 
         <div className={styles.gaActions}>
-          <Button hierarchy="secondary" fullWidth style={BIG} onClick={() => void dismiss([card.id])} disabled={busy}>
+          <Button pending={busy} hierarchy="secondary" fullWidth style={BIG} onClick={() => void dismiss([card.id])} disabled={busy}>
             {busy ? "Dismissing…" : "Dismiss"}
           </Button>
           <Button

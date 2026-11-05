@@ -33,6 +33,11 @@ export const PERMISSIONS = [
   "EMPLOYEE_MANAGE",
   // See your own people's employee details (Team Members), read only
   "EMPLOYEE_VIEW_TEAM",
+  // Download everything CloudTime holds about one person, for a data access request
+  "EMPLOYEE_DATA_EXPORT",
+  // Download everything CloudTime holds for the whole company, to move it to
+  // another system. System Admins only unless a company ticks it for a role.
+  "COMPANY_DATA_EXPORT",
   "RULES_MANAGE",
   // Rules Setup, and the Company Setup areas that need RULES_MANAGE, read only
   "RULES_VIEW",
@@ -136,6 +141,7 @@ const rolePermissions: Record<Role, Permission[]> = {
     "PAY_PERIOD_MANAGE",
     "PAYROLL_RUN",
     "EMPLOYEE_MANAGE",
+    "EMPLOYEE_DATA_EXPORT",
     "RULES_MANAGE",
     "AUDIT_VIEW",
     "SITE_MANAGE",

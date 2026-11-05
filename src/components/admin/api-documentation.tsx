@@ -314,6 +314,12 @@ const expected = "sha256=" + crypto.createHmac("sha256", process.env.CLOUDTIME_W
 const given = request.headers["x-webhook-signature"] ?? "";
 const valid = given.length === expected.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(expected));
 if (!valid) return respond(401);`;
+  const timeOffAccess = (
+    <div className="mb-1 px-3 py-2" style={{ borderRadius: 10, background: "var(--surface-warning)", font: "var(--type-body2)", color: "var(--text-warning)" }}>
+      Only keys with <b style={{ fontWeight: 600 }}>time off requests</b> can use this. Allow it from the key&apos;s menu on the API Keys tab. Other keys
+      receive a <Code>403</Code>.
+    </div>
+  );
   const access = (
     <div className="mb-1 px-3 py-2" style={{ borderRadius: 10, background: "var(--surface-warning)", font: "var(--type-body2)", color: "var(--text-warning)" }}>
       Only keys with <b style={{ fontWeight: 600 }}>directory access</b> can use this. Allow it from the key&apos;s menu on the API Keys tab. Other keys
@@ -416,7 +422,8 @@ if (!valid) return respond(401);`;
             title="List Leave Types"
             path="/api/external/leave-types"
           >
-            <p style={para}>
+            {timeOffAccess}
+            <p style={{ ...para, marginTop: 10 }}>
               Returns all active leave types for your company. Send a type&apos;s <Code>externalCode</Code> as <Code>leaveTypeCode</Code> when
               you submit a leave request.
             </p>
@@ -435,7 +442,8 @@ if (!valid) return respond(401);`;
             title="Submit a Leave Request"
             path="/api/external/pto-requests"
           >
-            <p style={para}>
+            {timeOffAccess}
+            <p style={{ ...para, marginTop: 10 }}>
               Creates a leave request for an employee and submits it straight away. It arrives as{" "}
               <b style={{ fontWeight: 600, color: "var(--text-primary)" }}>PENDING</b> and waits for approval like any other request.
             </p>

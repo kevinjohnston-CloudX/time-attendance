@@ -11,6 +11,7 @@ import { Prisma } from "@prisma/client";
 import { ZodError } from "zod";
 import { ACTION_ERROR_TEXT, codeOfMessage, textOfCode, type ActionErrorCode } from "@/lib/action-errors";
 import { zodMessage } from "@/lib/zod-message";
+import { companyBlocks } from "@/lib/privacy/data-protection";
 
 /**
  * What the browser is told when an action fails.
@@ -137,6 +138,12 @@ export function withRBAC<TInput, TOutput>(
       return failure("FORBIDDEN", ACTION_ERROR_TEXT.INACTIVE);
     }
 
+    // A company's own switches take some permissions away from everyone in
+    // it, admins included (Live Attendance closed by Data Protection).
+    const usable: Permission[] = [];
+    for (const p of perms) if (!(await companyBlocks(session.user.tenantId, p))) usable.push(p);
+    if (usable.length === 0) return failure("FORBIDDEN");
+
     const realRole = session.user.role ?? "EMPLOYEE";
     const effectiveRole = await getEffectiveRole(session.user);
     // While viewing as a role, actions get that role's permissions and rank,
@@ -147,10 +154,10 @@ export function withRBAC<TInput, TOutput>(
     if (!isPrivilegedAdmin) {
       const customRoleId = (session.user as { customRoleId?: string | null }).customRoleId ?? null;
       const allowed = viewAsId
-        ? await Promise.all(perms.map((p) => checkViewAsPermission(viewAsId, p))).then((r) => r.some(Boolean))
+        ? await Promise.all(usable.map((p) => checkViewAsPermission(viewAsId, p))).then((r) => r.some(Boolean))
         : customRoleId
-          ? await Promise.all(perms.map((p) => hasPermissionByLegacy(customRoleId, p))).then((r) => r.some(Boolean))
-          : perms.some((p) => hasPermission(effectiveRole, p));
+          ? await Promise.all(usable.map((p) => hasPermissionByLegacy(customRoleId, p))).then((r) => r.some(Boolean))
+          : usable.some((p) => hasPermission(effectiveRole, p));
       if (!allowed) return failure("FORBIDDEN");
     }
 

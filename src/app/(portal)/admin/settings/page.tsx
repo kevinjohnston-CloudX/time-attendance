@@ -7,6 +7,10 @@ import { LinkButton, PageHeader } from "@/components/ui";
 import { manageOrView, userHasPermission } from "@/lib/rbac/check-permission";
 import { getTenantSettings } from "@/actions/pay-period.actions";
 import { CompanySettings } from "@/components/admin/company-settings";
+import { DataProtectionPanel } from "@/components/admin/data-protection-panel";
+import { getDataProtection } from "@/actions/privacy.actions";
+import { getSites } from "@/actions/admin.actions";
+import { CompanyDataPanel } from "@/components/admin/company-export-window";
 
 /**
  * Company Settings: the pay schedule every rule set without its own falls
@@ -21,9 +25,15 @@ export default async function CompanySettingsPage() {
   if (!session?.user) redirect("/login");
   if (!await userHasPermission(session.user, "PAY_PERIOD_MANAGE")) redirect("/admin");
 
-  const [result, canOpenRules] = await Promise.all([
+  const [result, canOpenRules, protection, canReview, sites, canExportCompany] = await Promise.all([
     getTenantSettings(),
     manageOrView(session.user, "RULES_MANAGE", "RULES_VIEW").then((access) => access !== null),
+    // Only for those who manage employee records; the panel is left out for anyone else.
+    userHasPermission(session.user, "EMPLOYEE_MANAGE").then((can) => (can ? getDataProtection() : null)),
+    // The retention review downloads people's data, so it needs Export data too.
+    userHasPermission(session.user, "EMPLOYEE_DATA_EXPORT"),
+    getSites(),
+    userHasPermission(session.user, "COMPANY_DATA_EXPORT"),
   ]);
   if (!result.success) redirect("/admin");
   const { payFrequency, payPeriodAnchorDate, name, nextPeriod, defaultRuleSets } = result.data;
@@ -51,6 +61,14 @@ export default async function CompanySettingsPage() {
         defaultRuleSets={defaultRuleSets}
         canOpenRules={canOpenRules}
       />
+      {protection?.success && (
+        <DataProtectionPanel
+          initial={protection.data}
+          canReview={canReview}
+          sites={sites.success ? sites.data.map((x) => ({ id: x.id, name: x.name })) : []}
+        />
+      )}
+      {canExportCompany && <CompanyDataPanel companyName={name} />}
     </div>
   );
 }

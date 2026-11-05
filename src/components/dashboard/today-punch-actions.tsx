@@ -30,12 +30,15 @@ export function TodayPunchActions({ state }: { state: PunchStateValue }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  // Which punch is being recorded, so that button shows it is working.
+  const [punching, setPunching] = useState<PunchTypeValue | null>(null);
 
   const available = getAvailablePunchTypes(state);
   if (available.length === 0) return null;
 
   function handlePunch(punchType: PunchTypeValue) {
     setError(null);
+    setPunching(punchType);
     startTransition(async () => {
       const result = await recordPunch({ punchType });
       if (!result.success) {
@@ -58,6 +61,7 @@ export function TodayPunchActions({ state }: { state: PunchStateValue }) {
                working, clock in when out. The rest are secondary. */
             hierarchy={i === 0 ? "primary" : "secondary"}
             disabled={isPending}
+            pending={isPending && punching === type}
             onClick={() => handlePunch(type)}
           >
             {PUNCH_TYPE_LABEL[type]}

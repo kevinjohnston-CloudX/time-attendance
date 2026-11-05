@@ -173,6 +173,7 @@ export async function getKnowledgeBaseArticle(audiences: string[], userId: strin
 
 /** Tell CXT the person opened the article. Never fails the page. */
 export async function recordKnowledgeBaseView(audiences: string[], userId: string, articleId: string): Promise<void> {
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(articleId)) return;
   try {
     await call(`/articles/${articleId}/view`, audiences, { method: "POST", reader: await readerOf(userId) });
   } catch {
@@ -182,6 +183,9 @@ export async function recordKnowledgeBaseView(audiences: string[], userId: strin
 
 /** Record the person's "Was this helpful?" answer. False when CXT refused it. */
 export async function voteOnKnowledgeBaseArticle(audiences: string[], userId: string, articleId: string, helpful: boolean): Promise<boolean> {
+  // The same check reading an article has: the id goes into CXT's address, so
+  // "../" in it would reach another of CXT's doors (security audit 2026-11, L1).
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(articleId)) return false;
   const { status } = await call(`/articles/${articleId}/vote`, audiences, {
     method: "POST",
     reader: await readerOf(userId),

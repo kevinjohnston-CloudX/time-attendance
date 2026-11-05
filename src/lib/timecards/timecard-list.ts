@@ -4,6 +4,7 @@ import { periodDayRange } from "@/lib/pay-period-days";
 import { endedOn, startedOn } from "@/lib/engines/segment-builder";
 
 const nextDayKey = (k: string, n = 1) => new Date(Date.parse(k + "T12:00:00Z") + n * 86_400_000).toISOString().slice(0, 10);
+import { ownCompany } from "@/lib/rbac/company";
 
 /**
  * The people the timecard list offers, with each one's timecard status and
@@ -26,7 +27,7 @@ export async function timecardList(scope: Prisma.EmployeeWhereInput, tenantId: s
   let days: { firstDay: string; lastDay: string } | null = null;
   if (payPeriodId) {
     const period = await db.payPeriod.findFirst({
-      where: { id: payPeriodId, ...(tenantId ? { tenantId } : {}) },
+      where: { id: payPeriodId, tenantId: ownCompany(tenantId) },
       select: { startDate: true, endDate: true, ruleSet: { select: { payFrequency: true } }, tenant: { select: { payFrequency: true } } },
     });
     if (period) days = periodDayRange(period, period.ruleSet?.payFrequency ?? period.tenant.payFrequency);

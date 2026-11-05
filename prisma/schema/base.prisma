@@ -166,6 +166,9 @@ enum ExceptionType {
   /// the one exception type not derived from punches, and so the only one
   /// that can see a punch which is simply absent.
   SCAN_DISCREPANCY
+  /// Less rest between two working days than the rule set's working time
+  /// checks require. Raised only for a rule set set to a country.
+  SHORT_REST
 }
 
 enum PayFrequency {

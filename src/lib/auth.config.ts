@@ -65,6 +65,8 @@ export const authConfig = {
         !nextUrl.pathname.startsWith("/forgot-password") &&
         !nextUrl.pathname.startsWith("/setup-password") &&
         !nextUrl.pathname.startsWith("/change-password") &&
+        // Public: the stores and anyone not signed in must be able to read it.
+        nextUrl.pathname !== "/privacy" &&
         !nextUrl.pathname.startsWith("/api/auth") &&
         !nextUrl.pathname.startsWith("/api/timeclock") &&
         !nextUrl.pathname.startsWith("/api/cron") &&
@@ -74,6 +76,9 @@ export const authConfig = {
         // it receives an HTML page where it expects JSON.
         !nextUrl.pathname.startsWith("/api/bridge") &&
         !nextUrl.pathname.startsWith("/api/mobile") &&
+        // Sends a signed out browser to /login itself, carrying the app's
+        // challenge, which the default redirect would drop.
+        !nextUrl.pathname.startsWith("/api/app-signin") &&
         !nextUrl.pathname.startsWith("/api/external");
 
       // Super-admin routes: require SUPER_ADMIN role

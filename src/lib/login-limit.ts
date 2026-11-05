@@ -76,7 +76,7 @@ export async function recordFailedLogin(
 ): Promise<void> {
   await db.auditLog.create({
     data: {
-      tenantId: tenantId ?? undefined,
+      tenantId: tenantId ?? undefined, // company-scope-ok: a row being written, not a filter
       action: FAILED,
       // A login's id, or "name:" and the hash of an email nobody signs in with by password.
       entityType: "USER",

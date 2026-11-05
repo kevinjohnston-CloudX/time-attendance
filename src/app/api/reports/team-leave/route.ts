@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { csvCell } from "@/lib/csv-cell";
 import { format } from "date-fns";
+import { recordDownload } from "@/lib/audit/downloads";
 import {
   getTeamLeaveRequests,
   getHrPendingLeave,
@@ -107,6 +108,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const filename = `team-leave-${format(new Date(), "yyyy-MM-dd")}.csv`;
 
+  await recordDownload({
+    action: "REPORT_DOWNLOADED",
+    entityType: "REPORT",
+    entityId: "team-leave",
+    details: { report: "team-leave", format: "csv", rows: Math.max(lines.length - 1, 0) },
+  });
   return new NextResponse(`${lines.join("\n")}\n`, {
     headers: {
       "content-type": "text/csv; charset=utf-8",

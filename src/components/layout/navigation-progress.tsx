@@ -26,6 +26,8 @@ const GIVE_UP_MS = 15_000;
 type Phase = "idle" | "loading" | "finishing";
 
 let phase: Phase = "idle";
+/** Where the page change in progress is going, path and query, or null. */
+let target: string | null = null;
 let startedAt = 0;
 let giveUp: ReturnType<typeof setTimeout> | undefined;
 let finish: ReturnType<typeof setTimeout> | undefined;
@@ -59,17 +61,32 @@ function destination(href: string): URL | null {
   return url;
 }
 
+/**
+ * The same page with new filters, a search or another page of rows: the page
+ * stays and only its rows change, so no loading screen is drawn. The rows
+ * beside the pinned bar fade back meanwhile (globals.css, .ta-nav-refresh).
+ */
+function markRefresh(on: boolean) {
+  if (on) document.documentElement.dataset.navRefresh = "true";
+  else delete document.documentElement.dataset.navRefresh;
+}
+
 function start(href: string) {
-  if (!destination(href)) return;
+  const url = destination(href);
+  if (!url) return;
   clearTimeout(giveUp);
   clearTimeout(finish);
   startedAt = Date.now();
+  markRefresh(url.pathname === window.location.pathname);
+  target = url.pathname + url.search;
   set("loading");
   giveUp = setTimeout(done, GIVE_UP_MS);
 }
 
 function done() {
   clearTimeout(giveUp);
+  markRefresh(false);
+  target = null;
   if (phase !== "loading") return;
   // Never shown yet, so there is nothing to finish: just stop.
   if (Date.now() - startedAt < SHOW_AFTER_MS) return set("idle");
@@ -98,6 +115,22 @@ export function useRouter(): ReturnType<typeof useNextRouter> {
     }),
     [router],
   );
+}
+
+/**
+ * True while a page change started by a link or this file's useRouter is on
+ * its way. For PendingRegion around rows a filter or search is replacing.
+ */
+export function useNavigationPending(): boolean {
+  return useSyncExternalStore(store.subscribe, store.get, store.getServer) === "loading";
+}
+
+/**
+ * Where the page change in progress is going ("/path?query"), or null. For a
+ * screen that fades only what its own next page replaces.
+ */
+export function useNavigationTarget(): string | null {
+  return useSyncExternalStore(store.subscribe, () => (phase === "loading" ? target : null), () => null);
 }
 
 export function NavigationProgress() {

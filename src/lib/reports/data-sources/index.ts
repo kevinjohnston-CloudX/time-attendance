@@ -36,6 +36,12 @@ export interface ColumnDef {
   groupOrder?: string;
   /** Can be spread across the columns, one column for each of its values (see across.ts). */
   across?: boolean;
+  /**
+   * Changes from one day or punch to the next (a clock time, a note), so it
+   * cannot sit on a line that adds several days up: a report spread across
+   * the columns leaves it out rather than giving each day its own line.
+   */
+  varies?: boolean;
 }
 
 export interface FilterFieldDef {
@@ -60,6 +66,8 @@ export interface ReportResult {
   period?: { start: string; end: string; label: string };
   /** The rows in their groups, with totals; `rows` are already in group order. */
   groups?: ReportGroups;
+  /** Columns picked but not shown, because the layout adds days up (see ColumnDef.varies). */
+  leftOut?: string[];
 }
 
 /** What a run needs to know besides the report: where "yesterday" is, and when "now" is. */
@@ -203,6 +211,7 @@ function withAcross(def: DataSourceDefinition): DataSourceDefinition {
         rows,
         totalRows: spread.rows.length,
         truncated: result.rows.length >= ACROSS_SOURCE_ROWS || rows.length < spread.rows.length,
+        ...(spread.leftOut.length ? { leftOut: spread.leftOut } : {}),
       };
     },
   };

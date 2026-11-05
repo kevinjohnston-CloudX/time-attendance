@@ -1,6 +1,7 @@
 import { parseISO, getYear, differenceInMonths } from "date-fns";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { companyDataProtection, leaveTypeTakesNoNote, noteKeptOut } from "@/lib/privacy/data-protection";
 import { shiftMeal } from "@/lib/shift-meal";
 import { validateLeaveTransition } from "@/lib/state-machines/leave-state";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
@@ -9,6 +10,7 @@ import { hoursToSeconds, secondsToHours } from "@/lib/leave-time";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { assertLeaveTypeAllowed } from "@/lib/pay-code-availability";
 import { requestLeaveSchema, type DaySelectionInput } from "@/lib/validators/leave.schema";
+import { ownCompany } from "@/lib/rbac/company";
 
 // ─── Queries ────────────────────────────────────────────────────────────────
 
@@ -21,10 +23,16 @@ export async function getLeaveRequestsCore(employeeId: string) {
 }
 
 export async function getLeaveTypesCore(tenantId: string | null) {
-  return db.leaveType.findMany({
-    where: { isActive: true, tenantId: tenantId ?? undefined },
-    orderBy: { name: "asc" },
-  });
+  const [types, protection] = await Promise.all([
+    db.leaveType.findMany({
+      where: { isActive: true, tenantId: ownCompany(tenantId) },
+      orderBy: { name: "asc" },
+    }),
+    companyDataProtection(tenantId),
+  ]);
+  // noNote: the request form shows no note box for this type (sick leave in
+  // a company keeping medical details out). False for every other company.
+  return types.map((t) => ({ ...t, noNote: leaveTypeTakesNoNote(protection, t.category) }));
 }
 
 export async function getLeaveBalancesCore(employeeId: string) {
@@ -45,7 +53,10 @@ export async function createLeaveRequestCore(
     note?: string;
   },
 ) {
-  const { leaveTypeId, selectedDays, note } = requestLeaveSchema.parse(input);
+  const { leaveTypeId, selectedDays, note: typedNote } = requestLeaveSchema.parse(input);
+  // A company keeping medical details out stores no note on sick leave, from
+  // every way a request comes in (the form, the phone app, the API).
+  const note = (await noteKeptOut(employeeId, leaveTypeId)) ? undefined : typedNote;
   // Only leave the person's policies give them (CA Sick for an NJ employee
   // was refused nowhere), from every way a request comes in.
   await assertLeaveTypeAllowed(employeeId, leaveTypeId);

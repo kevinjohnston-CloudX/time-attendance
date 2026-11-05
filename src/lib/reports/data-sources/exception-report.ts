@@ -48,6 +48,7 @@ export const exceptionReportSource: DataSourceDefinition = {
       options: [
         { value: "MISSING_PUNCH", label: "Missing punch" },
         { value: "LONG_SHIFT", label: "Long shift" },
+        { value: "SHORT_REST", label: "Short rest" },
         { value: "SHORT_BREAK", label: "Short break" },
         { value: "MISSED_MEAL", label: "Missed meal" },
         { value: "UNSCHEDULED_OT", label: "Unscheduled overtime" },

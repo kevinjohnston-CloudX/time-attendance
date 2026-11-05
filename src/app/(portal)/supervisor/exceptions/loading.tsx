@@ -67,7 +67,7 @@ function CardSkeleton() {
 
 export default function Loading() {
   return (
-    <div aria-busy="true" aria-label="Loading exceptions">
+    <div className="ta-loading" aria-busy="true" aria-label="Loading exceptions">
       {/* A phone opens on the people list, so that is what loads. */}
       <div className="ta-phone-only">
         <PhoneListSkeleton faces={false} />

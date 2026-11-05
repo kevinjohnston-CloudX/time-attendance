@@ -266,6 +266,8 @@ export const ruleSetSchema = z.object({
   shortBreakMinutes: z.number().int().min(0).default(15),
   shortBreaksPerDay: z.number().int().min(0).default(2),
   longShiftMinutes: z.number().int().min(0).default(720),
+  /// OFF, or the country whose working time law the rule set checks (EU companies).
+  workingTimeChecks: z.enum(["OFF", "DE", "NL", "UK"]).default("OFF"),
   isDefault: z.boolean().default(false),
   payFrequency: z.nativeEnum(PayFrequency).nullable().optional(),
   payPeriodAnchorDate: z.string().nullable().optional(), // "YYYY-MM-DD" string, parsed to Date in action

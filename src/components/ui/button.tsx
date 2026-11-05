@@ -40,6 +40,13 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
   fullWidth?: boolean;
   leadingIcon?: ReactNode;
   trailingIcon?: ReactNode;
+  /**
+   * The action this button started is running. A ring takes the icon's place
+   * (or sits before the label), the button keeps its size and colours, and a
+   * second click does nothing. Pair it with useTransition's isPending or
+   * useFormStatus's pending; a label like "Saving…" is optional.
+   */
+  pending?: boolean;
 }
 
 export function Button({
@@ -53,6 +60,7 @@ export function Button({
   trailingIcon,
   type = "button",
   disabled = false,
+  pending = false,
   style,
   className = "",
   ...rest
@@ -60,6 +68,7 @@ export function Button({
   const s = SIZES[size];
   const isLink = hierarchy === "link" || hierarchy === "linkSecondary";
   const isErr = tone === "error";
+  const ring = <span className="ta-btn-spinner" aria-hidden="true" />;
 
   let palette: Record<string, string>;
   if (isLink) {
@@ -102,7 +111,8 @@ export function Button({
   return (
     <button
       type={type}
-      disabled={disabled}
+      disabled={disabled || pending}
+      aria-busy={pending || undefined}
       className={`wms-btn${isLink ? " wms-btn-link" : ""} ${className}`.trim()}
       style={{
         ...palette,
@@ -117,15 +127,15 @@ export function Button({
         borderRadius: "var(--radius-m)",
         font: s.font,
         whiteSpace: "nowrap",
-        cursor: disabled ? "not-allowed" : "pointer",
+        cursor: disabled && !pending ? "not-allowed" : "pointer",
         boxShadow: hierarchy === "secondary" && !disabled ? "0px 1px 2px rgba(0,0,0,0.05)" : "none",
         ...style,
       } as React.CSSProperties}
       {...rest}
     >
-      {leadingIcon}
-      {children}
-      {trailingIcon}
+      {pending && (leadingIcon || !trailingIcon || iconOnly) ? ring : leadingIcon}
+      {pending && iconOnly ? null : children}
+      {pending && trailingIcon && !leadingIcon && !iconOnly ? ring : trailingIcon}
     </button>
   );
 }

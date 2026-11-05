@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { Providers } from "@/app/_components/providers";
 import { NavigationProgress } from "@/components/layout/navigation-progress";
+import { LIFT_LAUNCH_SCREEN_SCRIPT } from "@/lib/native-app";
 
 /**
  * Inter, loaded as a variable font.
@@ -60,6 +61,8 @@ export default function RootLayout({
           <NavigationProgress />
         </Suspense>
         <Providers>{children}</Providers>
+        {/* Phone app only: lifts the launch screen at first paint. */}
+        <script dangerouslySetInnerHTML={{ __html: LIFT_LAUNCH_SCREEN_SCRIPT }} />
       </body>
     </html>
   );

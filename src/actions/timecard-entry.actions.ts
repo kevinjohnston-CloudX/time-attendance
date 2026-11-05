@@ -15,6 +15,8 @@ import {
   payrollLeaveEntrySchema,
 } from "@/lib/validators/timecard-entry.schema";
 import { z } from "zod";
+import { changeReasonSchema } from "@/lib/validators/punch.schema";
+import { noteKeptOut } from "@/lib/privacy/data-protection";
 import type { LeaveType } from "@prisma/client";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { placeEnteredHours } from "@/lib/entered-hours";
@@ -50,7 +52,10 @@ async function createTimecardLeave(
       ? (await tx.leaveType.findMany({ where: { id: { in: pieces.map((p) => p.leaveTypeId) } }, select: { id: true, name: true } })).map((t) => [t.id, t.name] as const)
       : [],
   );
-  const note = splitNote(o.note, pieces, names, policyName);
+  // A company keeping medical details out stores no typed note on sick leave;
+  // the split explanation is CloudTime's own and stays.
+  const typed = (await noteKeptOut(o.employeeId, o.leaveTypeId)) ? null : o.note;
+  const note = splitNote(typed, pieces, names, policyName);
   const now = new Date();
   const created = [];
   for (const piece of pieces) {
@@ -491,10 +496,12 @@ export const removePayrollLeaveEntry = withRBAC(
 
 export const deleteManualPunchPair = withRBAC(
   "EMPLOYEE_MANAGE",
-  async (ctx, input: { punchIds: string[] }) => {
+  async (ctx, input: { punchIds: string[]; reason: string }) => {
     const { employeeId: actorId, tenantId } = ctx;
     const { punchIds } = input;
     if (!punchIds.length) throw new Error("No punch IDs provided.");
+    // Every removal says why, as a correction does.
+    const reason = changeReasonSchema.parse(input.reason);
 
     // Only punches in the caller's company, all on one timecard, never their own.
     const punches = await db.punch.findMany({
@@ -539,7 +546,7 @@ export const deleteManualPunchPair = withRBAC(
             isApproved: false,
             approvedById: actorId,
             approvedAt: new Date(),
-            note: "VOID: Manual entry deleted",
+            note: `VOID: ${reason}`,
             correctsId: punch.id,
           },
         });
@@ -555,7 +562,7 @@ export const deleteManualPunchPair = withRBAC(
         action: "MANUAL_PUNCH_DELETED",
         entityType: "TIMESHEET",
         entityId: timesheetId,
-        changes: { before: { punchIds } },
+        changes: { before: { punchIds }, after: { reason } },
       });
     });
 

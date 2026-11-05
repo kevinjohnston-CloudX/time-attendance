@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
+import { recordDownload } from "@/lib/audit/downloads";
 
 /** The widest window one request may cover, and the most people it returns. */
 const MAX_DAYS = 93;
@@ -123,6 +124,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
          d.lastSeen.toISOString(), d.sites.join(" ")].map(esc).join(","),
       )
       .join("\n");
+    await recordDownload({
+      action: "REPORT_DOWNLOADED",
+      entityType: "REPORT",
+      entityId: "missing-clock-outs",
+      details: { report: "missing-clock-outs", format: "csv", rows: data.length },
+    });
     return new NextResponse(`${header}\n${body}\n`, {
       headers: {
         "content-type": "text/csv; charset=utf-8",

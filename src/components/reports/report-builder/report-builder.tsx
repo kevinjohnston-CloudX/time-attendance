@@ -18,6 +18,7 @@ import { AcrossConfig } from "./across-config";
 import { LayoutPresets } from "./layout-presets";
 import type { AcrossSpec } from "@/lib/reports/across";
 import { ResultsTable } from "../report-results/results-table";
+import { leftOutSentence } from "@/lib/reports/left-out";
 import { dataSourceDescription, dataSourceLabel, isScanReport } from "../data-source-label";
 import { runReport, createReport, updateReport } from "@/actions/report.actions";
 import type { DataSourceId, FilterDef, SortDef, DateRange, ReportConfig } from "@/lib/validators/report.schema";
@@ -552,6 +553,7 @@ export function ReportBuilder({
               </span>
             </span>
             <Button
+              pending={isRunning}
               size="sm"
               hierarchy={stale || (!previewResult && !isRunning) ? "primary" : "secondary"}
               disabled={!canPreview || isRunning}
@@ -576,6 +578,11 @@ export function ReportBuilder({
               transition: "opacity 140ms ease",
             }}
           >
+            {previewResult?.leftOut?.length ? (
+              <p className="px-4 pt-3" style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                {leftOutSentence(previewResult.leftOut)}
+              </p>
+            ) : null}
             {previewResult || isRunning ? (
               <ResultsTable
                 columns={previewResult?.columns ?? []}
@@ -736,7 +743,7 @@ function SaveDialog({
           <Button hierarchy="secondary" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
-          <Button hierarchy="primary" onClick={onSave} disabled={!name.trim() || pending} leadingIcon={<Save className="h-4 w-4" />}>
+          <Button pending={pending} hierarchy="primary" onClick={onSave} disabled={!name.trim() || pending} leadingIcon={<Save className="h-4 w-4" />}>
             {pending ? "Saving" : editing ? "Save changes" : "Save report"}
           </Button>
         </>

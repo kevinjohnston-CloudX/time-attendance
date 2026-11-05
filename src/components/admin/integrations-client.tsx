@@ -262,8 +262,8 @@ export function IntegrationsClient({
               <span className="flex min-w-0 flex-1 flex-col gap-[3px] pt-px">
                 <span style={{ font: "var(--weight-semibold) 14px/20px var(--font-sans)", color: "var(--text-primary)" }}>A key is shown once, at creation</span>
                 <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)", textWrap: "pretty" }}>
-                  Every key can read leave types and send time off requests for anyone in this company. The employee directory is extra, and only
-                  keys you allow can read it. Give every integration its own key, and revoke any you don&apos;t recognize.
+                  A key can do only what it is given: time off requests, the employee directory, or both. Give every integration its own
+                  key, and revoke any you don&apos;t recognize.
                 </span>
               </span>
             </div>

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { timeclockKeyValid } from "@/lib/api/timeclock-auth";
 import { findEmployeeIdentityByBadge } from "@/lib/utils/badge-lookup";
 import { kioskScanSchema } from "@/lib/validators/punch.schema";
 import { parseScanTime } from "@/lib/utils/scan-time";
@@ -30,9 +31,7 @@ function unauthorized() {
 
 export async function POST(req: NextRequest) {
   // 1. Same shared secret the punch endpoint uses.
-  const apiKey = req.headers.get("x-api-key");
-  const expectedKey = process.env.TIMECLOCK_API_KEY;
-  if (!expectedKey || !apiKey || apiKey !== expectedKey) {
+  if (!timeclockKeyValid(req)) {
     return unauthorized();
   }
 

@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { ROLE_RANK, isValidRole, type Role } from "./roles";
+import { ROLE_RANK, companyRank, isValidRole, type Role } from "./roles";
 
 /**
  * Who a signed-in person is right now, read from the database rather than
@@ -64,6 +64,7 @@ export async function liveIdentity(userId: string): Promise<LiveIdentity | null>
           customRoleId: true,
           isActive: true,
           customRole: { select: { rank: true, canViewAs: true, tenantId: true, isActive: true } },
+          tenant: { select: { isActive: true } },
         },
       },
     },
@@ -86,6 +87,10 @@ export async function liveIdentity(userId: string): Promise<LiveIdentity | null>
       ownEmployeeId: user.employee?.isActive ? user.employee.id : null,
       ownTenantId: user.employee?.isActive ? user.employee.tenantId : null,
     };
+  } else if (user && user.employee && !user.employee.tenant.isActive) {
+    // A switched-off company: nobody in it is signed in, and a session in
+    // progress ends at the next click (security audit 2026-11, M2).
+    value = null;
   } else if (user) {
     const e = user.employee;
     const role: Role = e && isValidRole(e.role) ? e.role : "EMPLOYEE";
@@ -99,7 +104,7 @@ export async function liveIdentity(userId: string): Promise<LiveIdentity | null>
       // Nobody but a real super admin is ever SUPER_ADMIN.
       role: role === "SUPER_ADMIN" ? "EMPLOYEE" : role,
       customRoleId: custom ? e!.customRoleId : null,
-      rank: custom ? custom.rank : ROLE_RANK[role === "SUPER_ADMIN" ? "EMPLOYEE" : role],
+      rank: custom ? companyRank(custom.rank) : ROLE_RANK[role === "SUPER_ADMIN" ? "EMPLOYEE" : role],
       canViewAs: custom?.canViewAs ?? false,
       isActive: !!e && e.isActive,
       mustChangePassword: user.mustChangePassword,
@@ -128,7 +133,7 @@ export async function employeeRank(employeeId: string, tenantId: string): Promis
   });
   if (!e) return null;
   if (e.user?.isSuperAdmin) return ROLE_RANK.SUPER_ADMIN;
-  if (e.customRole && e.customRole.tenantId === tenantId) return e.customRole.rank;
+  if (e.customRole && e.customRole.tenantId === tenantId) return companyRank(e.customRole.rank);
   return isValidRole(e.role) ? ROLE_RANK[e.role] : 0;
 }
 

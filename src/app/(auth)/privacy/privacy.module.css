@@ -1,0 +1,150 @@
+/* A long document read on a phone as often as on a computer: one 680px
+   column, body text a step larger than the app's 14px so a policy is
+   comfortable to read, and the contents in one quiet card. */
+
+.page {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: max(40px, env(safe-area-inset-top)) 20px max(48px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.title {
+  margin: 20px 0 0;
+  font: var(--type-h1);
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.updated {
+  margin: 0;
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.lead {
+  margin: 8px 0 0;
+  font: var(--weight-regular) 16px/26px var(--font-sans);
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+.contents {
+  padding: 18px 20px;
+  border: 1px solid var(--stroke-divider);
+  border-radius: var(--radius-l);
+  background: var(--surface-card);
+}
+
+.contentsTitle {
+  margin: 0 0 10px;
+  font: var(--type-label);
+  color: var(--text-secondary);
+}
+
+.contents ol {
+  margin: 0;
+  padding-left: 22px;
+  /* The app's base styles drop list markers; a document wants them back. */
+  list-style: decimal;
+  columns: 2 220px;
+  column-gap: 28px;
+  font: var(--type-body1);
+  color: var(--text-tertiary);
+}
+
+.contents li {
+  padding: 3px 0;
+  break-inside: avoid;
+}
+
+.contents a {
+  color: var(--text-accent);
+  text-decoration: none;
+}
+
+.contents a:hover {
+  text-decoration: underline;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 36px;
+  font: var(--weight-regular) 15px/24px var(--font-sans);
+  color: var(--text-primary);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* Room above a heading reached from the contents. */
+  scroll-margin-top: 24px;
+}
+
+.section p,
+.section ul,
+.section dl {
+  margin: 0;
+  text-wrap: pretty;
+}
+
+.section ul {
+  padding-left: 20px;
+  list-style: disc;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.section dl {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.section dt {
+  font-weight: var(--weight-semibold);
+}
+
+.section dd {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+}
+
+.section strong {
+  font-weight: var(--weight-semibold);
+}
+
+.section a {
+  color: var(--text-accent);
+}
+
+.sectionTitle {
+  margin: 0;
+  font: var(--type-h3);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.address {
+  display: flex;
+  flex-direction: column;
+  font-style: normal;
+  color: var(--text-primary);
+}
+
+.foot {
+  padding-top: 20px;
+  border-top: 1px solid var(--stroke-divider);
+}

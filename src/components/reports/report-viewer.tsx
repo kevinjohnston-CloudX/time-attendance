@@ -5,7 +5,7 @@ import { useRouter } from "@/components/layout/navigation-progress";
 import { usePhoneBack } from "@/components/layout/phone-back";
 import { usePhoneLayout } from "@/lib/phone";
 import { format } from "date-fns";
-import { ArrowLeft, Copy, Download, Mail, Pause, Pencil, Play, RefreshCw, Share2, Trash2, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Copy, Download, LoaderCircle, Mail, Pause, Pencil, Play, RefreshCw, Share2, Trash2, type LucideIcon } from "lucide-react";
 import { Badge, Banner, Button, EmptyState, Input, LinkButton, PageHeader, Select } from "@/components/ui";
 import { ResultsTable } from "./report-results/results-table";
 import { DateRangePicker, defaultPayPeriodRange, describeRange, type PayPeriodOption } from "./report-builder/date-range-picker";
@@ -17,6 +17,7 @@ import { runReport, deleteReport, duplicateReport, moveReport, toggleSchedule } 
 import { describePrint, type PrintLayout } from "@/lib/reports/grouping";
 import { ReportWindow, WindowBlock, WindowCard, WindowNote } from "./window/report-window";
 import type { ReportResult } from "@/lib/reports/data-sources";
+import { leftOutSentence } from "@/lib/reports/left-out";
 import type { DateRange, FilterDef } from "@/lib/validators/report.schema";
 import phone from "./reports-phone.module.css";
 
@@ -188,6 +189,39 @@ export function ReportViewer({
   const exportHref = (fmt: "xlsx" | "csv" | "pdf") =>
     `/api/reports/${report.id}/export?format=${fmt}&range=${encodeURIComponent(JSON.stringify(dateRange))}`;
 
+  // A download runs the whole report again before the file arrives, which on
+  // a big report is several seconds of a page that looked like it ignored the
+  // click (ticket 72637). The file is fetched here so the button can say it
+  // is working, and a refusal is said in words instead of a blank tab.
+  const [downloading, setDownloading] = useState<null | "xlsx" | "csv" | "pdf">(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  async function download(fmt: "xlsx" | "csv" | "pdf") {
+    if (downloading) return;
+    setDownloading(fmt);
+    setDownloadError(null);
+    try {
+      const res = await fetch(exportHref(fmt));
+      if (!res.ok) {
+        const said = (await res.text().catch(() => "")).trim();
+        throw new Error(said && said.length < 200 && !said.startsWith("<") ? said : `The ${FORMAT_NAME[fmt]} file could not be made. Try again.`);
+      }
+      const blob = await res.blob();
+      const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? `${report.name}.${fmt}`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch (e) {
+      setDownloadError(e instanceof Error && e.message !== "Failed to fetch" ? e.message : `The ${FORMAT_NAME[fmt]} file could not be downloaded. Check the connection and try again.`);
+    } finally {
+      setDownloading(null);
+    }
+  }
+
   const ownerText = isOwner ? "Yours" : `Owned by ${report.owner.name ?? "someone else"}`;
 
   // ── Settings in words ────────────────────────────────────────────────
@@ -339,18 +373,34 @@ export function ReportViewer({
         subtitleTone={undefined}
         action={
           <span className="flex flex-wrap items-center gap-1.5">
-            <Button size="sm" hierarchy="tertiary" onClick={() => void handleRun()} disabled={isRunning} leadingIcon={<RefreshCw className="h-3.5 w-3.5" />}>
+            <Button pending={isRunning} size="sm" hierarchy="tertiary" onClick={() => void handleRun()} disabled={isRunning} leadingIcon={<RefreshCw className="h-3.5 w-3.5" />}>
               {isRunning ? "Running" : "Run again"}
             </Button>
-            <span className="mx-1 whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-              Download
+            <span className="mx-1 whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }} aria-live="polite">
+              {downloading ? `Preparing the ${FORMAT_NAME[downloading]} file…` : "Download"}
             </span>
-            <DownloadLink href={exportHref("xlsx")} label="Excel" />
-            <DownloadLink href={exportHref("csv")} label="CSV" />
-            <DownloadLink href={exportHref("pdf")} label="PDF" />
+            {(["xlsx", "csv", "pdf"] as const).map((fmt) => (
+              <DownloadButton
+                key={fmt}
+                label={FORMAT_NAME[fmt]}
+                busy={downloading === fmt}
+                disabled={!!downloading}
+                onClick={() => void download(fmt)}
+              />
+            ))}
           </span>
         }
       >
+        {downloadError && (
+          <div className="px-4 pt-3">
+            <Banner tone="error" body={downloadError} />
+          </div>
+        )}
+        {result?.leftOut?.length ? (
+          <p className="px-4 pt-3" style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+            {leftOutSentence(result.leftOut)}
+          </p>
+        ) : null}
         {result || isRunning ? (
           <ResultsTable
             columns={result?.columns ?? []}
@@ -647,16 +697,22 @@ function Panel({
 }
 
 /**
- * A download. A plain link, since the file streams from an API route and
- * there is no page to move to; it borrows the secondary button's look.
+ * A download. The file is fetched by the page (see `download`), so the button
+ * can turn into a spinner while it is made; it keeps the secondary button's
+ * look, and its width, while it works.
  */
-function DownloadLink({ href, label }: { href: string; label: string }) {
+function DownloadButton({ label, busy, disabled, onClick }: { label: string; busy: boolean; disabled: boolean; onClick: () => void }) {
   return (
-    <a
-      href={href}
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-busy={busy || undefined}
       title={`Download as ${label}`}
       className="wms-btn inline-flex h-7 flex-none items-center gap-1.5 whitespace-nowrap rounded-md px-2.5"
       style={{
+        cursor: disabled ? (busy ? "progress" : "not-allowed") : "pointer",
+        opacity: disabled && !busy ? 0.6 : 1,
         ["--bg" as string]: "var(--surface-card)",
         ["--bg-h" as string]: "var(--fill-hover)",
         ["--bg-a" as string]: "var(--fill-pressed)",
@@ -664,12 +720,15 @@ function DownloadLink({ href, label }: { href: string; label: string }) {
         ["--fg-h" as string]: "var(--text-primary)",
         border: "1px solid var(--stroke-default)",
         font: "var(--type-button2)",
-        textDecoration: "none",
       }}
     >
-      <Download className="h-3.5 w-3.5" aria-hidden="true" />
+      {busy ? (
+        <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+      ) : (
+        <Download className="h-3.5 w-3.5" aria-hidden="true" />
+      )}
       {label}
-    </a>
+    </button>
   );
 }
 
@@ -744,7 +803,7 @@ function CopyDialog({
           <Button hierarchy="secondary" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
-          <Button hierarchy="primary" onClick={go} disabled={pending || !name.trim()} leadingIcon={<Copy className="h-4 w-4" />}>
+          <Button pending={pending} hierarchy="primary" onClick={go} disabled={pending || !name.trim()} leadingIcon={<Copy className="h-4 w-4" />}>
             {pending ? "Copying" : "Make a copy"}
           </Button>
         </>
@@ -784,6 +843,7 @@ function DeleteDialog({
             Keep it
           </Button>
           <Button
+            pending={pending}
             hierarchy="primary"
             tone="error"
             disabled={pending}

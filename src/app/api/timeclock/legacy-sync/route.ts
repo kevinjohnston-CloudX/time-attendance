@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { timeclockKeyValid } from "@/lib/api/timeclock-auth";
 import { db } from "@/lib/db";
 import { findEmployeeIdentityByBadge } from "@/lib/utils/badge-lookup";
 import { legacySyncReportSchema } from "@/lib/validators/punch.schema";
@@ -31,9 +32,7 @@ function unauthorized() {
 }
 
 export async function POST(req: NextRequest) {
-  const apiKey = req.headers.get("x-api-key");
-  const expectedKey = process.env.TIMECLOCK_API_KEY;
-  if (!expectedKey || !apiKey || apiKey !== expectedKey) {
+  if (!timeclockKeyValid(req)) {
     return unauthorized();
   }
 

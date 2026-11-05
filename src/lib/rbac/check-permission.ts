@@ -5,7 +5,8 @@ import { hasPermission, type Permission } from "./permissions";
 import { hasPermissionByLegacy } from "./permission-resolver";
 import { SUPER_ADMIN_TENANT_COOKIE, VIEW_AS_ROLE_COOKIE } from "@/lib/constants";
 import { INACTIVE_PERMISSIONS, liveIdentity } from "./identity";
-import { ROLE_RANK, isValidRole } from "./roles";
+import { ROLE_RANK, isValidRole, companyRank } from "./roles";
+import { companyBlocks } from "@/lib/privacy/data-protection";
 
 const PRIVILEGED_ROLES = ["SYSTEM_ADMIN", "SUPER_ADMIN"];
 
@@ -106,6 +107,7 @@ export async function requirePermission(permission: Permission): Promise<{
     throw new Error("UNAUTHENTICATED");
   }
   if (inactiveRefused(session.user, permission)) throw new Error("FORBIDDEN");
+  if (await companyBlocks(session.user.tenantId, permission)) throw new Error("FORBIDDEN");
 
   if (session.user.role === "SUPER_ADMIN" || session.user.role === "SYSTEM_ADMIN") {
     return {
@@ -132,7 +134,7 @@ export async function requirePermission(permission: Permission): Promise<{
 export async function viewAsRank(viewAsId: string): Promise<number> {
   if (LEGACY_ROLE_STRINGS.has(viewAsId)) return isValidRole(viewAsId) ? ROLE_RANK[viewAsId] : 0;
   const role = await db.customRole.findUnique({ where: { id: viewAsId }, select: { rank: true } });
-  return role?.rank ?? 0;
+  return companyRank(role?.rank ?? 0);
 }
 
 export async function checkViewAsPermission(viewAsId: string, permission: Permission): Promise<boolean> {
@@ -160,6 +162,7 @@ export async function checkPermission(permission: Permission): Promise<boolean> 
   const session = await auth();
   if (!session?.user) return false;
   if (inactiveRefused(session.user, permission)) return false;
+  if (await companyBlocks(session.user.tenantId, permission)) return false;
   const realRole = session.user.role ?? "EMPLOYEE";
   const viewAsId = await resolveViewAsId({ ...session.user, role: realRole });
 
@@ -177,10 +180,11 @@ export async function checkPermission(permission: Permission): Promise<boolean> 
  * Respects the view-as cookie.
  */
 export async function userHasPermission(
-  user: { id?: string; role: string; customRoleId?: string | null; canViewAs?: boolean; isActive?: boolean },
+  user: { id?: string; role: string; customRoleId?: string | null; canViewAs?: boolean; isActive?: boolean; tenantId?: string | null },
   permission: Permission
 ): Promise<boolean> {
   if (inactiveRefused(user, permission)) return false;
+  if (await companyBlocks(user.tenantId, permission)) return false;
   const realRole = user.role ?? "EMPLOYEE";
   const viewAsId = await resolveViewAsId({ ...user, role: realRole });
 

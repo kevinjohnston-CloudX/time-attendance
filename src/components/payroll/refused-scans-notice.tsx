@@ -266,7 +266,7 @@ function ReviewDialog({
               <Button hierarchy="secondary" size="sm" onClick={close} disabled={saving}>
                 Cancel
               </Button>
-              <Button size="sm" onClick={() => void save()} disabled={saving || picked.length === 0}>
+              <Button pending={saving} size="sm" onClick={() => void save()} disabled={saving || picked.length === 0}>
                 {saving ? "Adding" : picked.length === 1 ? "Add 1 punch" : `Add ${picked.length} punches`}
               </Button>
             </div>

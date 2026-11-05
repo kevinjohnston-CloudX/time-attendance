@@ -14,6 +14,8 @@ vi.mock("./pay-rates-table", () => ({ PayRatesTable: () => null }));
 vi.mock("@/components/presence/face", () => ({ PhotoViewer: () => null, ZoomableFace: () => null }));
 vi.mock("@/components/presence/photo-editor", () => ({ PhotoEditor: () => null }));
 vi.mock("@/components/presence/remove-photo-dialog", () => ({ RemovePhotoDialog: () => null }));
+vi.mock("./person-data-window", () => ({ PersonDataWindow: () => null }));
+vi.mock("./anonymise-window", () => ({ AnonymiseWindow: () => null }));
 
 import { EditEmployeeForm } from "./edit-employee-form";
 

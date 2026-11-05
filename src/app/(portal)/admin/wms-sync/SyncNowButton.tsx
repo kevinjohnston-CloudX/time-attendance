@@ -53,6 +53,7 @@ export function SyncNowButton() {
   return (
     <div className="flex flex-col items-end gap-1">
       <Button
+        pending={pending}
         hierarchy="secondary"
         onClick={onClick}
         disabled={pending}

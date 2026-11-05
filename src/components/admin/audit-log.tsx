@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore, useTransition, type CSSProperties, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/components/layout/navigation-progress";
 import { useSearchBox } from "@/hooks/use-search-box";
 import { format, isToday, isYesterday } from "date-fns";
 import { ArrowLeft, ArrowRight, Bot, Check, ChevronDown, ChevronRight, ChevronUp, Copy, FileSearch, Lock, Search, X } from "lucide-react";

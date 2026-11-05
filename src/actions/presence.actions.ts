@@ -6,6 +6,7 @@ import { getPresenceBoard, getPresenceDetail, getViewableSites } from "@/lib/pre
 import { getScanLog, type ScanLogInput } from "@/lib/presence/scan-log.service";
 import { getSiteDay } from "@/lib/presence/movements.service";
 import { MAX_PHOTO_BYTES, removePhoto, savePhoto } from "@/lib/presence/photos";
+import { photoOffIds } from "@/lib/privacy/data-protection";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { MAX_PICKED, peopleByIds, reachable, resolveNames, suggestPeople } from "@/lib/presence/people-search.service";
 import { gateReadsCloudTimeSchedule } from "@/lib/presence/gate-schedule";
@@ -15,6 +16,8 @@ import { markGateRefusalScheduled, turnedAwayHereToday } from "@/lib/presence/ga
 import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { employmentEnded, madeActiveAt } from "@/lib/presence/employment";
+import { recordDownload } from "@/lib/audit/downloads";
+import { z } from "zod";
 
 /**
  * On Site: who is in the building right now.
@@ -47,6 +50,24 @@ async function assertSite(tenantId: string, viewer: { employeeId: string; role: 
  * The sites this viewer may open, and which one to open first: their own
  * building when they are allowed to see it, otherwise the first by name.
  */
+/**
+ * Records a Live Attendance export (security audit 2026-11, M6). The file is
+ * made in the browser from lists the viewer already has, so the browser
+ * reports it; the site must be one they may see.
+ */
+export const recordLiveAttendanceExport = withRBAC(
+  "PRESENCE_VIEW_ANY",
+  async ({ tenantId, employeeId, role }, input: { siteId: string; list: string; format: string; rows: number }) => {
+    if (!tenantId) throw new Error("NOT_FOUND");
+    const { siteId, list, format, rows } = z
+      .object({ siteId: z.string().min(1), list: z.string().max(60), format: z.enum(["xlsx", "csv", "print"]), rows: z.number().int().min(0).max(1_000_000) })
+      .parse(input);
+    await assertSite(tenantId, { employeeId, role }, siteId);
+    await recordDownload({ action: "LIVE_ATTENDANCE_EXPORTED", entityType: "REPORT", entityId: `live-attendance:${siteId}`, details: { list, format, rows } });
+    return null;
+  },
+);
+
 export const getOnSiteSites = withRBAC(
   "PRESENCE_VIEW_ANY",
   async ({ tenantId, employeeId, role }) => {
@@ -179,11 +200,15 @@ export const updateEmployeePhoto = withRBAC("PRESENCE_PHOTO_EDIT", async ({ tena
   if (photo.size > MAX_PHOTO_BYTES) throw new Error("PHOTO_SIZE");
 
   await assertSite(tenantId, { employeeId, role }, siteId);
+  // Someone the open site's board can show, as removing a photo already
+  // requires: by company alone, a viewer held to one building could replace
+  // the photo of anyone in the company (security audit 2026-11, M7).
   const person = await db.employee.findFirst({
-    where: { id: personId, tenantId },
+    where: { AND: [{ id: personId, tenantId }, await reachable(tenantId, siteId)] },
     select: { id: true, barcode: true, wmsId: true, employeeCode: true },
   });
   if (!person) throw new Error("NOT_FOUND");
+  if ((await photoOffIds(tenantId, [person.id])).size) throw new Error("Time clock photos are turned off for this person's site in Company Settings.");
 
   const saved = await savePhoto(tenantId, person, new Uint8Array(await photo.arrayBuffer()));
   await writeAuditLog({

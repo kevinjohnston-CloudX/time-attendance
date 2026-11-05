@@ -43,6 +43,8 @@ interface RuleSet {
 
 interface SyncStatus {
   isConfigured: boolean;
+  /** The server has an ADP connection, but it belongs to another company. */
+  notForThisCompany?: boolean;
   lastSyncAt: Date | null;
   lastSyncResult: unknown;
   adpEmployeeCount: number;
@@ -435,7 +437,9 @@ export function AdpSyncPanel({ status, sites, departments, ruleSets }: Props) {
               note={
                 status.isConfigured
                   ? "Added to the server settings. Test connection checks that ADP answers."
-                  : "Your system administrator adds ADP_CLIENT_ID, ADP_CLIENT_SECRET, ADP_CERT_BASE64 and ADP_KEY_BASE64 to the server settings."
+                  : status.notForThisCompany
+                    ? "ADP isn't connected for this company. Ask Cloudx support to connect it."
+                    : "Your system administrator adds ADP_CLIENT_ID, ADP_CLIENT_SECRET, ADP_CERT_BASE64 and ADP_KEY_BASE64 to the server settings."
               }
             />
             <ListRow

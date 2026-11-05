@@ -10,6 +10,7 @@ import { generateXlsx } from "@/lib/reports/export/xlsx";
 import { sendReportEmail, isEmailConfigured } from "@/lib/reports/email/send-report";
 import { nextRun } from "@/lib/reports/schedule-time";
 import { reportFileStem } from "@/lib/reports/file-name";
+import { recipientsOutsideCompany } from "@/lib/reports/recipients";
 
 /**
  * Sends the scheduled reports that are due. Called every 15 minutes.
@@ -33,7 +34,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   const now = new Date();
   const due = await db.reportSchedule.findMany({
-    where: { isActive: true, nextRunAt: { lte: now } },
+    // A switched-off company's reports are not sent (security audit 2026-11, M2).
+    where: { isActive: true, nextRunAt: { lte: now }, report: { tenant: { isActive: true } } },
     include: { report: true },
     orderBy: { nextRunAt: "asc" },
     take: BATCH,
@@ -66,6 +68,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         (r): r is string => typeof r === "string" && r.includes("@")
       );
       if (!recipients.length) throw new Error("This schedule has no one to send to.");
+      // Checked again at send time: someone may have left the company since.
+      const outside = new Set(await recipientsOutsideCompany(schedule.report.tenantId, recipients));
+      const sendTo = recipients.filter((r) => !outside.has(r.trim().toLowerCase()));
+      if (!sendTo.length) throw new Error("No one on this schedule is in the company any more, so nothing was sent.");
 
       const config = reportConfigSchema.parse(schedule.report.config);
       const source = getDataSource(schedule.report.dataSource as DataSourceId);
@@ -79,7 +85,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       else fileBuffer = Buffer.from(generateCsv(result), "utf-8");
 
       await sendReportEmail({
-        recipients,
+        recipients: sendTo,
         reportName: schedule.report.name,
         format: schedule.format,
         fileBuffer,

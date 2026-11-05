@@ -21,6 +21,7 @@ import { LIVE_ATTENDANCE_HREF, LIVE_ATTENDANCE_ONLY_HREFS, REQUEST_PATH_HEADER, 
 import { getPermissions } from "@/lib/rbac/permissions";
 import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
 import { getLegacyPermissions, isLiveAttendanceOnly } from "@/lib/rbac/permission-resolver";
+import { cachedDataProtection } from "@/lib/privacy/data-protection";
 import { getWaitingOnYou } from "@/lib/dashboard/dashboard-data";
 import { photoUrls } from "@/lib/presence/photos";
 
@@ -173,6 +174,12 @@ export default async function PortalLayout({
     }
   }
 
+  // Live Attendance closed by the company (Data Protection): the menus leave
+  // it out, as every check behind it now refuses it.
+  if ((await cachedDataProtection(session.user.tenantId)).liveBoardsOff) {
+    userPermissions = userPermissions.filter((p) => !p.startsWith("PRESENCE_"));
+  }
+
   /**
    * What ⌘K can reach.
    *
@@ -312,7 +319,12 @@ export default async function PortalLayout({
             />
           </div>
           {/* Phones: this bar instead of the one above. */}
-          <PhoneTopBar waiting={waiting} helpOffered={!liveAttendanceOnly} userPhoto={userPhoto} />
+          <PhoneTopBar
+            waiting={waiting}
+            helpOffered={!liveAttendanceOnly}
+            userPhoto={userPhoto}
+            badgeOffered={!!session.user.employeeId && isEmployeeActive}
+          />
           <main className="ta-page-scroll min-h-0 flex-1 overflow-y-auto">
             <PageScrollReveal />
             <InactiveRouteGuard isInactive={!isEmployeeActive} />

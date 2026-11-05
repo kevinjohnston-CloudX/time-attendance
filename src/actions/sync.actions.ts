@@ -1,6 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
+import { integrationConnected } from "@/lib/integrations/connected";
 import { withRBAC } from "@/lib/rbac/guard";
 import {
   BRIDGE_AGENT,
@@ -11,6 +12,7 @@ import {
   scheduleWindow,
 } from "@/lib/services/bridge.service";
 import type { SyncKind } from "@prisma/client";
+import { ownCompany } from "@/lib/rbac/company";
 
 /**
  * Status of the Oracle sync, for the admin page.
@@ -52,10 +54,15 @@ const KIND_LABELS: Record<string, { kind: SyncKind; label: string; cadence: stri
   "roster.sync": { kind: "ROSTER", label: "Roster", cadence: "every 5 min" },
   "schedule.pull": { kind: "SCHEDULE_PULL", label: "Schedule", cadence: "every 5 min" },
   "gatestate.pull": { kind: "GATE_STATE", label: "Gate baseline", cadence: "daily" },
+  // Recorded as a gate run too (bridge.service). Without a line here the page
+  // threw on this kind and sent everyone back to Administration.
+  "gatescan.recon": { kind: "GATE_STATE", label: "Gate crossings", cadence: "hourly" },
 };
 
 export const getWmsSyncStatus = withRBAC("EMPLOYEE_MANAGE", async ({ tenantId }) => {
-  const t = tenantId ?? undefined;
+  // The bridge belongs to one company; any other sees that, and nothing of it.
+  if (!(await integrationConnected(tenantId, "wms"))) return { connected: false as const };
+  const t = ownCompany(tenantId);
   const now = Date.now();
   const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60_000);
 
@@ -137,6 +144,7 @@ export const getWmsSyncStatus = withRBAC("EMPLOYEE_MANAGE", async ({ tenantId })
   });
 
   return {
+    connected: true as const,
     agentName: BRIDGE_AGENT,
     lastSeenAt: agent?.lastSeenAt ?? null,
     version: agent?.version ?? null,

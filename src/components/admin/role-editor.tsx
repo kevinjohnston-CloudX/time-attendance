@@ -59,6 +59,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   role: "Roles",
   presence: "Live Attendance",
   photo: "Time Clock Photos",
+  company: "Company Data",
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -133,6 +134,7 @@ const RESOURCE_INFO: Record<string, PermInfo> = {
     cells: {
       "read:team": "See your own people's details on Team Members (name, badge, site, department, agency, supervisor, shift, hire date), read only. No pay, contact details or changes.",
       "write:all": "Add new employees, edit profiles, change roles, and deactivate or terminate employees.",
+      "execute:all": "Download everything CloudTime holds about one employee, for a personal data request. Every download is recorded.",
     },
   },
   rules: {
@@ -182,6 +184,12 @@ const RESOURCE_INFO: Record<string, PermInfo> = {
     summary: "Controls who can remove an employee's time clock photo. Updating a photo is Live Attendance Write.",
     cells: {
       "write:all": "Remove an employee's photo from Live Attendance, so their next scan at a time clock takes a new one. A copy of the removed photo is kept.",
+    },
+  },
+  company: {
+    summary: "Controls exporting all of the company's data at once.",
+    cells: {
+      "execute:all": "Download everything CloudTime holds for the whole company in one file, to move it to another system. Every download is recorded.",
     },
   },
   role: {
@@ -438,8 +446,8 @@ export function RoleEditor({
               value={rank}
               onChange={(e) => setRank(Number(e.target.value))}
               min={0}
-              max={100}
-              hint="Higher rank = more privileged"
+              max={4}
+              hint="From 0 (Employee) to 4 (System Admin). Higher means more senior."
             />
           </div>
 
@@ -768,6 +776,7 @@ export function RoleEditor({
               Cancel
             </Button>
             <Button
+              pending={saving}
               onClick={handleSave}
               disabled={saving || !name.trim()}
               leadingIcon={<Save className="h-4 w-4" />}

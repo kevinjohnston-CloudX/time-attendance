@@ -88,7 +88,7 @@ export function TimecardLockControl({
               <Button hierarchy="secondary" onClick={() => setDialog(null)} disabled={isPending}>
                 Cancel
               </Button>
-              <Button tone="warning" onClick={run} disabled={isPending || !reason.trim()}>
+              <Button pending={isPending} tone="warning" onClick={run} disabled={isPending || !reason.trim()}>
                 {isPending ? "Unlocking…" : "Unlock"}
               </Button>
             </>

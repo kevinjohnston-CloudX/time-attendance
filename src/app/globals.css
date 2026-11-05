@@ -926,7 +926,9 @@ tbody .ta-row:hover {
    arrives at once never flickers it. */
 .ta-nav-progress {
   position: fixed;
-  top: 0;
+  /* Below the notch and the clock on a phone and in the app, where the page
+     reaches under them; 0 everywhere else. */
+  top: env(safe-area-inset-top, 0px);
   left: 0;
   right: 0;
   z-index: 100;
@@ -974,6 +976,95 @@ tbody .ta-row:hover {
 }
 @keyframes ta-spin { to { transform: rotate(360deg); } }
 @keyframes ta-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* A phone tab whose page is on its way (phone-shell.tsx TabGlyph): its icon
+   gives way to a ring of the same size after 150ms. A menu row shows the
+   sidebar's small ring before its chevron. */
+.ta-tab-glyph {
+  position: relative;
+  display: inline-flex;
+}
+.ta-tab-glyph[data-pending] > svg {
+  animation: ta-fade-out 1ms linear 150ms both;
+}
+.ta-tab-ring {
+  position: absolute;
+  inset: 2px;
+  border-radius: 9999px;
+  border: 2px solid var(--stroke-secondary);
+  border-top-color: var(--icon-accent);
+  animation: ta-spin 700ms linear infinite, ta-fade-in 1ms linear 150ms both;
+}
+@keyframes ta-fade-out { from { opacity: 1; } to { opacity: 0; } }
+
+/* A page's loading screen (components/layout/page-skeleton.tsx). It waits
+   150ms before it shows, so a page that arrives at once goes straight from
+   the old page to the new one with nothing flashing in between. */
+.ta-loading {
+  animation: ta-fade-in 180ms ease-out 150ms both;
+}
+
+/* Rows that are being replaced (components/ui/pending-region.tsx): they stay
+   where they are, so nothing jumps, and fade back while the new ones load. */
+.ta-pending-region {
+  transition: opacity 160ms ease;
+}
+.ta-pending-region[aria-busy="true"] {
+  opacity: 0.5;
+  transition-delay: 150ms;
+}
+
+/* The same page reloading with new filters or a search (navigation-progress
+   markRefresh): what comes after the page's pinned bar fades back, so the old
+   rows read as on their way out while the title and filters stay crisp to
+   use. A page with no pinned bar does not fade: it fails to no fade, never to
+   a faded filter bar. */
+main :is(.ta-pin, .ta-pinned) ~ * {
+  transition: opacity 160ms ease;
+}
+html[data-nav-refresh] main :is(.ta-pin, .ta-pinned) ~ * {
+  opacity: 0.5;
+  transition-delay: 150ms;
+}
+
+/* A button whose action is running (Button's pending prop): a ring in place
+   of its icon, the label kept, so the button keeps its size. */
+.ta-btn-spinner {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-radius: 9999px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  opacity: 0.85;
+  animation: ta-spin 700ms linear infinite;
+}
+/* Busy is not unavailable: it keeps its own colours, never the grey disabled
+   fill, while still refusing a second click. */
+.wms-btn[aria-busy="true"],
+.wms-btn[aria-busy="true"]:disabled {
+  background: var(--bg);
+  color: var(--fg);
+  border-color: var(--bd);
+  cursor: progress !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Still there, just not moving: a held tint and a still ring. */
+  .ta-loading,
+  .ta-loading .animate-pulse,
+  .ta-btn-spinner {
+    animation: none;
+  }
+  .ta-nav-spinner,
+  .ta-tab-ring {
+    animation: ta-fade-in 1ms linear 150ms both;
+  }
+  .ta-pending-region,
+  main :is(.ta-pin, .ta-pinned) ~ * {
+    transition: none;
+  }
+}
 
 /* The pinned top of a page (PinnedBar in page-header.tsx). --pin-stick is
    for a pane that scrolls inside its own padding: a sticky box stops at the

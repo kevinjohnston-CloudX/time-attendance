@@ -3,7 +3,7 @@
 import React, { useState, useTransition, useEffect, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "next/navigation";
-import { useRouter } from "@/components/layout/navigation-progress";
+import { useNavigationTarget, useRouter } from "@/components/layout/navigation-progress";
 import {
   format,
   addDays,
@@ -463,6 +463,7 @@ const EXCEPTION_FILTER_OPTIONS = [
   { id: "ALL_EXCEPTIONS", name: "Has any exception" },
   { id: "MISSING_PUNCH", name: "Missed punch" },
   { id: "LONG_SHIFT", name: "Long shift" },
+  { id: "SHORT_REST", name: "Short rest" },
   { id: "SHORT_BREAK", name: "Short break" },
   { id: "MISSED_MEAL", name: "Missed meal" },
   { id: "UNSCHEDULED_OT", name: "Unscheduled overtime" },
@@ -495,6 +496,7 @@ function RecalculateButton({ timesheetId }: { timesheetId: string }) {
   return (
     <div className="flex items-center gap-2">
       <Button
+        pending={isPending}
         hierarchy="secondary"
         size="sm"
         onClick={handleRecalculate}
@@ -646,11 +648,12 @@ function InlinePunchEdit({
 }: {
   timeStr: string; amPm: "AM" | "PM"; error: string | null; isPending: boolean;
   onTimeChange: (v: string) => void; onAmPmToggle: () => void;
-  onBlurSave: () => void; onCancel: () => void; onDelete?: () => void;
+  onBlurSave: () => void; onCancel: () => void; onDelete?: (reason: string) => void;
 }) {
   const deletingRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const [askingDelete, setAskingDelete] = useState(false);
+  const [deleteReason, setDeleteReason] = useState("");
   // Refocus the input whenever a validation error appears so the user can correct without re-clicking
   useEffect(() => {
     if (error) inputRef.current?.focus();
@@ -718,13 +721,29 @@ function InlinePunchEdit({
           <ConfirmDialog
             title="Remove this punch?"
             confirmLabel="Remove punch"
-            onCancel={() => setAskingDelete(false)}
+            confirmDisabled={!deleteReason.trim()}
+            onCancel={() => { setAskingDelete(false); setDeleteReason(""); }}
             onConfirm={() => {
+              const reason = deleteReason.trim();
+              if (!reason) return;
               setAskingDelete(false);
-              onDelete();
+              setDeleteReason("");
+              onDelete(reason);
             }}
           >
             The punch is taken off this timecard and the hours are worked out again. This cannot be undone.
+            <span className="mt-3 block text-left">
+              <Textarea
+                label="Reason"
+                required
+                rows={2}
+                maxLength={500}
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                placeholder="For example: badge scanned twice"
+                hint="Kept with the punch history."
+              />
+            </span>
           </ConfirmDialog>,
           document.body
         )}
@@ -770,6 +789,25 @@ export function TimecardViewer({
 }: TimecardViewerProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  // While this screen's next page loads: another person fades only the
+  // timecard; another site, department or period fades the list too.
+  // Leaving for another page fades nothing, as everywhere else.
+  const navTarget = useNavigationTarget();
+  const navUrl =
+    navTarget?.startsWith("/payroll/timecards") &&
+    new URL(navTarget, "http://x").search.slice(1) !== searchParams.toString() // not already here
+      ? new URL(navTarget, "http://x")
+      : null;
+  const navSame = (k: string) => navUrl?.searchParams.get(k) === searchParams.get(k);
+  // Picking a person sends their id and leaves the period out of the address.
+  const navPerson =
+    navUrl !== null &&
+    !!navUrl.searchParams.get("employeeId") &&
+    !navSame("employeeId") &&
+    navSame("siteId") &&
+    navSame("departmentId") &&
+    (!navUrl.searchParams.has("periodId") || navSame("periodId")) &&
+    !navUrl.searchParams.has("customStart");
 
   /**
    * On a phone, whose timecard is showing instead of the list of people.
@@ -821,6 +859,9 @@ export function TimecardViewer({
   // Map<segmentStart (ISO), segmentDate (yyyy-MM-dd)>
   const [pendingPremiumWaiverToggles, setPendingPremiumWaiverToggles] = useState<Map<string, string>>(new Map());
   const [pendingDeletions, setPendingDeletions] = useState<Array<{ punchIds: string[]; dayKey: string; inTime: string | null; outTime: string | null }>>([]);
+  // Why the queued corrections and removals were made, asked once in the save
+  // bar and kept with each of them. Required whenever one is waiting.
+  const [changeReason, setChangeReason] = useState("");
   const [pendingHoursEntries, setPendingHoursEntries] = useState<Array<{ dayKey: string; hours: number; payCodeId?: string }>>([]);
 
   // ── Pay period navigation helpers ─────────────────────────────────────
@@ -1325,9 +1366,9 @@ export function TimecardViewer({
     setEditError(null);
   }
 
-  function deletePunchDirect(punchId: string) {
+  function deletePunchDirect(punchId: string, reason: string) {
     startTransition(async () => {
-      const result = await deletePunch({ punchId, reason: "Removed by payroll" });
+      const result = await deletePunch({ punchId, reason });
       if (!result.success) { setEditError(result.error); return; }
       setEditingPunchId(null);
       // The save above already redraws this page (revalidatePath), so a refresh here only asked for it twice.
@@ -1536,18 +1577,6 @@ export function TimecardViewer({
     });
   }
 
-  function handleDeletePunch(punchId: string) {
-    startTransition(async () => {
-      const result = await deletePunch({ punchId, reason: "Removed by payroll" });
-      if (!result.success) {
-        setEditError(result.error);
-        return;
-      }
-      setEditingPunchId(null);
-      // The save above already redraws this page (revalidatePath), so a refresh here only asked for it twice.
-    });
-  }
-
   function handleAuthorizeOt() {
     if (!timecard) return;
     setActionError(null);
@@ -1620,6 +1649,8 @@ export function TimecardViewer({
     pendingDeletions.length +
     pendingHoursEntries.length;
   const hasPendingChanges = pendingChangeCount > 0;
+  const needsReason = pendingPunchEdits.size > 0 || pendingDeletions.length > 0;
+  const reasonMissing = needsReason && !changeReason.trim();
 
   function handleDiscardChanges() {
     setPendingPayCodes(new Map());
@@ -1630,6 +1661,7 @@ export function TimecardViewer({
     setPendingPremiumWaiverToggles(new Map());
     setPendingDeletions([]);
     setPendingHoursEntries([]);
+    setChangeReason("");
   }
 
   /**
@@ -1690,6 +1722,11 @@ export function TimecardViewer({
 
   function handleSaveChanges() {
     setActionError(null);
+    if (reasonMissing) {
+      setActionError("Give a reason for the changed or removed punches, then save.");
+      return;
+    }
+    const reason = changeReason.trim();
     startTransition(async () => {
       try {
         // Resolve timesheetId — create a timesheet on demand if the employee has none yet
@@ -1767,6 +1804,14 @@ export function TimecardViewer({
         for (const { dayKey, hours } of pendingHoursEntries) {
           addChange(dayKey, `Manual hours added: ${hours}h`);
         }
+        if (reason) {
+          const reasonDays = new Set<string>(pendingDeletions.map((d) => d.dayKey));
+          for (const punchId of pendingPunchEdits.keys()) {
+            const punch = timecard?.punches.find((p) => p.id === punchId);
+            if (punch) reasonDays.add(format(atSite(punch.roundedTime), "yyyy-MM-dd"));
+          }
+          for (const dayKey of reasonDays) addChange(dayKey, `Reason: ${reason}`);
+        }
         // ─────────────────────────────────────────────────────────────
 
         // Each change sent, with how to take it off the pending list once it
@@ -1792,7 +1837,7 @@ export function TimecardViewer({
           ops.push({ run: setDayReasonCode({ timesheetId, segmentDate, reasonCodeId: reasonCodeId || null }), saved: dropKey(setPendingReasonCodes, segmentDate) });
         }
         for (const [punchId, newDate] of pendingPunchEdits.entries()) {
-          ops.push({ run: correctPunch({ originalPunchId: punchId, newPunchTime: toMoment(newDate).toISOString() }), saved: dropKey(setPendingPunchEdits, punchId) });
+          ops.push({ run: correctPunch({ originalPunchId: punchId, newPunchTime: toMoment(newDate).toISOString(), reason }), saved: dropKey(setPendingPunchEdits, punchId) });
         }
         // A day's new punches go in one request, so a clock in is never
         // recalculated without the clock out typed beside it (addManualPunches).
@@ -1813,7 +1858,7 @@ export function TimecardViewer({
           ops.push({ run: toggleMealPremiumWaiver({ timesheetId, segmentDate, segmentStart }), saved: dropKey(setPendingPremiumWaiverToggles, segmentStart) });
         }
         for (const entry of pendingDeletions) {
-          ops.push({ run: deleteManualPunchPair({ punchIds: entry.punchIds }), saved: dropItem(setPendingDeletions, entry) });
+          ops.push({ run: deleteManualPunchPair({ punchIds: entry.punchIds, reason }), saved: dropItem(setPendingDeletions, entry) });
         }
         for (const entry of pendingHoursEntries) {
           const { dayKey, hours, payCodeId } = entry;
@@ -1859,6 +1904,7 @@ export function TimecardViewer({
         setPendingPremiumWaiverToggles(new Map());
         setPendingDeletions([]);
         setPendingHoursEntries([]);
+        setChangeReason("");
         router.refresh();
       } catch (err) {
         setActionError(err instanceof Error ? err.message : "The changes could not be saved. Reload the page and try again.");
@@ -2350,7 +2396,10 @@ export function TimecardViewer({
             />
           </div>
 
-          <div className={`${grid.listScroll} ta-scroll min-h-0 flex-1 overflow-y-auto pb-2`}>
+          <div
+            className={`${grid.listScroll} ta-scroll ta-pending-region min-h-0 flex-1 overflow-y-auto pb-2`}
+            aria-busy={(navUrl !== null && !navPerson) || undefined}
+          >
             {filteredEmployees.length === 0 && (
               // Says which of the two empty lists this is. "No employees" after
               // narrowing to Open reads as "this site is clean", and that
@@ -2466,7 +2515,8 @@ export function TimecardViewer({
 
         {/* ── Right: their timecard ─────────────────────────────────── */}
         <section
-          className={`${grid.cardPane} flex min-h-0 flex-col overflow-hidden`}
+          className={`${grid.cardPane} ta-pending-region flex min-h-0 flex-col overflow-hidden`}
+          aria-busy={navUrl !== null || undefined}
           style={{ background: "var(--surface-card)", borderRadius: "var(--radius-l)", boxShadow: "var(--shadow-card)" }}
         >
           {!selectedEmployeeId || !days ? (
@@ -2591,7 +2641,7 @@ export function TimecardViewer({
                     </p>
                   )}
                   {canAuthorizeOt && (
-                    <Button size="sm" tone="warning" onClick={handleAuthorizeOt} disabled={isPending}>
+                    <Button pending={isPending} size="sm" tone="warning" onClick={handleAuthorizeOt} disabled={isPending}>
                       {isPending ? "Saving…" : "Approve overtime"}
                     </Button>
                   )}
@@ -2928,7 +2978,7 @@ export function TimecardViewer({
                                   onAmPmToggle={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")}
                                   onBlurSave={handleCorrectPunchBlur}
                                   onCancel={cancelEditing}
-                                  onDelete={() => deletePunchDirect(firstIn.id)}
+                                  onDelete={(reason) => deletePunchDirect(firstIn.id, reason)}
                                 />
                               ) : firstIn ? (
                                 <button
@@ -2995,7 +3045,7 @@ export function TimecardViewer({
                                   onAmPmToggle={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")}
                                   onBlurSave={handleCorrectPunchBlur}
                                   onCancel={cancelEditing}
-                                  onDelete={() => deletePunchDirect(lastOut.id)}
+                                  onDelete={(reason) => deletePunchDirect(lastOut.id, reason)}
                                 />
                               ) : lastOut ? (
                                 <button
@@ -3540,7 +3590,7 @@ export function TimecardViewer({
                                       onAmPmToggle={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")}
                                       onBlurSave={handleCorrectPunchBlur}
                                       onCancel={cancelEditing}
-                                      onDelete={() => deletePunchDirect(pairIn.id)}
+                                      onDelete={(reason) => deletePunchDirect(pairIn.id, reason)}
                                     />
                                   ) : pairIn ? (
                                     <button type="button" onClick={() => startEditing(pairIn)} disabled={!canEdit} className={canEdit ? gridCellButtonClass : "bg-transparent"} style={punchCellStyle(pendingPunchEdits.has(pairIn.id), canEdit)}>{pendingPunchEdits.has(pairIn.id) ? format(pendingPunchEdits.get(pairIn.id)!, "h:mm a") : format(atSite(pairIn.roundedTime), "h:mm a")}</button>
@@ -3581,7 +3631,7 @@ export function TimecardViewer({
                                       onAmPmToggle={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")}
                                       onBlurSave={handleCorrectPunchBlur}
                                       onCancel={cancelEditing}
-                                      onDelete={() => deletePunchDirect(pairOut.id)}
+                                      onDelete={(reason) => deletePunchDirect(pairOut.id, reason)}
                                     />
                                   ) : pairOut ? (
                                     <button type="button" onClick={() => startEditing(pairOut)} disabled={!canEdit} className={canEdit ? gridCellButtonClass : "bg-transparent"} style={punchCellStyle(pendingPunchEdits.has(pairOut.id), canEdit)}>{pendingPunchEdits.has(pairOut.id) ? format(pendingPunchEdits.get(pairOut.id)!, "h:mm a") : format(atSite(pairOut.roundedTime), "h:mm a")}</button>
@@ -3953,7 +4003,7 @@ export function TimecardViewer({
                                             onAmPmToggle={() => setEditAmPm((p) => p === "AM" ? "PM" : "AM")}
                                             onBlurSave={handleCorrectPunchBlur}
                                             onCancel={cancelEditing}
-                                            onDelete={() => deletePunchDirect(punch.id)}
+                                            onDelete={(reason) => deletePunchDirect(punch.id, reason)}
                                           />
                                         </div>
                                       ) : (
@@ -4236,13 +4286,31 @@ export function TimecardViewer({
                       {pendingChangeCount} unsaved {pendingChangeCount === 1 ? "change" : "changes"}
                     </span>
                     <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-                      Save them to update this timecard, or discard them to put it back as it was.
+                      {needsReason
+                        ? "A changed or removed punch needs a reason. It is kept with the punch history."
+                        : "Save them to update this timecard, or discard them to put it back as it was."}
                     </span>
                   </span>
+                  {needsReason && (
+                    <span className="w-full min-w-0 sm:w-72">
+                      <Input
+                        size="sm"
+                        aria-label="Reason for the changed or removed punches"
+                        placeholder="Reason, for example: forgot to clock out"
+                        maxLength={500}
+                        required
+                        value={changeReason}
+                        onChange={(e) => setChangeReason(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !reasonMissing) handleSaveChanges();
+                        }}
+                      />
+                    </span>
+                  )}
                   <Button hierarchy="secondary" size="sm" onClick={handleDiscardChanges} disabled={isPending}>
                     Discard changes
                   </Button>
-                  <Button size="sm" onClick={handleSaveChanges} disabled={isPending}>
+                  <Button pending={isPending} size="sm" onClick={handleSaveChanges} disabled={isPending || reasonMissing}>
                     {isPending ? "Saving…" : "Save changes"}
                   </Button>
                 </div>
@@ -4401,6 +4469,7 @@ export function TimecardViewer({
                 />
                 <div className="mt-2 flex justify-end">
                   <Button
+                    pending={noteSaving}
                     onClick={handleSaveNote}
                     disabled={noteSaving || !noteText.trim()}
                   >
@@ -4608,6 +4677,7 @@ export function TimecardViewer({
                   Cancel
                 </Button>
                 <Button
+                  pending={isPending}
                   type="submit"
                   disabled={isPending || (newEntryMode === "time" ? (!newInTimeStr || !newOutTimeStr) : !newEntryHours)}
                 >

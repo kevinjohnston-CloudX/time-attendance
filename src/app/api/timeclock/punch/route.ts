@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { timeclockKeyValid } from "@/lib/api/timeclock-auth";
 import { db } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
@@ -88,9 +89,7 @@ const PUNCH_MIN_GAP_MS = 5 * 60 * 1000;
 
 export async function POST(req: NextRequest) {
   // 1. Authenticate via shared secret
-  const apiKey = req.headers.get("x-api-key");
-  const expectedKey = process.env.TIMECLOCK_API_KEY;
-  if (!expectedKey || !apiKey || apiKey !== expectedKey) {
+  if (!timeclockKeyValid(req)) {
     return unauthorized();
   }
 

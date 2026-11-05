@@ -2,7 +2,8 @@ import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 
-export type ExternalAuthContext = { tenantId: string; keyId: string; scopes: string[] };
+/** The key's company and scopes, and its name and maker for the activity log. */
+export type ExternalAuthContext = { tenantId: string; keyId: string; scopes: string[]; keyName: string; createdById: string | null };
 
 export async function authenticateApiKey(req: NextRequest): Promise<ExternalAuthContext | null> {
   const header = req.headers.get("authorization");
@@ -13,15 +14,16 @@ export async function authenticateApiKey(req: NextRequest): Promise<ExternalAuth
   const keyHash = crypto.createHash("sha256").update(token).digest("hex");
   const key = await db.apiKey.findUnique({
     where: { keyHash },
-    select: { id: true, tenantId: true, isActive: true, scopes: true },
+    select: { id: true, tenantId: true, isActive: true, scopes: true, name: true, createdById: true, tenant: { select: { isActive: true } } },
   });
 
-  if (!key || !key.isActive) return null;
+  // A switched-off company's keys stop with it.
+  if (!key || !key.isActive || !key.tenant.isActive) return null;
 
   // Fire-and-forget lastUsedAt update
   db.apiKey.update({ where: { id: key.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
 
-  return { tenantId: key.tenantId, keyId: key.id, scopes: key.scopes };
+  return { tenantId: key.tenantId, keyId: key.id, scopes: key.scopes, keyName: key.name, createdById: key.createdById };
 }
 
 /** A real key that was not given this scope. It names the scope, never the data. */

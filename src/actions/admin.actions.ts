@@ -31,7 +31,8 @@ import { webPunchByDefault } from "@/lib/web-punch";
 import { isSignInOnlyRole, isVisitorRole, seesTeam, SIGN_IN_ONLY_RULE_SET, VISITOR_DEPARTMENT } from "@/lib/sign-in-only";
 import { cleanLanguages, languageName } from "@/lib/languages";
 import { hoursToSeconds, secondsToMinutes } from "@/lib/leave-time";
-import { assertBalanceChangeAllowed, assertNotSenior, assertRecordInReach, assertSiteInReach, siteInReach, siteLimit } from "@/lib/rbac/scope";
+import { NotFoundError, assertBalanceChangeAllowed, assertNotSenior, assertRecordInReach, assertSiteInReach, siteInReach, siteLimit } from "@/lib/rbac/scope";
+import { assertOwn, ownCompany } from "@/lib/rbac/company";
 
 // Maps system custom role names to their legacy enum values
 /**
@@ -163,7 +164,7 @@ export const getSupervisorOptions = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ tenantId }, _input: void) => {
     return db.employee.findMany({
-      where: { isActive: true, tenantId: tenantId ?? undefined },
+      where: { isActive: true, tenantId: ownCompany(tenantId) },
       select: { id: true, user: { select: { name: true } } },
       orderBy: { user: { name: "asc" } },
     });
@@ -173,7 +174,7 @@ export const getSupervisorOptions = withRBAC(
 export const getAdminRefData = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ tenantId, employeeId: actorEmpId, role: actorRole }, input: { withEmployees?: boolean } | void) => {
-    const t = tenantId ?? undefined;
+    const t = ownCompany(tenantId);
     // A Payroll or HR Admin held to some sites is offered only those, on the
     // Create window and the employee record (createEmployee and updateEmployee
     // refuse the rest: assertSiteInReach).
@@ -302,7 +303,7 @@ export const getEmployees = withRBAC(
 
     const allowedSiteIds = await getActorSiteRestrictions(actorEmpId, actorRole);
 
-    const where: Prisma.EmployeeWhereInput = { tenantId: tenantId ?? undefined };
+    const where: Prisma.EmployeeWhereInput = { tenantId: ownCompany(tenantId) };
     // No status picked means current employees (active or on leave), as the
     // list has opened since Job Titles; "Everyone" brings the inactive back.
     if (!status) where.isActive = true;
@@ -465,6 +466,10 @@ export const createEmployee = withRBAC(
     await assertSiteInReach(actor, parsed.siteId);
     await assertAssignable(await currentIdentity(), tenantId, parsed.role, parsed.customRoleId);
     await assertOwnAssignments(tenantId, parsed.jobTitleId, parsed.agencyId);
+    await assertOwn(tenantId, {
+      site: parsed.siteId, department: parsed.departmentId, ruleSet: parsed.ruleSetId, shift: parsed.shiftId,
+      holidayRule: parsed.holidayRuleId, payCategory: parsed.payCategoryId, payType: parsed.payTypeId, employee: parsed.supervisorId,
+    });
 
     // Auto-assign the system custom role when only a role enum is provided
     let resolvedCustomRoleId = parsed.customRoleId ?? null;
@@ -709,6 +714,10 @@ export const updateEmployee = withRBAC(
     });
     await assertOwnAssignments(tenantId, jobTitleId, agencyId);
     if (!current) throw new Error("NOT_FOUND");
+    await assertOwn(tenantId, {
+      site: siteId, department: departmentId, ruleSet: ruleSetId, shift: shiftId,
+      holidayRule: holidayRuleId, payCategory: payCategoryId, payType: payTypeId, employee: supervisorId,
+    });
     if (siteId !== undefined && siteId !== current.siteId) await assertSiteInReach(actor, siteId);
 
     // The termination date follows the status. Made inactive: the date given,
@@ -1416,7 +1425,7 @@ export const getEmployeeLeaveLog = withRBAC(
 // ─── Sites ────────────────────────────────────────────────────────────────────
 
 export const getSites = withRBAC(SITE_READERS, async ({ tenantId }, _input: void) => {
-  return db.site.findMany({ where: { tenantId: tenantId ?? undefined }, orderBy: { name: "asc" } });
+  return db.site.findMany({ where: { tenantId: ownCompany(tenantId) }, orderBy: { name: "asc" } });
 });
 
 export const createSite = withRBAC(
@@ -1493,7 +1502,7 @@ export const getDepartments = withRBAC(
   SITE_READERS,
   async ({ tenantId }, _input: void) => {
     return db.department.findMany({
-      where: { tenantId: tenantId ?? undefined },
+      where: { tenantId: ownCompany(tenantId) },
       include: { sites: { include: { site: true } } },
       orderBy: { name: "asc" },
     });
@@ -1774,7 +1783,7 @@ export const getEmployeeLeaveBalances = withRBAC(
     await assertRecordInReach(actor, input.employeeId);
     const year = input.year ?? new Date().getFullYear();
     const [leaveTypes, balances] = await Promise.all([
-      db.leaveType.findMany({ where: { isActive: true, tenantId: tenantId ?? undefined }, orderBy: { name: "asc" } }),
+      db.leaveType.findMany({ where: { isActive: true, tenantId: ownCompany(tenantId) }, orderBy: { name: "asc" } }),
       db.leaveBalance.findMany({ where: { employeeId: input.employeeId, accrualYear: year } }),
     ]);
     return leaveTypes.map((lt) => {
@@ -2000,7 +2009,7 @@ export const getAuditLogs = withRBAC(
     const page = Math.max(1, Math.floor(Number(input.page) || 1));
     const take = 50;
     const skip = (page - 1) * take;
-    const tenantFilter = tenantId ? { tenantId } : {};
+    const tenantFilter = { tenantId: ownCompany(tenantId) };
 
     const entityType = ENTITY_TYPES.includes(input.entityType as never) ? (input.entityType as AuditEntityType) : undefined;
     const q = (input.q ?? "").trim().slice(0, 100);
@@ -2121,7 +2130,7 @@ export const getAuditLogs = withRBAC(
 export const getAuditActors = withRBAC("AUDIT_VIEW", async ({ tenantId }, _input: void) => {
   const grouped = await db.auditLog.groupBy({
     by: ["actorId"],
-    where: { ...(tenantId ? { tenantId } : {}), actorId: { not: null } },
+    where: { tenantId: ownCompany(tenantId), actorId: { not: null } },
     _count: { _all: true },
     orderBy: { _count: { actorId: "desc" } },
     take: 200,
@@ -2129,7 +2138,7 @@ export const getAuditActors = withRBAC("AUDIT_VIEW", async ({ tenantId }, _input
   const ids = grouped.map((g) => g.actorId).filter((id): id is string => !!id);
   const people = ids.length
     ? await db.employee.findMany({
-        where: { id: { in: ids }, ...(tenantId ? { tenantId } : {}) },
+        where: { id: { in: ids }, tenantId: ownCompany(tenantId) },
         select: { id: true, user: { select: { name: true } } },
       })
     : [];
@@ -2139,42 +2148,6 @@ export const getAuditActors = withRBAC("AUDIT_VIEW", async ({ tenantId }, _input
     .map((id) => ({ id, name: name.get(id) || "Unnamed employee" }))
     .sort((a, b) => a.name.localeCompare(b.name));
 });
-
-// ─── Reports ──────────────────────────────────────────────────────────────────
-
-export const getHoursReport = withRBAC(
-  "PAY_PERIOD_MANAGE",
-  async (_actor, input: { payPeriodId: string }) => {
-    const payPeriod = await db.payPeriod.findUniqueOrThrow({
-      where: { id: input.payPeriodId },
-    });
-
-    const [timesheets, ptoBalances] = await Promise.all([
-      db.timesheet.findMany({
-        where: { payPeriodId: input.payPeriodId },
-        include: {
-          employee: { include: { user: true, department: true, site: true } },
-          overtimeBuckets: true,
-        },
-        orderBy: { employee: { user: { name: "asc" } } },
-      }),
-      db.leaveBalance.findMany({
-        where: {
-          leaveType: { category: "PTO" },
-          accrualYear: payPeriod.startDate.getFullYear(),
-        },
-      }),
-    ]);
-
-    const ptoByEmployee: Record<string, number> = {};
-    for (const bal of ptoBalances) {
-      ptoByEmployee[bal.employeeId] =
-        (ptoByEmployee[bal.employeeId] ?? 0) + bal.balanceMinutes;
-    }
-
-    return { payPeriod, timesheets, ptoByEmployee };
-  }
-);
 
 // ─── Bulk CSV employee import ───────────────────────────────────────────────
 
@@ -2735,12 +2708,17 @@ export type LedgerDetailEntry = {
 
 export const getLeaveTypeLedgerDetail = withRBAC(
   "EMPLOYEE_MANAGE",
-  async (_ctx, input: { employeeId: string; leaveTypeId: string; year: number }) => {
+  async (actor, input: { employeeId: string; leaveTypeId: string; year: number }) => {
     const { employeeId, leaveTypeId, year } = z.object({
       employeeId: z.string(),
       leaveTypeId: z.string(),
       year: z.number().int(),
     }).parse(input);
+    // Someone in the caller's company and sites, and a leave type of that
+    // company. Read by ids alone, it showed another company's leave history.
+    await assertRecordInReach(actor, employeeId);
+    const ownType = await db.leaveType.findFirst({ where: { id: leaveTypeId, tenantId: actor.tenantId ?? "__no_company__" }, select: { id: true } });
+    if (!ownType) throw new NotFoundError("This leave type isn't available. Reload the page and try again.");
 
     const yearStart = new Date(`${year}-01-01T00:00:00Z`);
     const yearEnd   = new Date(`${year + 1}-01-01T00:00:00Z`);

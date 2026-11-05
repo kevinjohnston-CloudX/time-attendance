@@ -557,6 +557,16 @@ export const checkEmailConfigured = withRBAC(
 
 // ─── Schedules ──────────────────────────────────────────────────────────────
 
+/** Refuses a schedule that would email someone outside the company (security audit 2026-11, M8). */
+async function assertRecipientsInCompany(tenantId: string, recipients: string[]) {
+  const outside = await recipientsOutsideCompany(tenantId, recipients);
+  if (outside.length) {
+    throw new Error(
+      `${outside.join(", ")} ${outside.length === 1 ? "isn't" : "aren't"} anyone in this company. Scheduled reports go only to people's own emails in CloudTime or to addresses at the company's email domain.`,
+    );
+  }
+}
+
 export const createSchedule = withRBAC(
   "REPORT_SCHEDULE",
   async ({ tenantId }, input: unknown) => {
@@ -570,6 +580,7 @@ export const createSchedule = withRBAC(
     });
 
     // Calculate first nextRunAt, in the schedule's own time zone
+    await assertRecipientsInCompany(tenantId, parsed.recipients);
     const nextRunAt = nextSend(parsed.cronExpr, parsed.timezone);
 
     const schedule = await db.reportSchedule.create({
@@ -599,6 +610,7 @@ export const updateSchedule = withRBAC(
       where: { id: input.id, report: editableWhere(tenantId, session) },
     });
 
+    await assertRecipientsInCompany(tenantId, parsed.recipients);
     const nextRunAt = nextSend(parsed.cronExpr, parsed.timezone);
 
     return db.reportSchedule.update({
@@ -770,6 +782,7 @@ async function employeeLookups(tenantId: string): Promise<Record<string, { value
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 import { auth } from "@/lib/auth";
+import { recipientsOutsideCompany } from "@/lib/reports/recipients";
 
 /**
  * Who may open a saved report: its owner, anyone it is shared with, and

@@ -5,6 +5,10 @@ import { csvCell } from "@/lib/csv-cell";
 import { db } from "@/lib/db";
 import { format } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
+import { ownCompany } from "@/lib/rbac/company";
+import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
+import { cookies } from "next/headers";
+import { recordDownload } from "@/lib/audit/downloads";
 
 // Text that would run as a formula in Excel is made plain (see csvCell).
 const esc = csvCell;
@@ -38,10 +42,12 @@ export async function GET(
   });
   if (!payPeriod) return new NextResponse("Not found", { status: 404 });
 
-  const tenantId = session.user.tenantId;
-  if (tenantId && payPeriod.tenantId !== tenantId) {
-    return new NextResponse("Forbidden", { status: 403 });
-  }
+  // The caller's company (a super admin's, the one they entered). Another
+  // company's period reads as not found, so nothing says it exists; with no
+  // company at all, nothing is exported.
+  let tenantId = session.user.tenantId ?? null;
+  if (session.user.role === "SUPER_ADMIN") tenantId = (await cookies()).get(SUPER_ADMIN_TENANT_COOKIE)?.value ?? null;
+  if (payPeriod.tenantId !== ownCompany(tenantId)) return new NextResponse("Not found", { status: 404 });
 
   const periodLabel = `${format(parseUtcDate(payPeriod.startDate), "yyyy-MM-dd")}_to_${format(parseUtcDate(payPeriod.endDate), "yyyy-MM-dd")}`;
 
@@ -152,6 +158,13 @@ export async function GET(
   } else {
     return new NextResponse("Invalid format", { status: 400 });
   }
+
+  await recordDownload({
+    action: "PAY_PERIOD_EXPORTED",
+    entityType: "PAY_PERIOD",
+    entityId: payPeriod.id,
+    details: { format: exportFormat, file: filename, rows: Math.max(csv.split("\n").filter(Boolean).length - 1, 0) },
+  });
 
   return new NextResponse(csv, {
     headers: {

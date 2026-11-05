@@ -899,7 +899,7 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                     </Button>
                   )}
                   {onLast ? (
-                    <Button type="submit" disabled={isPending}>
+                    <Button pending={isPending} type="submit" disabled={isPending}>
                       {isPending ? "Creating…" : "Create employee"}
                     </Button>
                   ) : (

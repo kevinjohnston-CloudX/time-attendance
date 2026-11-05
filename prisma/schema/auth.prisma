@@ -32,6 +32,7 @@ model User {
   employee          Employee?
   ownedReports      ReportDefinition[] @relation("ReportOwner")
   sharedReports     ReportShare[]      @relation("SharedReports")
+  pushDevices       PushDevice[]
 
   @@map("users")
 }

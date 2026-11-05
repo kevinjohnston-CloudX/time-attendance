@@ -23,7 +23,7 @@ const panel = {
 
 export default function Loading() {
   return (
-    <div className="flex flex-col" aria-busy="true" aria-label="Loading team punch history">
+    <div className="ta-loading flex flex-col" aria-busy="true" aria-label="Loading team punch history">
       <div className="flex flex-col gap-3.5 pb-3.5">
         <div className="flex flex-wrap items-end gap-4">
           <span className="flex flex-1 flex-col gap-1.5">

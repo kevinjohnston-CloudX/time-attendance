@@ -59,6 +59,19 @@ export function badgeWhere(code: string): Prisma.EmployeeWhereInput {
   };
 }
 
+/**
+ * Whose badges the time clocks, gates and WMS bridge may find: people in a
+ * company connected to the warehouse system. The tablets share one key and a
+ * badge number alone found anyone in any company, so a key copied off one
+ * tablet read and punched people everywhere (security audit 2026-11, H1).
+ */
+export const DEVICE_SCOPE = { tenant: { wmsConnected: true, isActive: true } } satisfies Prisma.EmployeeWhereInput;
+
+/** A badge, as a tablet or the bridge may look it up. */
+export function deviceBadgeWhere(code: string): Prisma.EmployeeWhereInput {
+  return { AND: [badgeWhere(code), DEVICE_SCOPE] };
+}
+
 export const KIOSK_EMPLOYEE_SELECT = {
   ruleSet: true,
   site: true,
@@ -68,7 +81,7 @@ export const KIOSK_EMPLOYEE_SELECT = {
 /** Full employee record for the punch pipeline, matched on either badge form. */
 export async function findEmployeeByBadge(code: string) {
   return db.employee.findFirst({
-    where: badgeWhere(code),
+    where: deviceBadgeWhere(code),
     include: KIOSK_EMPLOYEE_SELECT,
   });
 }
@@ -76,7 +89,7 @@ export async function findEmployeeByBadge(code: string) {
 /** Minimal lookup for recording a scan — no rule set, shift or site needed. */
 export async function findEmployeeIdentityByBadge(code: string) {
   return db.employee.findFirst({
-    where: badgeWhere(code),
+    where: deviceBadgeWhere(code),
     select: {
       id: true,
       tenantId: true,

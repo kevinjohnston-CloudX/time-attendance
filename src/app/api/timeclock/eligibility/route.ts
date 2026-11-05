@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse, after } from "next/server";
+import { timeclockKeyValid } from "@/lib/api/timeclock-auth";
 import { db } from "@/lib/db";
-import { badgeWhere } from "@/lib/utils/badge-lookup";
+import { deviceBadgeWhere } from "@/lib/utils/badge-lookup";
 import { shownNameOrNull } from "@/lib/utils/shown-name";
 import { recordGateRefusal } from "@/lib/presence/gate-refusals.service";
 import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { WMS_TERMINATION_ENDS_EMPLOYMENT, employmentEnded, madeActiveAt } from "@/lib/presence/employment";
 import { CLIENT_DEPARTMENT_SHOWN, isClientBadge } from "@/lib/utils/client-badge";
+import { cachedDataProtection, photoOffAt } from "@/lib/privacy/data-protection";
 
 /**
  * May this badge scan right now, and who is it?
@@ -77,10 +79,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // without having to find one and read its code.
     params: [...new Set(q.keys())].sort().join(",").slice(0, 200) || undefined,
   };
-  const apiKey = req.headers.get("x-api-key");
-  const expectedKey = process.env.TIMECLOCK_API_KEY;
-  if (!expectedKey || !apiKey || apiKey !== expectedKey) {
-    gateLog("failed", { at: "check", error: expectedKey ? "BAD_KEY" : "NO_KEY_SET", ...from }, "warn");
+  if (!timeclockKeyValid(req)) {
+    gateLog("failed", { at: "check", error: process.env.TIMECLOCK_API_KEY ? "BAD_KEY" : "NO_KEY_SET", ...from }, "warn");
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
@@ -93,7 +93,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // the lookup the legacy API cannot do, and the reason typing an employee
   // number at the kiosk fails today for anyone on a 10-digit card.
   const employee = await db.employee.findFirst({
-    where: badgeWhere(badge),
+    where: deviceBadgeWhere(badge),
     select: {
       id: true,
       tenantId: true,
@@ -242,6 +242,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     });
   }
 
+  // Data Protection may turn the time clock photo off for the person's site.
+  // Read from memory (a minute per server), so the check costs no query.
+  const takePhoto = !photoOffAt(await cachedDataProtection(employee.tenantId), employee.siteId);
+
   // The tablet greets people by the name the floor knows them by: the WMS name
   // when the roster sync has one, else the legal name (see shown-name.ts).
   const name = shownNameOrNull(employee) ?? "";
@@ -274,6 +278,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     /// legacy check — the site is not gated, or its gate has gone quiet, and in
     /// neither case does CloudTime's silence say anything about the person.
     gateActive,
+    /// Whether the kiosk may take this person's photo. False only where the
+    /// company turned time clock photos off for their site (Data Protection).
+    /// The kiosk has to honour it; a build that does not read it still takes one.
+    takePhoto,
     timezone,
     asOf: today,
   });

@@ -31,6 +31,8 @@ import {
   Building2,
   Copy,
   CircleDollarSign,
+  Download,
+  UserX,
   ContactRound,
   ExternalLink,
   History,
@@ -39,11 +41,14 @@ import {
   ChevronRight,
   ScanLine,
   Wallet,
+  QrCode,
 } from "lucide-react";
 import { useBreadcrumbLeaf } from "@/components/layout/breadcrumb-leaf";
 import { PhotoViewer, ZoomableFace } from "@/components/presence/face";
 import { PhotoEditor } from "@/components/presence/photo-editor";
 import { RemovePhotoDialog } from "@/components/presence/remove-photo-dialog";
+import { PersonDataWindow } from "./person-data-window";
+import { AnonymiseWindow } from "./anonymise-window";
 import styles from "./employee-record.module.css";
 import { PayRatesTable } from "./pay-rates-table";
 import type { PayRateRow } from "@/actions/pay-rate.actions";
@@ -96,6 +101,10 @@ interface Props {
   canEditPhoto: boolean;
   /** Whether this viewer may remove it (PRESENCE_PHOTO_REMOVE), from the photo window. */
   canRemovePhoto?: boolean;
+  /** Whether this viewer may download the person's data (EMPLOYEE_DATA_EXPORT). The download checks again. */
+  canExportData?: boolean;
+  /** Whether to offer Anonymise: a leaver, in a company that switched it on, to someone who may. The action checks again. */
+  canAnonymise?: boolean;
   sites: Site[];
   departments: (Department & { sites: { site: Pick<Site, "id" | "name"> }[] })[];
   ruleSets: RuleSet[];
@@ -338,6 +347,8 @@ export function EditEmployeeForm({
   photo: photoFromServer,
   canEditPhoto,
   canRemovePhoto = false,
+  canExportData = false,
+  canAnonymise = false,
   sites,
   departments,
   ruleSets,
@@ -373,6 +384,8 @@ export function EditEmployeeForm({
   const [logDays, setLogDays] = useState(0);
   const [zoomed, setZoomed] = useState<string | null>(null);
   const [editingPhoto, setEditingPhoto] = useState(false);
+  const [exportingData, setExportingData] = useState(false);
+  const [anonymising, setAnonymising] = useState(false);
   const [removingPhoto, setRemovingPhoto] = useState(false);
   // The photo just saved here, until the server's own link catches up.
   const [photoSaved, setPhotoSaved] = useState<{ url: string | null } | null>(null);
@@ -797,7 +810,7 @@ export function EditEmployeeForm({
                   <Button type="button" hierarchy="secondary" className="ta-header-even ta-phone-hide" onClick={cancel} disabled={isPending}>
                     Cancel
                   </Button>
-                  <Button type="submit" className="ta-header-even ta-phone-hide" disabled={isPending || changeCount === 0}>
+                  <Button pending={isPending} type="submit" className="ta-header-even ta-phone-hide" disabled={isPending || changeCount === 0}>
                     {isPending ? "Saving…" : "Save changes"}
                   </Button>
                 </>
@@ -820,6 +833,14 @@ export function EditEmployeeForm({
                     View Accruals
                   </LinkButton>
                   <LinkButton
+                    href={`/admin/employees/${employee.id}/badge`}
+                    hierarchy="secondary"
+                    className="ta-phone-hide"
+                    leadingIcon={<QrCode className="h-4 w-4" aria-hidden="true" />}
+                  >
+                    View Badge
+                  </LinkButton>
+                  <LinkButton
                     href={`/admin/employees?copyFrom=${employee.id}`}
                     hierarchy="secondary"
                     className="ta-phone-hide"
@@ -827,6 +848,29 @@ export function EditEmployeeForm({
                   >
                     Copy to new employee
                   </LinkButton>
+                  {canExportData && (
+                    <Button
+                      type="button"
+                      hierarchy="secondary"
+                      className="ta-phone-hide"
+                      onClick={() => setExportingData(true)}
+                      leadingIcon={<Download className="h-4 w-4" aria-hidden="true" />}
+                    >
+                      Export data
+                    </Button>
+                  )}
+                  {canAnonymise && (
+                    <Button
+                      type="button"
+                      hierarchy="secondary"
+                      tone="error"
+                      className="ta-phone-hide"
+                      onClick={() => setAnonymising(true)}
+                      leadingIcon={<UserX className="h-4 w-4" aria-hidden="true" />}
+                    >
+                      Anonymise
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     className="ta-header-primary"
@@ -937,7 +981,7 @@ export function EditEmployeeForm({
                 </Button>
               </div>
             </div>
-            {/* On a phone the header keeps only Edit; the other two ways on
+            {/* On a phone the header keeps only Edit; the other ways on
                 from this record are lines under the profile, as a phone's
                 contact card lists its actions. */}
             {!editing && (
@@ -948,11 +992,30 @@ export function EditEmployeeForm({
                     <span className="ta-list-title">Accruals</span>
                     <ChevronRight className="ta-list-chevron" aria-hidden="true" />
                   </Link>
+                  <Link href={`/admin/employees/${employee.id}/badge`} className="ta-list-row">
+                    <QrCode className={styles.phoneLinkIcon} aria-hidden="true" />
+                    <span className="ta-list-title">Badge</span>
+                    <ChevronRight className="ta-list-chevron" aria-hidden="true" />
+                  </Link>
                   <Link href={`/admin/employees?copyFrom=${employee.id}`} className="ta-list-row">
                     <Copy className={styles.phoneLinkIcon} aria-hidden="true" />
                     <span className="ta-list-title">Copy to a new employee</span>
                     <ChevronRight className="ta-list-chevron" aria-hidden="true" />
                   </Link>
+                  {canExportData && (
+                    <button type="button" onClick={() => setExportingData(true)} className="ta-list-row">
+                      <Download className={styles.phoneLinkIcon} aria-hidden="true" />
+                      <span className="ta-list-title">Export data</span>
+                      <ChevronRight className="ta-list-chevron" aria-hidden="true" />
+                    </button>
+                  )}
+                  {canAnonymise && (
+                    <button type="button" onClick={() => setAnonymising(true)} className="ta-list-row">
+                      <UserX className={styles.phoneLinkIcon} aria-hidden="true" />
+                      <span className="ta-list-title">Anonymise</span>
+                      <ChevronRight className="ta-list-chevron" aria-hidden="true" />
+                    </button>
+                  )}
                 </div>
               </nav>
             )}
@@ -1628,7 +1691,7 @@ export function EditEmployeeForm({
                 <Button type="button" hierarchy="secondary" onClick={cancel} disabled={isPending}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={isPending || changeCount === 0}>
+                <Button pending={isPending} type="submit" disabled={isPending || changeCount === 0}>
                   {isPending ? "Saving…" : "Save changes"}
                 </Button>
               </div>
@@ -1639,6 +1702,26 @@ export function EditEmployeeForm({
       </Editing.Provider>
 
       <Toast message={toast.message} />
+
+      {exportingData && (
+        <PersonDataWindow
+          employeeId={employee.id}
+          name={employee.user.name ?? employee.employeeCode}
+          employeeCode={employee.employeeCode}
+          onClose={() => setExportingData(false)}
+        />
+      )}
+
+      {anonymising && (
+        <AnonymiseWindow
+          employeeId={employee.id}
+          onClose={() => setAnonymising(false)}
+          onDone={() => {
+            setAnonymising(false);
+            router.refresh();
+          }}
+        />
+      )}
 
       {editingPhoto && (
         <PhotoEditor

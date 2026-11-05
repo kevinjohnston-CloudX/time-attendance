@@ -1,0 +1,89 @@
+<!doctype html>
+<!--
+  Shown by the app (server.errorPath) when the live site cannot be reached.
+  It ships inside the app, so it cannot load the site's stylesheet: the colors
+  below are the literal values of CloudTime's tokens (surface-page, text-primary,
+  text-secondary, the icon's brand blue), light and dark.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>CloudTime</title>
+    <style>
+      :root {
+        --canvas: rgb(249, 250, 251);
+        --text-primary: rgb(17, 24, 39);
+        --text-secondary: rgb(75, 85, 99);
+        --brand: #0860aa;
+        --on-brand: #fff;
+        color-scheme: light dark;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --canvas: rgb(3, 7, 18);
+          --text-primary: rgb(249, 250, 251);
+          --text-secondary: rgb(206, 211, 217);
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        background: var(--canvas);
+        color: var(--text-primary);
+        font: 400 16px/24px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: env(safe-area-inset-top) 24px env(safe-area-inset-bottom);
+        -webkit-tap-highlight-color: transparent;
+      }
+      main { width: 100%; max-width: 340px; text-align: center; }
+      svg { width: 72px; height: 72px; display: block; margin: 0 auto 24px; }
+      h1 { margin: 0 0 8px; font-size: 22px; line-height: 30px; font-weight: 600; }
+      p { margin: 0 0 28px; color: var(--text-secondary); }
+      button {
+        width: 100%;
+        height: 48px;
+        border: 0;
+        border-radius: 12px;
+        background: var(--brand);
+        color: var(--on-brand);
+        font: inherit;
+        font-weight: 600;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      button:active { opacity: 0.85; }
+      button[disabled] { opacity: 0.6; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <rect width="100" height="100" rx="25" fill="#0860AA" />
+        <g transform="translate(19.32 19.32) scale(0.6136)" fill="none" stroke-linecap="round">
+          <circle cx="50" cy="50" r="34" stroke="#fff" stroke-width="7" />
+          <path d="M50 50 V28" stroke="#fff" stroke-width="7" />
+          <path d="M50 50 H70" stroke="#F58220" stroke-width="7" />
+        </g>
+      </svg>
+      <h1>No connection</h1>
+      <p>CloudTime needs the internet to show your hours. Check your connection, then try again.</p>
+      <button id="retry" type="button">Try again</button>
+    </main>
+    <script>
+      // Same address as server.url in capacitor.config.ts.
+      var LIVE = "https://time-attendance-txzz.vercel.app/dashboard";
+      // The site never loaded, so it cannot lift the launch screen. This page does.
+      try {
+        window.Capacitor.Plugins.SplashScreen.hide();
+      } catch (e) {}
+      document.getElementById("retry").addEventListener("click", function () {
+        this.disabled = true;
+        this.textContent = "Connecting…";
+        window.location.replace(LIVE);
+      });
+    </script>
+  </body>
+</html>

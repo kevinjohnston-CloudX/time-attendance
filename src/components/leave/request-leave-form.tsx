@@ -32,7 +32,8 @@ import {
  */
 
 interface Props {
-  leaveTypes: { id: string; name: string }[];
+  /** noNote: no note box for this type (sick leave in a company keeping medical details out). */
+  leaveTypes: { id: string; name: string; noNote?: boolean }[];
   shift: ShiftInfo | null;
   /** Modal layout drops the page header and puts the submit at the foot. */
   layout?: "page" | "modal";
@@ -52,6 +53,7 @@ export function RequestLeaveForm({ leaveTypes, shift, layout = "page", onSuccess
   const [note, setNote] = useState("");
 
   const isPage = layout === "page";
+  const noNote = !!leaveTypes.find((t) => t.id === leaveTypeId)?.noNote;
 
   // First and last day are read-outs, not inputs. The days come from the
   // picker — a pair of date fields beside it could disagree with it, and the
@@ -71,7 +73,7 @@ export function RequestLeaveForm({ leaveTypes, shift, layout = "page", onSuccess
       const createResult = await createLeaveRequest({
         leaveTypeId,
         selectedDays,
-        note: note || undefined,
+        note: noNote ? undefined : note || undefined,
       });
 
       if (!createResult.success) {
@@ -97,7 +99,7 @@ export function RequestLeaveForm({ leaveTypes, shift, layout = "page", onSuccess
   }
 
   const submitButton = (
-    <Button type="submit" disabled={isPending || selectedDays.length === 0}>
+    <Button pending={isPending} type="submit" disabled={isPending || selectedDays.length === 0}>
       {isPending ? "Submitting…" : "Submit Request"}
     </Button>
   );
@@ -154,17 +156,25 @@ export function RequestLeaveForm({ leaveTypes, shift, layout = "page", onSuccess
           <LeaveDayPicker value={selectedDays} onChange={setSelectedDays} shift={shift} />
         </Card>
 
-        <Card title="Note" subtitle="Optional context for your supervisor.">
-          {/* No `label` — the card header above it already says "Note", and
-              the field would otherwise print the word twice, stacked. */}
-          <Textarea
-            aria-label="Note"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={3}
-            placeholder="Reason or additional context…"
-          />
-        </Card>
+        {noNote ? (
+          <Card title="Note" subtitle="Not taken for this leave.">
+            <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>
+              Do not share medical details. Only the dates are needed.
+            </p>
+          </Card>
+        ) : (
+          <Card title="Note" subtitle="Optional context for your supervisor.">
+            {/* No `label` — the card header above it already says "Note", and
+                the field would otherwise print the word twice, stacked. */}
+            <Textarea
+              aria-label="Note"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={3}
+              placeholder="Reason or additional context…"
+            />
+          </Card>
+        )}
 
         {!isPage && <div className="flex justify-end">{submitButton}</div>}
       </div>

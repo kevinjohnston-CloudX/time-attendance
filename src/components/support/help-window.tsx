@@ -739,6 +739,7 @@ function CriticalCheck({
             Back
           </Button>
           <Button
+            pending={sending}
             hierarchy="primary"
             onClick={() => onSend(level)}
             disabled={sending}

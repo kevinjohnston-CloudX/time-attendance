@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { authenticateApiKey, unauthorized, badRequest, notFound } from "@/lib/api/auth-external";
+import { authenticateApiKey, missingScope, unauthorized, badRequest, notFound } from "@/lib/api/auth-external";
 import { daySelectionSchema } from "@/lib/validators/leave.schema";
 import { createLeaveRequestCore, submitLeaveRequestCore } from "@/lib/services/leave.service";
+import { writeAuditLog } from "@/lib/audit/logger";
 
 const requestSchema = z.object({
   employeeCode: z.string().min(1).optional(),
@@ -18,6 +19,7 @@ const requestSchema = z.object({
 export async function POST(req: NextRequest) {
   const auth = await authenticateApiKey(req);
   if (!auth) return unauthorized();
+  if (!auth.scopes.includes("time-off:write")) return missingScope("time-off:write");
 
   let body: unknown;
   try {
@@ -62,6 +64,16 @@ export async function POST(req: NextRequest) {
 
   // Auto-submit so the request reaches an approver (DRAFT → PENDING)
   const submitted = await submitLeaveRequestCore(employee.id, auth.tenantId, request.id);
+  // Sent by a key, not a person: the activity log names the key and whoever
+  // made it, so a request nobody remembers sending can be traced.
+  await writeAuditLog({
+    tenantId: auth.tenantId,
+    actorId: auth.createdById,
+    action: "API_TIME_OFF_SENT",
+    entityType: "LEAVE_REQUEST",
+    entityId: submitted.id,
+    changes: { after: { apiKey: auth.keyName, keyId: auth.keyId, employee: employee.id } },
+  });
 
   return NextResponse.json(
     { leaveRequestId: submitted.id, status: submitted.status, durationMinutes: submitted.durationMinutes },

@@ -27,13 +27,19 @@ for (const [net4, bits] of [
   ["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16], ["172.16.0.0", 12],
   ["192.0.0.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15], ["224.0.0.0", 4], ["240.0.0.0", 4],
 ] as const) BLOCKED.addSubnet(net4, bits, "ipv4");
-for (const [net6, bits] of [["::", 128], ["::1", 128], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8]] as const) BLOCKED.addSubnet(net6, bits, "ipv6");
+for (const [net6, bits] of [["::", 128], ["::1", 128], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8], ["2001::", 32], ["2002::", 16]] as const) BLOCKED.addSubnet(net6, bits, "ipv6");
+// IPv6 is public only inside 2000::/3. Everything else, NAT64 (64:ff9b::/96)
+// included, can lead back to a private IPv4 address; Teredo (2001::/32) and
+// 6to4 (2002::/16) above embed one. As CXT's guard (security audit 2026-11, L10).
+const PUBLIC6 = new net.BlockList();
+PUBLIC6.addSubnet("2000::", 3, "ipv6");
 
 /** A private, local or reserved address, including an IPv4 one written as IPv6. */
 export function isPrivateAddress(address: string): boolean {
   const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address)?.[1];
   if (mapped) return BLOCKED.check(mapped, "ipv4");
   const family = net.isIP(address);
+  if (family === 6 && !PUBLIC6.check(address, "ipv6")) return true;
   return family === 0 || BLOCKED.check(address, family === 4 ? "ipv4" : "ipv6");
 }
 

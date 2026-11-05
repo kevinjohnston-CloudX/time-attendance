@@ -11,6 +11,7 @@ import { filterRowsInMemory } from "../query-builder";
 import { textFilter } from "../scope";
 import { readable } from "../readable";
 import { snapToLocalTime } from "@/lib/utils/date";
+import { codePaidUnder, overtimeCodesOf } from "../overtime-pay-code";
 
 const fieldMap: FieldMap = {
   employeeName:  { prismaPath: "timesheet.employee.user.name",       type: "string" },
@@ -33,14 +34,14 @@ export const dailyHoursSource: DataSourceDefinition = {
     { id: "employeeCode",    label: "Badge ID",       type: "string",  defaultVisible: false },
     { id: "department",      label: "Department",     type: "string",  defaultVisible: true },
     { id: "site",            label: "Site",           type: "string",  defaultVisible: false },
-    { id: "date",            label: "Date",           type: "date",    defaultVisible: true, across: true },
+    { id: "date",            label: "Date",           type: "date",    defaultVisible: true, across: true, varies: true },
     // For grouping a timesheet by week; weeks start on the company's day.
     { id: "week",            label: "Week",           type: "string",  defaultVisible: false, groupOrder: "weekStart", across: true },
-    { id: "weekday",         label: "Day of the week", type: "string", defaultVisible: false, groupOrder: "weekdayOrder", across: true },
-    { id: "clockIn",         label: "Clock in",       type: "string",  defaultVisible: true },
-    { id: "clockOut",        label: "Clock out",      type: "string",  defaultVisible: true },
-    { id: "punchPairs",      label: "Punches",        type: "string",  defaultVisible: false },
-    { id: "notes",           label: "Notes",          type: "string",  defaultVisible: false },
+    { id: "weekday",         label: "Day of the week", type: "string", defaultVisible: false, groupOrder: "weekdayOrder", across: true, varies: true },
+    { id: "clockIn",         label: "Clock in",       type: "string",  defaultVisible: true, varies: true },
+    { id: "clockOut",        label: "Clock out",      type: "string",  defaultVisible: true, varies: true },
+    { id: "punchPairs",      label: "Punches",        type: "string",  defaultVisible: false, varies: true },
+    { id: "notes",           label: "Notes",          type: "string",  defaultVisible: false, varies: true },
     { id: "regMinutes",      label: "Regular",      type: "number",  defaultVisible: true },
     { id: "otMinutes",       label: "Overtime",       type: "number",  defaultVisible: true },
     { id: "dtMinutes",       label: "Double time",       type: "number",  defaultVisible: true },
@@ -50,13 +51,13 @@ export const dailyHoursSource: DataSourceDefinition = {
     { id: "totalMinutes",    label: "Total paid",     type: "number",  defaultVisible: true },
     { id: "premiumMinutes",  label: "Meal premium", type: "number", defaultVisible: false },
     { id: "payType",         label: "Pay type",       type: "string",  defaultVisible: false },
-    { id: "payCodes",        label: "Pay codes",      type: "string",  defaultVisible: false },
-    { id: "reasonCode",      label: "Reason code",    type: "string",  defaultVisible: false },
+    { id: "payCodes",        label: "Pay codes",      type: "string",  defaultVisible: false, varies: true },
+    { id: "reasonCode",      label: "Reason code",    type: "string",  defaultVisible: false, varies: true },
     // Attendance, for NovaTime's attendance logs and 7-day reviews (fillAttendance).
-    { id: "dayType",         label: "Day type",       type: "string",  defaultVisible: false, across: true },
-    { id: "scheduledStart",  label: "Scheduled start", type: "string", defaultVisible: false },
+    { id: "dayType",         label: "Day type",       type: "string",  defaultVisible: false, across: true, varies: true },
+    { id: "scheduledStart",  label: "Scheduled start", type: "string", defaultVisible: false, varies: true },
     { id: "lateBy",          label: "Late by (minutes)", type: "number", defaultVisible: false, total: true },
-    { id: "exceptions",      label: "Exceptions",     type: "string",  defaultVisible: false },
+    { id: "exceptions",      label: "Exceptions",     type: "string",  defaultVisible: false, varies: true },
     { id: "rolling7Minutes", label: "Worked in 7 days", type: "number", defaultVisible: false, total: false },
   ],
   filters: [
@@ -101,7 +102,7 @@ export const dailyHoursSource: DataSourceDefinition = {
     const segments = await db.workSegment.findMany({
       where,
       include: {
-        payCode: { select: { code: true, label: true } },
+        payCode: { select: { code: true, label: true, payBucket: true } },
         timesheet: {
           include: {
             employee: { include: { user: true, department: true, site: true } },
@@ -119,6 +120,12 @@ export const dailyHoursSource: DataSourceDefinition = {
     // Stopped at the cap: the days read are short of some lines, so the
     // report says so rather than total them as if they were whole.
     const cutShort = !!config.limit && segments.length >= config.limit * 25;
+    const overtimeCodes = overtimeCodesOf(
+      await db.payCode.findMany({
+        where: { tenantId, payBucket: { in: ["OT", "DT"] } },
+        select: { code: true, label: true, payBucket: true, isActive: true },
+      }),
+    );
 
     // Group segments by employee + date.
     // Pass 1: build day entries and count hours and pay codes from non-zero segments.
@@ -197,7 +204,8 @@ export const dailyHoursSource: DataSourceDefinition = {
       else if (seg.segmentType === "HOLIDAY") day.holidayMinutes = (day.holidayMinutes ?? 0) + seg.durationMinutes;
 
       if (seg.payCode && seg.segmentType !== "MEAL") {
-        day.payCodeSet.add(`${seg.payCode.label} (${seg.payCode.code})`);
+        const paidAs = codePaidUnder({ segmentType: seg.segmentType, bucket, payCode: seg.payCode }, overtimeCodes);
+        day.payCodeSet.add(`${paidAs.label} (${paidAs.code})`);
       }
     }
 

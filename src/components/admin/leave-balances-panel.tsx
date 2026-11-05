@@ -364,7 +364,7 @@ function AddEntryForm({
       )}
 
       <div className="flex gap-2">
-        <Button type="submit" size="sm" disabled={isPending || !canSave}>
+        <Button pending={isPending} type="submit" size="sm" disabled={isPending || !canSave}>
           {isPending ? "Saving…" : "Save entry"}
         </Button>
         <Button type="button" size="sm" hierarchy="secondary" onClick={onClose}>
@@ -434,7 +434,7 @@ function CorrectionForm({
             placeholder="e.g. Catch-up for missed semi-monthly posting"
           />
         </div>
-        <Button type="submit" size="sm" disabled={isPending || !note.trim()}>
+        <Button pending={isPending} type="submit" size="sm" disabled={isPending || !note.trim()}>
           {isPending ? "Posting…" : "Post correction"}
         </Button>
         <Button type="button" size="sm" hierarchy="secondary" onClick={onClose}>
