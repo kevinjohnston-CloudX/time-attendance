@@ -164,6 +164,18 @@ export function startedOn(employee: { hireDate: Date; adjustedHireDate?: Date | 
 }
 
 /**
+ * Their last day, as "yyyy-MM-dd": the termination date, which is still a day
+ * they may work (the gate turns them away from the day after). Null while
+ * employed, and for a rehire who started again after it. Nothing after it is
+ * an absence or earns salary hours.
+ */
+export function endedOn(employee: { terminatedAt?: Date | null; hireDate: Date; adjustedHireDate?: Date | null }): string | null {
+  if (!employee.terminatedAt) return null;
+  const last = employee.terminatedAt.toISOString().slice(0, 10);
+  return startedOn({ hireDate: employee.hireDate, adjustedHireDate: employee.adjustedHireDate }) > last ? null : last;
+}
+
+/**
  * A clock in and clock out both entered by hand by a person (Add time), as
  * HR does for the odd evening that runs past midnight, 7:00 PM to 12:30 AM.
  * Such a pair keeps all its hours on the day it starts, on one timecard row,
@@ -1413,11 +1425,18 @@ export async function rebuildSegments(
   // Guaranteed hours / auto-pay: fill in configured daily credits for uncovered days.
   // When autoPayEnabled, uses the rule set's configurable settings.
   // Otherwise falls back to legacy 8 h/day behavior for salary employees.
-  if (ruleSet.autoPayEnabled && isSalary) {
+  // Never after their last day: someone terminated mid-period was paid salary
+  // hours to the end of it.
+  const lastDay = endedOn(timesheet.employee);
+  const afterLastDay = lastDay ? new Date(Date.parse(lastDay + "T00:00:00Z") + 86_400_000) : null;
+  const creditsEnd = afterLastDay && afterLastDay < dates.endExclusive ? afterLastDay : dates.endExclusive;
+  if (creditsEnd <= dates.start) {
+    // Gone before the period began: no salary hours at all.
+  } else if (ruleSet.autoPayEnabled && isSalary) {
     await applyAutoPayCredits(
       timesheetId,
       dates.start,
-      dates.endExclusive,
+      creditsEnd,
       ruleSet,
       timesheet.employee.shift ?? null,
       autoPayCreditsFrom,
@@ -1427,7 +1446,7 @@ export async function rebuildSegments(
     await ensureSalarySegments(
       timesheetId,
       dates.start,
-      dates.endExclusive,
+      creditsEnd,
       ruleSet.defaultPayCodeId,
       autoPayCreditsFrom,
       chosenCodes,
@@ -1512,18 +1531,25 @@ export async function rebuildSegments(
   }
 
   // Sync ABSENT exceptions for past days in the pay period with no activity.
-  // An inactive employee raises no new absences: the record keeps no
+  // An inactive employee raises no new absences: a record may keep no
   // termination date, so every scheduled day after they left would read as
   // absent. Open ones still auto-resolve when a day gets activity. Days
   // before they started (hire date, or a rehire's adjusted hire date) are not
   // absences either: someone hired mid-period was flagged absent for every
-  // scheduled day before they started.
+  // scheduled day before they started. Nor are days after their last day
+  // (endedOn), and ones raised for them before it was set are closed.
   const hireDay = startedOn(timesheet.employee);
+  if (afterLastDay) {
+    await db.exception.updateMany({
+      where: { timesheetId, exceptionType: "ABSENT", resolvedAt: null, occurredAt: { gte: afterLastDay } },
+      data: { resolvedAt: new Date(), resolution: "Auto-resolved: after their last day" },
+    });
+  }
   await syncAbsentExceptions(
     timesheetId,
     timezone,
     hireDay > bounds.firstDay ? hireDay : bounds.firstDay,
-    bounds.lastDay,
+    lastDay && lastDay < bounds.lastDay ? lastDay : bounds.lastDay,
     punches,
     timesheet.employee.shift?.workDays,
     timesheet.employee.isActive,
@@ -1629,6 +1655,16 @@ async function syncAbsentExceptions(
 }
 
 /**
+ * Whether an automatic clock out already closes the shift left open at
+ * `lastPunch`: one after it and before the next punch, whatever its time. The
+ * nightly auto clock out may place it at the end of a shift that runs past
+ * midnight rather than at the end of the day.
+ */
+export function closesShift(lastPunch: Date, nextPunch: Date | null, autoClosings: Date[]): boolean {
+  return autoClosings.some((t) => t > lastPunch && (!nextPunch || t < nextPunch));
+}
+
+/**
  * Creates MISSING_PUNCH exceptions for past days where the shift was left open
  * (employee punched in but never punched out by end of day), and auto-resolves
  * open MISSING_PUNCH exceptions for days where the shift is now complete.
@@ -1725,36 +1761,57 @@ async function syncMissingPunchExceptions(
   // Create a SYSTEM unapproved CLOCK_OUT to reset their state to OUT so the next morning
   // scan is correctly identified as CLOCK_IN. The unapproved flag ensures it is excluded
   // from segment and hours calculations until payroll fills in the real time.
+  //
+  // At 23:59:59 of the employee's own day, the time the nightly auto clock out
+  // (cron/auto-clock-out) uses, and not when either of them already closes the
+  // shift. Only approved punches are read here, so the auto clock out's
+  // unapproved one never made the day look closed, and this one went in at
+  // 23:59:59 Eastern beside it: 6002 California had two on every forgotten
+  // clock out, 8:59:59 PM and 11:59:59 PM (27 open timecards on 11/03).
   const employeeId = punches[0]?.employeeId;
-  if (employeeId) {
-    for (const [ds] of missingPunchDays) {
+  const openDays = [...missingPunchDays.keys()].filter((ds) => {
+    const day = punchesByDay.get(ds)!;
+    return day[day.length - 1].stateAfter !== "OUT";
+  });
+  if (employeeId && openDays.length > 0) {
+    const byTime = [...punches].sort((a, b) => a.punchTime.getTime() - b.punchTime.getTime());
+    const firstOpen = openDays.map((ds) => punchesByDay.get(ds)!.at(-1)!.punchTime).sort((a, b) => a.getTime() - b.getTime())[0];
+    const autoClosings = (
+      await db.punch.findMany({
+        where: {
+          employeeId,
+          source: "SYSTEM",
+          punchType: "CLOCK_OUT",
+          isApproved: false,
+          isRejected: false,
+          correctedById: null,
+          punchTime: { gt: firstOpen },
+        },
+        select: { punchTime: true },
+      })
+    ).map((p) => p.punchTime);
+
+    for (const ds of openDays) {
       const dayPunches = punchesByDay.get(ds)!;
       const lastPunch = dayPunches[dayPunches.length - 1];
-      if (lastPunch.stateAfter === "OUT") continue; // already OUT — no reset needed
+      const next = byTime.find((p) => p.punchTime > lastPunch.punchTime)?.punchTime ?? null;
+      if (closesShift(lastPunch.punchTime, next, autoClosings)) continue;
 
-      // End-of-day marker: 23:59:59 Eastern Time (America/New_York)
-      const eodTime = endOfDayInTz(ds, "America/New_York");
-
-      const alreadyExists = await db.punch.findFirst({
-        where: { employeeId, timesheetId, isApproved: false, source: "SYSTEM", punchType: "CLOCK_OUT", roundedTime: eodTime },
-        select: { id: true },
+      const eodTime = endOfDayInTz(ds, timezone);
+      await db.punch.create({
+        data: {
+          employeeId,
+          timesheetId,
+          punchType: "CLOCK_OUT",
+          punchTime: eodTime,
+          roundedTime: eodTime,
+          source: "SYSTEM",
+          stateBefore: lastPunch.stateAfter,
+          stateAfter: "OUT",
+          isApproved: false,
+          note: "Added automatically. No clock out was recorded, so payroll needs to confirm the clock out time.",
+        },
       });
-      if (!alreadyExists) {
-        await db.punch.create({
-          data: {
-            employeeId,
-            timesheetId,
-            punchType: "CLOCK_OUT",
-            punchTime: eodTime,
-            roundedTime: eodTime,
-            source: "SYSTEM",
-            stateBefore: lastPunch.stateAfter,
-            stateAfter: "OUT",
-            isApproved: false,
-            note: "Added automatically. No clock out was recorded, so payroll needs to confirm the clock out time.",
-          },
-        });
-      }
     }
   }
 
@@ -1763,9 +1820,11 @@ async function syncMissingPunchExceptions(
   // after it. A clock in and out saved as two requests left one behind
   // whenever the clock in's recalculation ran first (Stephanie Resendiz,
   // 10/19). Left in place, it waits in Punch History for payroll to confirm.
+  // Placed at the employee's own end of day now, and at Eastern's before
+  // 11/04: both are cleared.
   const placeholderDays: Date[] = [];
   for (let ds = periodStartStr; ds < todayStr && ds <= periodEndStr; ) {
-    if (!missingPunchDays.has(ds)) placeholderDays.push(endOfDayInTz(ds, "America/New_York"));
+    if (!missingPunchDays.has(ds)) placeholderDays.push(endOfDayInTz(ds, timezone), endOfDayInTz(ds, "America/New_York"));
     const d = new Date(ds + "T00:00:00.000Z");
     d.setUTCDate(d.getUTCDate() + 1);
     ds = d.toISOString().slice(0, 10);

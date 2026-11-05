@@ -127,6 +127,8 @@ type EmployeeListItem = {
   payType?: string | null;
   /** The day they started, "yyyy-MM-dd": no day before it is an absence. */
   startedOn?: string;
+  /** Their last day if terminated, "yyyy-MM-dd": no day after it is an absence. */
+  endedOn?: string | null;
   // optional period-dependent fields (present when loaded via batch payroll view)
   timesheetId?: string;
   status?: string;
@@ -228,6 +230,7 @@ type TimecardDetail = {
     payRate: number | null;
     payType: string | null;
     startedOn: string;
+    endedOn?: string | null;
     shift: { mealConfig: { autoDeduct?: boolean; minMealMinutes?: number; maxMealMinutes?: number; meals?: { workAtLeastHours: number; deductMinutes: number }[] } | null } | null;
     ruleSet: { overtimeRequiresAuth: boolean; allowTimesheetOtAuth: boolean; defaultPayCodeId: string | null };
   };
@@ -1110,7 +1113,9 @@ export function TimecardViewer({
       setPhoneFor(employeeId);
       if (employeeId === selectedEmployeeId) return;
     }
-    navigate(employeeId);
+    // On the period on screen: without it the page went back to today's, whose
+    // list leaves out someone terminated before it, and opened somebody else.
+    navigate(employeeId, selectedPeriodId);
   }
 
   function backToList() {
@@ -2703,6 +2708,7 @@ export function TimecardViewer({
                       const isSalaryEmployee =
                         (timecard?.employee.payType ?? listEmpForSalary?.payType) === "SALARY";
                       const startDay = timecard?.employee.startedOn ?? listEmpForSalary?.startedOn;
+                      const endDay = timecard?.employee.endedOn ?? listEmpForSalary?.endedOn ?? null;
                       const SALARY_VIRTUAL_MINS = 480;
                       // Pay weeks, counted from the first day on screen (the
                       // period's start, or the custom range's), the same weeks
@@ -2777,8 +2783,10 @@ export function TimecardViewer({
                       // Before they started: not absent, and no salary hours (the
                       // timecard engine's rule, startedOn in segment-builder).
                       const beforeStart = !!startDay && dayStr < startDay;
+                      // After their last day: the same, for someone terminated.
+                      const afterEnd = !!endDay && dayStr > endDay;
                       const isSalaryVirtualDay =
-                        !timecard && isSalaryEmployee && !isWeekend && !isTodayRow && isPast && !beforeStart;
+                        !timecard && isSalaryEmployee && !isWeekend && !isTodayRow && isPast && !beforeStart && !afterEnd;
                       const isAbsent =
                         !isWeekend &&
                         !isTodayRow &&
@@ -2787,7 +2795,8 @@ export function TimecardViewer({
                         leaveSegments.length === 0 &&
                         daySegments.length === 0 &&
                         !isSalaryVirtualDay &&
-                        !beforeStart;
+                        !beforeStart &&
+                        !afterEnd;
 
                       const mainPunchIds = [firstIn?.id, lastOut?.id].filter(Boolean) as string[];
                       const isMainRowPendingDelete = mainPunchIds.length > 0 && pendingDeletions.some(

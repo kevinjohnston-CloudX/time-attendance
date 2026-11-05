@@ -6,7 +6,7 @@ import { z } from "zod";
 import { assertEmployeeInScope, siteLimit, timesheetInScope } from "@/lib/rbac/scope";
 import { timecardList } from "@/lib/timecards/timecard-list";
 import { directReportsOf } from "@/lib/get-subordinate-ids";
-import { startedOn } from "@/lib/engines/segment-builder";
+import { endedOn, startedOn } from "@/lib/engines/segment-builder";
 
 // ─── Employee list (employee-centric timecard) ───────────────────────────────
 
@@ -160,6 +160,7 @@ export const getTimecardByEmployeeAndPeriod = withRBAC(
             isActive: true,
             hireDate: true,
             adjustedHireDate: true,
+            terminatedAt: true,
             user: { select: { id: true, name: true } },
             department: { select: { id: true, name: true } },
             shift: { select: { mealConfig: true } },
@@ -211,11 +212,11 @@ export const getTimecardByEmployeeAndPeriod = withRBAC(
 
     if (!ts) return null;
 
-    // The day they started rather than the dates themselves, for the absent marks.
-    const { hireDate, adjustedHireDate, ...employee } = ts.employee;
+    // The days they started and left rather than the dates themselves, for the absent marks.
+    const { hireDate, adjustedHireDate, terminatedAt, ...employee } = ts.employee;
     return {
       ...ts,
-      employee: { ...employee, startedOn: startedOn({ hireDate, adjustedHireDate }) },
+      employee: { ...employee, startedOn: startedOn({ hireDate, adjustedHireDate }), endedOn: endedOn({ hireDate, adjustedHireDate, terminatedAt }) },
       mealWaivers: ts.mealWaivers.map((w) => ({
         id: w.id,
         segmentDate: w.segmentDate.toISOString().slice(0, 10),
@@ -347,6 +348,7 @@ export const getTimecardDetail = withRBAC(
             isActive: true,
             hireDate: true,
             adjustedHireDate: true,
+            terminatedAt: true,
             user: { select: { id: true, name: true } },
             department: { select: { id: true, name: true } },
             shift: { select: { mealConfig: true } },
@@ -400,11 +402,11 @@ export const getTimecardDetail = withRBAC(
       },
     });
 
-    // The day they started rather than the dates themselves, for the absent marks.
-    const { hireDate, adjustedHireDate, ...employee } = ts.employee;
+    // The days they started and left rather than the dates themselves, for the absent marks.
+    const { hireDate, adjustedHireDate, terminatedAt, ...employee } = ts.employee;
     return {
       ...ts,
-      employee: { ...employee, startedOn: startedOn({ hireDate, adjustedHireDate }) },
+      employee: { ...employee, startedOn: startedOn({ hireDate, adjustedHireDate }), endedOn: endedOn({ hireDate, adjustedHireDate, terminatedAt }) },
       mealWaivers: ts.mealWaivers.map((w) => ({
         id: w.id,
         segmentDate: w.segmentDate.toISOString().slice(0, 10),

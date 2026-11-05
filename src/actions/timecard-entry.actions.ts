@@ -22,6 +22,13 @@ import { hoursToSeconds } from "@/lib/leave-time";
 import { postLeaveUsage, reverseLeaveUsage } from "@/lib/engines/accrual-engine";
 import { assertLeaveTypeAllowed, assertPayCodeAllowed, availabilityFor, leaveTypeAllowed } from "@/lib/pay-code-availability";
 import { splitNote, useFirstPieces } from "@/lib/engines/leave-use-first";
+import { clockAt, dayAt, hoursLabel, noteTimecardChange } from "@/lib/timecards/change-note";
+
+/** A pay code by its name, for a change note. */
+async function payCodeLabel(payCodeId: string | null | undefined): Promise<string | null> {
+  if (!payCodeId) return null;
+  return (await db.payCode.findUnique({ where: { id: payCodeId }, select: { label: true } }))?.label ?? null;
+}
 
 type TxClient = Parameters<Parameters<typeof db.$transaction>[0]>[0];
 
@@ -231,6 +238,8 @@ export const addManualPunchPair = withRBAC(
     });
 
     await rebuildSegments(timesheetId, ruleSet);
+    const code = await payCodeLabel(payCodeId);
+    await noteTimecardChange({ timesheetId, day: entryDate, actorId, change: `Added ${clockAt(inDate, tz)} to ${clockAt(outDate, tz)}${code ? ` as ${code}` : ""}`, note: reason });
 
     revalidatePath("/payroll/timecards");
   }
@@ -350,6 +359,16 @@ async function saveManualPunches(
   });
 
   await rebuildSegments(timesheetId, ruleSet);
+  // One note for the day, on the day the first punch is on.
+  const tz = personTimeZone(ts.employee, "UTC");
+  const typed = [...new Set(rows.map((r) => r.reason?.trim()).filter(Boolean))].join("; ");
+  await noteTimecardChange({
+    timesheetId,
+    day: dayAt(rows[0].punchDate, tz),
+    actorId,
+    change: `Added ${rows.map((r) => `${r.punchType === "CLOCK_IN" ? "clock in" : "clock out"} ${clockAt(r.punchDate, tz)}`).join(", ")}`,
+    note: typed,
+  });
   revalidatePath("/payroll/timecards");
 }
 
@@ -394,6 +413,8 @@ export const addPayrollLeaveEntry = withRBAC(
     );
 
     for (const req of requests) await syncLeaveSegments(req.id);
+    const type = await db.leaveType.findUnique({ where: { id: leaveTypeId }, select: { name: true } });
+    await noteTimecardChange({ timesheetId, day: date, actorId, change: `Added ${hoursLabel(hours)} ${type?.name ?? "time off"}`, note });
     revalidatePath("/payroll/timecards");
   }
 );
@@ -453,6 +474,15 @@ export const removePayrollLeaveEntry = withRBAC(
     });
 
     await syncLeaveSegments(leaveRequestId);
+    if (timesheetId) {
+      const type = await db.leaveType.findUnique({ where: { id: request.leaveTypeId }, select: { name: true } });
+      await noteTimecardChange({
+        timesheetId,
+        day: request.startDate.toISOString().slice(0, 10),
+        actorId,
+        change: `Removed ${hoursLabel(request.durationSeconds / 3600)} ${type?.name ?? "time off"}`,
+      });
+    }
     revalidatePath("/payroll/timecards");
   }
 );
@@ -469,7 +499,8 @@ export const deleteManualPunchPair = withRBAC(
     // Only punches in the caller's company, all on one timecard, never their own.
     const punches = await db.punch.findMany({
       where: { id: { in: punchIds }, employee: await employeeScope(ctx, TIMECARD_EDITORS_COMPANY) },
-      include: { employee: { include: { ruleSet: true } } },
+      include: { employee: { include: { ruleSet: true, site: { select: { timezone: true } } } } },
+      orderBy: { punchTime: "asc" },
     });
 
     if (punches.length !== new Set(punchIds).size) throw new NotFoundError("These punches isn't available to you. It may have been removed, or be outside the sites you can see. Reload the page and try again.");
@@ -529,6 +560,13 @@ export const deleteManualPunchPair = withRBAC(
     });
 
     await rebuildSegments(timesheetId, punches[0].employee.ruleSet);
+    const tz = personTimeZone(punches[0].employee, "UTC");
+    await noteTimecardChange({
+      timesheetId,
+      day: dayAt(punches[0].punchTime, tz),
+      actorId,
+      change: `Removed ${punches.map((p) => `${p.punchType === "CLOCK_IN" ? "clock in" : "clock out"} ${clockAt(p.punchTime, tz)}`).join(", ")}`,
+    });
     revalidatePath("/payroll/timecards");
   }
 );
@@ -641,6 +679,8 @@ export const addManualHoursEntry = withRBAC(
         entityId: timesheetId,
         changes: { after: { date, hours: 0, payCodeId: payCodeId ?? null, source: "MANUAL_HOURS_PAY_CODE_ONLY" } },
       });
+      const code = await payCodeLabel(payCodeId);
+      await noteTimecardChange({ timesheetId, day: date, actorId, change: code ? `Coded the day ${code}` : "Cleared the day's pay code", note });
 
       revalidatePath("/payroll/timecards");
       return;
@@ -802,6 +842,8 @@ export const addManualHoursEntry = withRBAC(
 
       await rebuildSegments(timesheetId, ts.employee.ruleSet);
     }
+    const code = await payCodeLabel(payCodeId);
+    await noteTimecardChange({ timesheetId, day: date, actorId, change: `Added ${hoursLabel(hours)}${code ? ` ${code}` : ""}`, note });
 
     revalidatePath("/payroll/timecards");
   }
