@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { SESSION_ENDED_HREF } from "@/lib/constants";
 import { notePulse } from "./screen-watch";
 
 /**
@@ -41,6 +42,15 @@ export function useSitePulse(siteId: string | null, alerts: boolean): SitePulse 
           signal: controller.signal,
         });
         if (stopped) return;
+        // The sign in has ended (12 hours, a password reset): the proxy
+        // answers with the sign in page, the full check with a 401. Treated as
+        // a missed ask, a screen left open at a desk kept its last numbers and
+        // went quiet on gate alerts until somebody reloaded it.
+        if (res.status === 401 || (res.redirected && new URL(res.url).pathname === "/login")) {
+          stopped = true;
+          window.location.assign(SESSION_ENDED_HREF);
+          return;
+        }
         if (!res.ok) {
           notePulse(false, `HTTP ${res.status}`);
           return;

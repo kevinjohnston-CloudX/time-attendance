@@ -1,6 +1,15 @@
 export const SUPER_ADMIN_TENANT_COOKIE = "super_admin_tenant_id";
 export const VIEW_AS_ROLE_COOKIE = "view_as_role";
 
+/**
+ * Where a page sends someone whose session the full check in auth.ts has just
+ * ended (password reset, company switched off, login removed). The proxy does
+ * not read the database, so it still sees a valid cookie and would bounce
+ * /login straight back to the page, which bounced to /login: a redirect loop.
+ * With this flag the proxy clears the cookie and shows the sign in page.
+ */
+export const SESSION_ENDED_HREF = "/login?ended=1";
+
 /** The main page of a role limited to Live Attendance. */
 export const LIVE_ATTENDANCE_HREF = "/supervisor/on-site";
 

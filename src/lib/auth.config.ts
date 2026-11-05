@@ -1,6 +1,6 @@
 import type { NextAuthConfig } from "next-auth";
 import { NextResponse } from "next/server";
-import { REQUEST_PATH_HEADER } from "@/lib/constants";
+import { REQUEST_PATH_HEADER, SESSION_ENDED_HREF } from "@/lib/constants";
 
 /**
  * Edge-safe auth config — no Prisma, no bcrypt, no Node.js-only modules.
@@ -38,14 +38,8 @@ const localCookies =
  */
 export const SIGN_IN_MS = 12 * 60 * 60 * 1000;
 
-/**
- * Where a page sends someone whose session the full check in auth.ts has just
- * ended (password reset, company switched off, login removed). The proxy does
- * not read the database, so it still sees a valid cookie and would bounce
- * /login straight back to the page, which bounced to /login: a redirect loop.
- * With this flag the proxy clears the cookie and shows the sign in page.
- */
-export const SESSION_ENDED_HREF = "/login?ended=1";
+/** Lives in constants so a browser component can use it too. */
+export { SESSION_ENDED_HREF };
 
 export const authConfig = {
   pages: {

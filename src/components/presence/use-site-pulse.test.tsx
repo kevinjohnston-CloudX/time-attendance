@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, renderHook } from "@testing-library/react";
-import { useOnPulseChange } from "./use-site-pulse";
+import { useOnPulseChange, useSitePulse } from "./use-site-pulse";
 
 /** A pulse value as the page sees it, moved on by hand. */
 function setup(minGapMs?: number) {
@@ -78,5 +78,43 @@ describe("useOnPulseChange", () => {
     hook.unmount();
     vi.advanceTimersByTime(10_000);
     expect(onChange).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("useSitePulse when the sign in has ended", () => {
+  const realLocation = window.location;
+  let assign: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    vi.useRealTimers();
+    assign = vi.fn();
+    Object.defineProperty(window, "location", { configurable: true, value: { ...realLocation, assign } });
+  });
+  afterEach(() => {
+    Object.defineProperty(window, "location", { configurable: true, value: realLocation });
+    vi.unstubAllGlobals();
+  });
+
+  const answer = (res: Partial<Response>) =>
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 200, redirected: false, url: "", ...res }) as Response));
+
+  it("goes to the sign in page on a 401", async () => {
+    answer({ status: 401 });
+    renderHook(() => useSitePulse("site-1", false));
+    await vi.waitFor(() => expect(assign).toHaveBeenCalledWith("/login?ended=1"));
+  });
+
+  it("goes to the sign in page when the proxy answers with it", async () => {
+    answer({ ok: true, redirected: true, url: "http://127.0.0.1:3000/login?callbackUrl=%2Fapi%2Fpresence%2Fpulse" });
+    renderHook(() => useSitePulse("site-1", false));
+    await vi.waitFor(() => expect(assign).toHaveBeenCalledWith("/login?ended=1"));
+  });
+
+  it("stays on the page when an ask fails for any other reason", async () => {
+    const f = vi.fn(async () => ({ ok: false, status: 500, redirected: false, url: "" }) as Response);
+    vi.stubGlobal("fetch", f);
+    renderHook(() => useSitePulse("site-1", false));
+    await vi.waitFor(() => expect(f).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 20));
+    expect(assign).not.toHaveBeenCalled();
   });
 });
