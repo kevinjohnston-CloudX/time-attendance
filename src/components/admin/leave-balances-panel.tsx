@@ -119,11 +119,15 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** Hours available right now: booked and pending time is already spoken for. */
+/**
+ * Hours available right now: the balance, less time still waiting for
+ * approval. Approved time is not taken off again: approval already took it
+ * off the balance.
+ */
 function availableMinutes(row: BalanceRow): number {
   const forecast =
     row.forecastApplyToAvailable && row.forecastedMinutes != null ? row.forecastedMinutes : 0;
-  return row.balanceMinutes - row.approvedMinutes - row.pendingMinutes + forecast;
+  return row.balanceMinutes - row.pendingMinutes + forecast;
 }
 
 /** What the policy says should have posted by now, against what did. */

@@ -104,10 +104,14 @@ export default async function DashboardPage({
         })
       : [],
 
-    // Approved reduces what is left; pending is shown but not deducted.
+    // Shown beside the balance, never taken off it: approval already did.
     employeeId
       ? db.leaveRequest.findMany({
-          where: { employeeId, status: { in: ["APPROVED", "PENDING"] } },
+          where: {
+            employeeId,
+            status: { in: ["APPROVED", "PENDING", "PENDING_HR"] },
+            startDate: { gte: new Date(Date.UTC(year, 0, 1)), lt: new Date(Date.UTC(year + 1, 0, 1)) },
+          },
           select: { leaveTypeId: true, durationMinutes: true, status: true },
         })
       : [],
@@ -509,9 +513,10 @@ export default async function DashboardPage({
                       .filter((r) => r.leaveTypeId === b.leaveTypeId && r.status === "APPROVED")
                       .reduce((sum, r) => sum + r.durationMinutes, 0);
                     const pending = myLeaveRequests
-                      .filter((r) => r.leaveTypeId === b.leaveTypeId && r.status === "PENDING")
+                      .filter((r) => r.leaveTypeId === b.leaveTypeId && r.status !== "APPROVED")
                       .reduce((sum, r) => sum + r.durationMinutes, 0);
-                    const remaining = b.balanceMinutes - approved;
+                    // Approved leave already came off the balance at approval.
+                    const remaining = b.balanceMinutes;
                     const note =
                       pending > 0
                         ? `${(pending / 60).toFixed(1)} h pending`

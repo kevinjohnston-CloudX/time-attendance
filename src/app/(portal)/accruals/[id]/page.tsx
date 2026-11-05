@@ -93,7 +93,8 @@ export default async function EmployeeAccrualsPage({
         select: { leaveRequestId: true },
       }),
       db.leaveRequest.findMany({
-        where: { employeeId: id, status: { in: ["APPROVED", "PENDING"] } },
+        // This year's only, as the balances beside them; waiting for HR counts as pending.
+        where: { employeeId: id, status: { in: ["APPROVED", "PENDING", "PENDING_HR"] }, startDate: { gte: yearStart, lt: yearEnd } },
         select: { leaveTypeId: true, durationSeconds: true, status: true },
       }),
       db.leaveRequest.findMany({

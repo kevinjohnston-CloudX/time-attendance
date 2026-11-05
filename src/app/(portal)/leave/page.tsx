@@ -75,16 +75,21 @@ export default async function MyLeavePage() {
   const requests = requestsResult.data;
   const balances = balancesResult.data;
 
-  // Approved leave is already spoken for and comes off the remaining figure;
-  // pending is shown beside it but not deducted, because a request the
-  // supervisor has not looked at yet is not hours you have lost.
+  // Hours left is the balance itself: HR's approval already took approved
+  // leave off it, and subtracting it here again showed 0.00 to someone with
+  // 24 hours left. Booked and pending are shown beside it, for the balance's
+  // own year only (leave next year comes off next year's), and pending counts
+  // a request waiting for HR as well as one waiting for the supervisor.
+  const byTypeYear = (leaveTypeId: string, startDate: Date | string) =>
+    `${leaveTypeId}:${new Date(startDate).getUTCFullYear()}`;
   const approvedByType: Record<string, number> = {};
   const pendingByType: Record<string, number> = {};
   for (const r of requests) {
+    const k = byTypeYear(r.leaveTypeId, r.startDate);
     if (r.status === "APPROVED") {
-      approvedByType[r.leaveTypeId] = (approvedByType[r.leaveTypeId] ?? 0) + r.durationMinutes;
-    } else if (r.status === "PENDING") {
-      pendingByType[r.leaveTypeId] = (pendingByType[r.leaveTypeId] ?? 0) + r.durationMinutes;
+      approvedByType[k] = (approvedByType[k] ?? 0) + r.durationMinutes;
+    } else if (r.status === "PENDING" || r.status === "PENDING_HR") {
+      pendingByType[k] = (pendingByType[k] ?? 0) + r.durationMinutes;
     }
   }
 
@@ -123,9 +128,9 @@ export default async function MyLeavePage() {
         <div className={`${styles.balances} ${BALANCE_GRID}`}>
           {balances.map((b) => {
             const totalMinutes     = b.balanceMinutes + b.usedMinutes;
-            const approvedMinutes  = approvedByType[b.leaveTypeId] ?? 0;
-            const pendingMinutes   = pendingByType[b.leaveTypeId] ?? 0;
-            const remainingMinutes = Math.max(0, totalMinutes - b.usedMinutes - approvedMinutes);
+            const approvedMinutes  = approvedByType[`${b.leaveTypeId}:${b.accrualYear}`] ?? 0;
+            const pendingMinutes   = pendingByType[`${b.leaveTypeId}:${b.accrualYear}`] ?? 0;
+            const remainingMinutes = Math.max(0, b.balanceMinutes);
             const booked = [
               approvedMinutes > 0 ? `${(approvedMinutes / 60).toFixed(2)} h booked` : null,
               pendingMinutes  > 0 ? `${(pendingMinutes  / 60).toFixed(2)} h pending` : null,
