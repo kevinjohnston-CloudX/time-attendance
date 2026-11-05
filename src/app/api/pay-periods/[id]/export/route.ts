@@ -4,7 +4,8 @@ import { userHasPermission } from "@/lib/rbac/check-permission";
 import { csvCell } from "@/lib/csv-cell";
 import { db } from "@/lib/db";
 import { format } from "date-fns";
-import { parseUtcDate } from "@/lib/utils/date";
+import { parseUtcDate, toSiteClock } from "@/lib/utils/date";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { ownCompany } from "@/lib/rbac/company";
 import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
 import { cookies } from "next/headers";
@@ -97,7 +98,7 @@ export async function GET(
     const punches = await db.punch.findMany({
       where: { timesheet: { payPeriodId: id }, correctedById: null, isRejected: false },
       include: {
-        employee: { include: { user: { select: { name: true } } } },
+        employee: { include: { user: { select: { name: true } }, site: { select: { timezone: true } } } },
       },
       orderBy: [
         { employee: { user: { name: "asc" } } },
@@ -105,11 +106,14 @@ export async function GET(
       ],
     });
 
+    // On the employee's own clock, as the timecard shows it. The server runs
+    // on UTC in production, so these read four to five hours late, and a
+    // punch after 7 or 8 PM carried the next day's date.
     const rows = punches.map((p) => [
       p.employee.user?.name ?? "",
       p.employee.employeeCode,
-      format(p.roundedTime, "MM/dd/yyyy"),
-      format(p.roundedTime, "hh:mm a"),
+      format(toSiteClock(p.roundedTime, personTimeZone(p.employee)), "MM/dd/yyyy"),
+      format(toSiteClock(p.roundedTime, personTimeZone(p.employee)), "hh:mm a"),
       p.punchType,
       p.source,
       p.stateAfter,
