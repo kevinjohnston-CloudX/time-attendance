@@ -76,6 +76,8 @@ interface Props {
   sites: string[];
   departments: string[];
   shifts: { id: string; name: string; startTime: string }[];
+  /** The company's roles, by their own names: what the Role column shows and the filter offers. */
+  roles?: { id: string; name: string }[];
   currentFilters: Filters;
   /** The page header, pinned together with the filters under it, and slimmed once the page scrolls. */
   title: ReactNode;
@@ -84,6 +86,7 @@ interface Props {
 }
 
 export function EmployeesTable({
+  roles,
   employees,
   total,
   page,
@@ -215,7 +218,7 @@ export function EmployeesTable({
             <FilterSelectChip
               label="Role"
               value={currentFilters.role}
-              options={Object.entries(ROLE_LABEL).map(([id, name]) => ({ id, name }))}
+              options={roles ?? Object.entries(ROLE_LABEL).map(([id, name]) => ({ id, name }))}
               onChange={(v) => onFilterChange("role", v)}
             />
             <FilterSelectChip

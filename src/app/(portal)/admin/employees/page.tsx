@@ -145,6 +145,7 @@ export default async function EmployeesPage({
         // shiftId but does not join the shift, and widening that join would be
         // a query change.
         shifts={shifts}
+        roles={allRoles.map((r) => ({ id: r.id, name: r.name }))}
         currentFilters={{ q, site, dept, role, status, shift, pay, period, punch, missing, sort }}
       />
     </div>

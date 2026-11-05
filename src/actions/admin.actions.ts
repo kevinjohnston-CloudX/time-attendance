@@ -9,7 +9,9 @@ import { z, type ZodError } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { cleanEmail, emailHolders } from "@/lib/login-email";
-import { Prisma, type AuditEntityType, type Role } from "@prisma/client";
+import { Prisma, Role as RoleEnum, type AuditEntityType, type Role } from "@prisma/client";
+
+const BUILTIN_ROLES = Object.values(RoleEnum);
 import { publicError, withRBAC } from "@/lib/rbac/guard";
 import { SITE_READERS, RULES_READERS } from "@/lib/rbac/permissions";
 import { zodMessage } from "@/lib/zod-message";
@@ -312,7 +314,14 @@ export const getEmployees = withRBAC(
     if (allowedSiteIds) where.siteId = { in: allowedSiteIds };
     if (site) where.site = { name: site };
     if (dept) where.department = { name: dept };
-    if (role) where.role = { equals: role as Prisma.EnumRoleFilter["equals"] };
+    // The company's own role, as the Role column shows it. The filter used to
+    // offer only the built-in levels, so "Employee" also matched Loss
+    // Prevention, visitors and agency viewers, and their roles had no choice
+    // of their own. A built-in level (an old saved link) still filters on it.
+    if (role) {
+      if ((BUILTIN_ROLES as readonly string[]).includes(role)) where.role = { equals: role as Prisma.EnumRoleFilter["equals"] };
+      else where.customRoleId = role;
+    }
     // The same three states the Status column shows.
     if (status === "active") Object.assign(where, { isActive: true, onLeave: false });
     if (status === "leave") Object.assign(where, { isActive: true, onLeave: true });
