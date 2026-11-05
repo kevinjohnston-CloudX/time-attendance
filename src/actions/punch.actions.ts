@@ -1,5 +1,6 @@
 "use server";
 
+import { assertMissedPunchFix, fixesMissedPunchesOnly, MISSED_PUNCH_ONLY_ERROR } from "@/lib/timecards/missed-punch-fix";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
@@ -128,7 +129,7 @@ export const requestMissedPunch = withRBAC(
 // ─── approveMissedPunch ───────────────────────────────────────────────────────
 
 export const approveMissedPunch = withRBAC(
-  "PUNCH_EDIT_TEAM",
+  ["PUNCH_EDIT_TEAM", "PUNCH_FIX_MISSED_TEAM"],
   async (ctx, input: { punchId: string; exceptionId: string }): Promise<Punch> => {
     const { employeeId: supervisorId, tenantId } = ctx;
     const { punchId, exceptionId } = approveMissedPunchSchema.parse(input);
@@ -161,6 +162,18 @@ export const approveMissedPunch = withRBAC(
     const home = await findOrCreateTimesheet(punch.employeeId, period.id);
     assertEditable(home.status);
 
+    // A supervisor allowed only to fix missed punches (PUNCH_FIX_MISSED_TEAM)
+    // approves the clock in or clock out a missed punch is short of, under the
+    // regular hours pay code, as addMissingPunchForEmployee lets them add it.
+    const fixOnly = await fixesMissedPunchesOnly();
+    if (fixOnly) {
+      if (punch.punchType !== "CLOCK_IN" && punch.punchType !== "CLOCK_OUT") throw new Error(MISSED_PUNCH_ONLY_ERROR);
+      await assertMissedPunchFix(home.id, personTimeZone(owner, "UTC"), [{ punchType: punch.punchType, at: punch.punchTime }]);
+    }
+    const ruleSetForCode = fixOnly && punch.punchType === "CLOCK_IN"
+      ? await db.ruleSet.findUnique({ where: { id: owner.ruleSetId }, select: { defaultPayCodeId: true } })
+      : null;
+
     const updated = await db.$transaction(async (tx) => {
       const p = await tx.punch.update({
         where: { id: punch.id },
@@ -169,6 +182,8 @@ export const approveMissedPunch = withRBAC(
           isApproved: true,
           approvedById: supervisorId,
           approvedAt: new Date(),
+          // A fixed clock in is regular hours (the rule set's default code).
+          ...(ruleSetForCode ? { payCodeId: ruleSetForCode.defaultPayCodeId ?? null } : {}),
         },
       });
       // The exception this request answers, and no other: it used to resolve
@@ -219,7 +234,7 @@ export const approveMissedPunch = withRBAC(
  * still add the right time or resolve it with a note.
  */
 export const rejectMissedPunch = withRBAC(
-  "PUNCH_EDIT_TEAM",
+  ["PUNCH_EDIT_TEAM", "PUNCH_FIX_MISSED_TEAM"],
   async (ctx, input: { punchId: string }): Promise<void> => {
     const { employeeId: supervisorId, tenantId } = ctx;
     const { punchId } = rejectMissedPunchSchema.parse(input);
