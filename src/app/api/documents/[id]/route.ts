@@ -8,7 +8,7 @@ import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
 import { recordDownload } from "@/lib/audit/downloads";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse> {
   const { id } = await params;
@@ -50,6 +50,10 @@ export async function GET(
   try {
     const signedUrl = await createSignedUrl(doc.fileUrl);
     await recordDownload({ action: "DOCUMENT_DOWNLOADED", entityType: "DOCUMENT", entityId: doc.id, details: { employee: doc.employeeId } });
+    // The phone app asks for the link itself (?as=url) and opens it in its
+    // own browser: a new window there is handed to the phone's browser, which
+    // has no CloudTime sign in and ended on the sign in page.
+    if (req.nextUrl.searchParams.get("as") === "url") return NextResponse.json({ url: signedUrl });
     return NextResponse.redirect(signedUrl, 302);
   } catch {
     return new NextResponse("Failed to generate download link", { status: 500 });

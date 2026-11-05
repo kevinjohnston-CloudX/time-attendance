@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
+import { DownloadLink } from "./download-link";
 import { format } from "date-fns";
-import { Download, FileText } from "lucide-react";
+import { FileText } from "lucide-react";
 import { DeleteDocumentButton } from "./delete-document-button";
 import { DocumentsFilters } from "./documents-filters";
 import styles from "./documents.module.css";
@@ -270,39 +271,6 @@ function buildTypeOptions(docs: DocumentRow[]): { value: string; label: string }
       return { value: m, label: (seen.get(label) ?? 0) > 1 ? `${label} (.${mimeToExt(m)})` : label };
     })
     .sort((a, b) => a.label.localeCompare(b.label));
-}
-
-/**
- * Download stays a plain anchor rather than LinkButton.
- *
- * <p>The file streams out of an API route, so there is no page for the router
- * to prefetch or transition to, and target=_blank leaves the list on screen
- * behind the download. It borrows the secondary button's palette variables so
- * it hovers like the real thing.
- */
-function DownloadLink({ id, title }: { id: string; title: string }) {
-  return (
-    <a
-      href={`/api/documents/${id}`}
-      target="_blank"
-      rel="noopener noreferrer"
-      title={`Download ${title}`}
-      className={`${styles.download} wms-btn inline-flex h-6 flex-none items-center gap-1.5 rounded-md px-2.5`}
-      style={{
-        ["--bg" as string]: "var(--surface-card)",
-        ["--bg-h" as string]: "var(--fill-hover)",
-        ["--bg-a" as string]: "var(--fill-pressed)",
-        ["--fg" as string]: "var(--text-primary)",
-        ["--fg-h" as string]: "var(--text-primary)",
-        border: "1px solid var(--stroke-default)",
-        font: "var(--type-button2)",
-        textDecoration: "none",
-      }}
-    >
-      <Download className="h-3.5 w-3.5" />
-      <span>Download</span>
-    </a>
-  );
 }
 
 /** An internal record id (cuid) rather than a person's name. */

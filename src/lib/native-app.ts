@@ -87,6 +87,17 @@ export function inPhoneApp(): boolean {
   return bridge() !== null;
 }
 
+/**
+ * Opens a link in the app's own browser (Safari or Chrome inside the app),
+ * which shows a PDF or an image. Returns false when this is not the app.
+ */
+export async function openInAppBrowser(url: string): Promise<boolean> {
+  const browser = bridge()?.Plugins.Browser;
+  if (!browser) return false;
+  await settle(() => browser.open({ url, presentationStyle: "popover" }));
+  return true;
+}
+
 function base64url(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
