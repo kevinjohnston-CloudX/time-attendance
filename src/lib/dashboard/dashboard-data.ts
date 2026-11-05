@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { parseUtcDate, startOfDayInTz, toSiteClock } from "@/lib/utils/date";
 import type { BadgeTone } from "@/components/ui";
@@ -211,6 +212,22 @@ type StateRow = { employeeId: string; state: string; dept: string | null };
  * which is why the department totals come from a separate count — without it
  * "not in" would silently exclude everyone who has not badged this year.
  */
+/**
+ * Each person's newest punch, read through their own (employeeId,
+ * roundedTime) index. The same rows as picking the newest of every punch,
+ * which read and sorted the whole punches table on every Dashboard: 1.5
+ * seconds and a spill to disk for the whole company (CPU audit, Nov 5).
+ * Someone with no punch is left out, as before.
+ */
+const NEWEST_PUNCH_STATE = Prisma.sql`
+  SELECT p."stateAfter"::text AS state
+  FROM "punches" p
+  WHERE p."employeeId" = e.id
+    AND p."isRejected" = false
+    AND p."correctedById" IS NULL
+  ORDER BY p."roundedTime" DESC
+  LIMIT 1`;
+
 export async function getPresence(tenantId: string, supervisorId: string | null): Promise<Presence> {
   const scoped = supervisorId
     ? { tenantId, isActive: true, ...directReportsOf(supervisorId) }
@@ -219,35 +236,23 @@ export async function getPresence(tenantId: string, supervisorId: string | null)
   const [states, headcount] = await Promise.all([
     supervisorId
       ? db.$queryRaw<StateRow[]>`
-          SELECT DISTINCT ON (p."employeeId")
-                 p."employeeId"      AS "employeeId",
-                 p."stateAfter"::text AS state,
-                 d.name              AS dept
-          FROM "punches" p
-          JOIN "employees" e   ON e.id = p."employeeId"
+          SELECT e.id AS "employeeId", lp.state, d.name AS dept
+          FROM "employees" e
           LEFT JOIN "departments" d ON d.id = e."departmentId"
+          CROSS JOIN LATERAL (${NEWEST_PUNCH_STATE}) lp
           WHERE e."tenantId" = ${tenantId}
             AND e."isActive" = true
             AND (e."supervisorId" = ${supervisorId}
                  OR EXISTS (SELECT 1 FROM "employee_supervisors" es
                             WHERE es."employeeId" = e.id AND es."supervisorId" = ${supervisorId}))
-            AND p."isRejected" = false
-            AND p."correctedById" IS NULL
-          ORDER BY p."employeeId", p."roundedTime" DESC
         `
       : db.$queryRaw<StateRow[]>`
-          SELECT DISTINCT ON (p."employeeId")
-                 p."employeeId"      AS "employeeId",
-                 p."stateAfter"::text AS state,
-                 d.name              AS dept
-          FROM "punches" p
-          JOIN "employees" e   ON e.id = p."employeeId"
+          SELECT e.id AS "employeeId", lp.state, d.name AS dept
+          FROM "employees" e
           LEFT JOIN "departments" d ON d.id = e."departmentId"
+          CROSS JOIN LATERAL (${NEWEST_PUNCH_STATE}) lp
           WHERE e."tenantId" = ${tenantId}
             AND e."isActive" = true
-            AND p."isRejected" = false
-            AND p."correctedById" IS NULL
-          ORDER BY p."employeeId", p."roundedTime" DESC
         `,
     db.employee.findMany({
       where: scoped,
