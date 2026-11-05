@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import Link from "next/link";
 import { addDays, format } from "date-fns";
 import { ChevronRight, UserCheck } from "lucide-react";
@@ -64,7 +65,7 @@ function initialsOf(name: string): string {
 
 export default async function TeamOverviewPage() {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   if (!(await userHasPermission(session.user, "TIMESHEET_APPROVE_TEAM"))) redirect("/dashboard");
 
   const employeeId = session.user.employeeId ?? null;

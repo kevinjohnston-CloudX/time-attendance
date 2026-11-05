@@ -30,6 +30,8 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT extends DefaultJWT {
     signInId?: string;
+    /** When this sign in happened, in ms. Set once; a click never renews it. */
+    signedInAt?: number;
     role?: string;
     employeeId?: string;
     tenantId?: string | null;

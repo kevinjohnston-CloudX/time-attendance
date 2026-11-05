@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac/permissions";
 import { getEffectiveRole } from "@/lib/rbac/check-permission";
@@ -29,7 +30,7 @@ export default async function DocumentsPage({
   searchParams: Promise<{ q?: string; type?: string; year?: string; page?: string }>;
 }) {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
 
   const effectiveRole = await getEffectiveRole(session.user);
   const canViewAny = hasPermission(effectiveRole, "DOCUMENT_VIEW_ANY");

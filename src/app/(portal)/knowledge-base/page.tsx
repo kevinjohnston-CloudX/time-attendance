@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { Card, EmptyState, PageHeader } from "@/components/ui";
 import { BookOpen, CloudOff } from "lucide-react";
@@ -62,7 +63,7 @@ function shape(tree: KbTree): { topics: KbTopic[]; groups: KbGroup[] } {
 
 export default async function KnowledgeBasePage() {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
 
   const header = <PageHeader pinned title="Knowledge Base" subtitle="How-to guides for CloudTime" />;
 

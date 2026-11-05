@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getEmployeeById } from "@/actions/admin.actions";
@@ -17,7 +18,7 @@ export const dynamic = "force-dynamic";
 export default async function EmployeeBadgePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   if (!await userHasPermission(session.user, "EMPLOYEE_MANAGE")) redirect("/admin");
 
   const record = await getEmployeeById({ employeeId: id });

@@ -29,12 +29,40 @@ const localCookies =
         nonce: localCookie("nonce"),
       };
 
+/**
+ * How long a sign in lasts, from the moment it happened: a working day. Every
+ * request re-signs the session cookie with a fresh issue time and expiry, so
+ * neither can say when somebody signed in; signedInAt in the token does, and
+ * no click ever moves it. The proxy and the full check in auth.ts both end a
+ * session past this, so a sign in never outlives the shift by being used.
+ */
+export const SIGN_IN_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * Where a page sends someone whose session the full check in auth.ts has just
+ * ended (password reset, company switched off, login removed). The proxy does
+ * not read the database, so it still sees a valid cookie and would bounce
+ * /login straight back to the page, which bounced to /login: a redirect loop.
+ * With this flag the proxy clears the cookie and shows the sign in page.
+ */
+export const SESSION_ENDED_HREF = "/login?ended=1";
+
 export const authConfig = {
   pages: {
     signIn: "/login",
   },
   cookies: localCookies,
+  // The proxy re-signs the cookie on every request from THIS config. Without
+  // the same lifetime here it re-signed it for the library's default 30 days.
+  session: { strategy: "jwt", maxAge: SIGN_IN_MS / 1000 },
   callbacks: {
+    // Edge-safe: no database. A token from before signedInAt existed is
+    // stamped on first sight, which gives it one more working day.
+    jwt({ token }) {
+      if (typeof token.signedInAt !== "number") token.signedInAt = Date.now();
+      if (Date.now() - token.signedInAt > SIGN_IN_MS) return null;
+      return token;
+    },
     // The proxy builds its session from THIS config alone, so without a
     // session callback here `auth.user.role` is undefined in `authorized`
     // below. A super admin then looks like a regular user: the proxy sends
@@ -97,6 +125,12 @@ export const authConfig = {
         const headers = new Headers(request.headers);
         headers.set(REQUEST_PATH_HEADER, nextUrl.pathname);
         return NextResponse.next({ request: { headers } });
+      } else if (isLoggedIn && nextUrl.pathname === "/login" && nextUrl.searchParams.get("ended") === "1") {
+        const res = NextResponse.next();
+        for (const c of request.cookies.getAll()) {
+          if (c.name.includes("session-token")) res.cookies.delete(c.name);
+        }
+        return res;
       } else if (isLoggedIn && (
         nextUrl.pathname === "/login" ||
         nextUrl.pathname === "/forgot-password"

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { siteLimit } from "@/lib/rbac/scope";
@@ -50,7 +51,7 @@ export default async function TimecardsPage({
 }) {
   const sp = await searchParams;
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
 
   const [canViewTeam, canViewAll, canEditTeam, canEditAll, canRunPayroll] = await Promise.all([
     userHasPermission(session.user, "TIMECARD_VIEW_TEAM"),

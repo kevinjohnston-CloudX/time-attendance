@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
 import { format } from "date-fns";
@@ -62,7 +63,7 @@ export default async function PayPeriodsPage({
   const monthParam = /^\d{4}-\d{2}$/.test(month ?? "") ? month! : null;
 
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   if (!await userHasPermission(session.user, "PAY_PERIOD_MANAGE")) redirect("/dashboard");
 
   // The period picked does not wait on the list, so it is asked now and read

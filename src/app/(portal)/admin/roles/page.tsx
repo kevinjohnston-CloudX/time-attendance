@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getRoles } from "@/actions/role.actions";
@@ -52,7 +53,7 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
 
 export default async function RolesPage() {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   if (!await userHasPermission(session.user, "ROLE_MANAGE")) redirect("/admin");
 
   const [rolesResult, roleCounts] = await Promise.all([

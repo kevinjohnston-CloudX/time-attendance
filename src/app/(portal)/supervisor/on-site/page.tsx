@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getOnSiteBoard, getOnSiteSites } from "@/actions/presence.actions";
@@ -44,7 +45,7 @@ export default async function OnSitePage({
   }>;
 }) {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   // Closed by the company in Data Protection. Said here rather than sent to
   // the Dashboard, because a role limited to Live Attendance is sent back
   // here from every other page.

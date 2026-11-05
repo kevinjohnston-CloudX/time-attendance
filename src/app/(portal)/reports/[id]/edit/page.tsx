@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { Banner, LinkButton, PageHeader } from "@/components/ui";
 import { userHasPermission } from "@/lib/rbac/check-permission";
@@ -16,7 +17,7 @@ import type { DataSourceId } from "@/lib/validators/report.schema";
 export default async function EditReportPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   if (!await userHasPermission(session.user, "REPORT_MANAGE")) redirect("/dashboard");
 
   const [reportResult, dsResult, filterResult] = await Promise.all([

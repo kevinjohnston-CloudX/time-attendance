@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getAuditActors, getAuditLogs, type AuditRange } from "@/actions/admin.actions";
@@ -17,7 +18,7 @@ export default async function AuditLogPage({
 }) {
   const sp = await searchParams;
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   if (!await userHasPermission(session.user, "AUDIT_VIEW")) redirect("/admin");
 
   const filters = {

@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { listApiKeys } from "@/actions/api-key.actions";
@@ -22,7 +23,7 @@ export default async function ApiKeysPage({
   searchParams: Promise<{ tab?: string; open?: string }>;
 }) {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   if (!await userHasPermission(session.user, "SITE_MANAGE")) redirect("/admin");
 
   const sp = (await searchParams) ?? {};

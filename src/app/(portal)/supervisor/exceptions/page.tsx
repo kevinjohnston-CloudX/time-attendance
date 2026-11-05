@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getTeamExceptions, getExceptionTypeCounts } from "@/actions/supervisor.actions";
@@ -56,7 +57,7 @@ export default async function ExceptionsPage({
   searchParams: Promise<Filters>;
 }) {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   if (!await userHasPermission(session.user, "TIMESHEET_APPROVE_TEAM")) redirect("/dashboard");
 
   const { siteId, departmentId, shiftId, employeeId, exceptionType, payPeriodId, ...rest } =

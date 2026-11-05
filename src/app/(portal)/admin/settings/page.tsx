@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { format } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
 import { ArrowLeft } from "lucide-react";
@@ -22,7 +23,7 @@ import { CompanyDataPanel } from "@/components/admin/company-export-window";
  */
 export default async function CompanySettingsPage() {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   if (!await userHasPermission(session.user, "PAY_PERIOD_MANAGE")) redirect("/admin");
 
   const [result, canOpenRules, protection, canReview, sites, canExportCompany] = await Promise.all([

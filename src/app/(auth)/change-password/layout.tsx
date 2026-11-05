@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 
 /**
@@ -9,7 +10,7 @@ import { auth } from "@/lib/auth";
  */
 export default async function ChangePasswordLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   if (!session.user.mustChangePassword) redirect("/dashboard");
   return children;
 }

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import type { Permission } from "@/lib/rbac/permissions";
 import { userHasPermission } from "@/lib/rbac/check-permission";
@@ -74,7 +75,7 @@ const GROUP_ICONS: Record<string, React.ReactNode> = {
 
 export default async function AdminPage() {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
 
   // Read from the person's own role, a custom one included, as the menu is.
   // The built-in role alone listed nothing for someone on a custom role.

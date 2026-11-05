@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getAdpSyncOptions, getAdpSyncStatus } from "@/actions/adp.actions";
@@ -15,7 +16,7 @@ import { AdpSyncPanel } from "@/components/admin/adp-sync-panel";
  */
 export default async function AdpSyncPage() {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   if (!await userHasPermission(session.user, "EMPLOYEE_MANAGE")) redirect("/admin");
 
   const [statusResult, refResult] = await Promise.all([

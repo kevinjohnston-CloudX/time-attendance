@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getMyLeaveRequests, getMyLeaveBalances } from "@/actions/leave.actions";
@@ -61,7 +62,7 @@ const BALANCE_GRID =
 
 export default async function MyLeavePage() {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   if (!await userHasPermission(session.user, "LEAVE_REQUEST_OWN")) redirect("/dashboard");
 
   const [requestsResult, balancesResult] = await Promise.all([

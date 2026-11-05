@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { ArrowLeft, ChevronRight, CloudOff, FileText, FileX } from "lucide-react";
 import { format } from "date-fns";
 import { auth } from "@/lib/auth";
@@ -30,7 +31,7 @@ export const dynamic = "force-dynamic";
 
 export default async function KnowledgeBaseArticlePage({ params }: { params: Promise<{ articleId: string }> }) {
   const session = await auth();
-  if (!session?.user?.id) redirect("/login");
+  if (!session?.user?.id) redirect(SESSION_ENDED_HREF);
   const { articleId } = await params;
   const back = (
     <LinkButton href="/knowledge-base" hierarchy="secondary" leadingIcon={<ArrowLeft className="h-4 w-4" />}>

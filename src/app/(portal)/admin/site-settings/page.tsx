@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { manageOrView, userHasPermission } from "@/lib/rbac/check-permission";
 import { getSites, getDepartments, getLeaveTypesAdmin } from "@/actions/admin.actions";
@@ -19,7 +20,7 @@ export default async function SiteSettingsPage({
   searchParams: Promise<{ tab?: string }>;
 }) {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
 
   // Sites or Rule Sets on Read opens their areas to look at, with nothing to change.
   const [siteAccess, rulesAccess, hasPayPeriodManage] = await Promise.all([

@@ -6,7 +6,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { isClientBadge } from "@/lib/utils/client-badge";
-import { authConfig } from "@/lib/auth.config";
+import { authConfig, SIGN_IN_MS } from "@/lib/auth.config";
 import { liveIdentity } from "@/lib/rbac/identity";
 import { DUMMY_PASSWORD_HASH, clientAddress, isLockedOut, loginKey, recordFailedLogin } from "@/lib/login-limit";
 import { findLoginUserId } from "@/lib/login-lookup";
@@ -47,7 +47,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(db),
   // A working day, not the 30 day default: a sign-in left open on a shared
   // warehouse computer should not outlive the shift.
-  session: { strategy: "jwt", maxAge: 12 * 60 * 60, updateAge: 60 * 60 },
+  session: { strategy: "jwt", maxAge: SIGN_IN_MS / 1000, updateAge: 60 * 60 },
   providers: [
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -184,6 +184,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // tell "just signed in" from "still in the same session" (the design
         // notice opens again after every sign in).
         token.signInId = crypto.randomUUID();
+        token.signedInAt = Date.now();
         if (account?.provider === "google" || !(user as { role?: string }).role) {
           // Google sign-in: look up employee from DB
           const fullUser = await db.user.findUnique({
@@ -219,14 +220,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // demoted, moved or deactivated is treated that way on their next
       // click rather than when their session runs out. A person whose login
       // no longer exists is signed out.
+      // The same working day limit the proxy holds (auth.config).
+      if (typeof token.signedInAt !== "number") token.signedInAt = Date.now();
+      if (Date.now() - token.signedInAt > SIGN_IN_MS) return null;
       if (token.sub) {
         const live = await liveIdentity(token.sub);
         if (!live) return null;
         // A sign in from before the password was last set or reset ends
         // here, so an administrator's reset (a temporary password, a setup
         // link) reaches a browser left signed in, not only the next sign in.
-        // A second's slack for the token's whole-second issue time.
-        if (live.passwordChangedAt && typeof token.iat === "number" && token.iat * 1000 < live.passwordChangedAt.getTime() - 1000) return null;
+        // Read from signedInAt, never the token's issue time: every request
+        // re-signs the cookie with a fresh one, so it always looked newer
+        // than the reset and the old session carried on.
+        if (live.passwordChangedAt && token.signedInAt! < live.passwordChangedAt.getTime()) return null;
         token.role = live.role;
         token.employeeId = live.employeeId ?? undefined;
         token.tenantId = live.tenantId;

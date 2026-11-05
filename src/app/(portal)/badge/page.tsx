@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { IdCard } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { getIdBadge } from "@/lib/badge/badge.service";
@@ -14,7 +15,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function MyBadgePage() {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
 
   const badge = session.user.employeeId ? await getIdBadge(session.user.employeeId) : null;
 

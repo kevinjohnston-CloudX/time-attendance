@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { LinkButton } from "@/components/ui";
@@ -32,7 +33,7 @@ export default async function EmployeesPage({
   searchParams?: Promise<Partial<Record<(typeof LIST_KEYS)[number] | "copyFrom", string>>>;
 }) {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   if (!await userHasPermission(session.user, "EMPLOYEE_MANAGE")) redirect("/admin");
 
   const sp = await searchParams;

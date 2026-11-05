@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { manageOrView } from "@/lib/rbac/check-permission";
 import { ViewOnly } from "@/components/admin/setup/view-only";
@@ -23,7 +24,7 @@ export default async function RulesSetupPage({
   searchParams: Promise<{ tab?: string; policy?: string; view?: string }>;
 }) {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
 
   // Rule Sets on Read opens every area to look at, with nothing to change.
   const access = await manageOrView(session.user, "RULES_MANAGE", "RULES_VIEW");

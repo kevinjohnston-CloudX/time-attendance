@@ -1,6 +1,7 @@
 // The app's styles, loaded by each layout (and the error and not found screens).
 import "@/app/globals.css";
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth, signOut } from "@/lib/auth";
 import Link from "next/link";
 
@@ -10,7 +11,7 @@ export default async function SuperAdminLayout({
   children: React.ReactNode;
 }) {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   if (session.user.role !== "SUPER_ADMIN") redirect("/dashboard");
 
   return (

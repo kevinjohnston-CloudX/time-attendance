@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getDataSourceDefinitions, getMyReports, getMyFolders } from "@/actions/report.actions";
@@ -22,7 +23,7 @@ export default async function ReportsPage({
   searchParams: Promise<{ q?: string; view?: string; type?: string; year?: string; folder?: string; new?: string }>;
 }) {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   if (!await userHasPermission(session.user, "REPORT_MANAGE")) redirect("/dashboard");
 
   const [reportsResult, foldersResult, sourcesResult] = await Promise.all([

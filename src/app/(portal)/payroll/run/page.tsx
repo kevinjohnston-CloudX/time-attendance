@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
@@ -8,7 +9,7 @@ import { parseRunCodes, RUN_CODES_COOKIE } from "@/lib/payroll/run-codes";
 
 export default async function RunPayrollPage() {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   if (!await userHasPermission(session.user, "PAYROLL_RUN")) redirect("/dashboard");
 
   const result = await getRunPayrollOptions();

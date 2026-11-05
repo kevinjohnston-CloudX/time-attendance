@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getDataSourceDefinitions, getMyFolders, getReport, getFilterOptions, getTenantUsers } from "@/actions/report.actions";
@@ -13,7 +14,7 @@ export default async function ReportDetailPage({
 }) {
   const { id } = await params;
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   if (!await userHasPermission(session.user, "REPORT_MANAGE")) redirect("/dashboard");
 
   const [reportResult, filterResult, usersResult, sourcesResult, foldersResult] = await Promise.all([

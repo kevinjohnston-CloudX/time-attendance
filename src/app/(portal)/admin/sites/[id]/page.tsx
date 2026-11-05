@@ -1,4 +1,5 @@
 import { redirect, notFound } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { manageOrView } from "@/lib/rbac/check-permission";
 import { ViewOnly } from "@/components/admin/setup/view-only";
@@ -18,7 +19,7 @@ import { SitePage } from "@/components/admin/site-page";
 export default async function SiteDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   const access = await manageOrView(session.user, "SITE_MANAGE", "SITE_VIEW");
   if (!access) redirect("/admin");
 

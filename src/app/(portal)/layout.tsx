@@ -2,6 +2,7 @@
 import "@/app/globals.css";
 import { PageScrollReveal } from "@/components/layout/page-scroll-reveal";
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { ShieldCheck } from "lucide-react";
 import { cookies, headers } from "next/headers";
 import { auth } from "@/lib/auth";
@@ -33,7 +34,7 @@ export default async function PortalLayout({
   children: React.ReactNode;
 }) {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   if (session.user.mustChangePassword) redirect("/change-password");
 
   // Check if the employee is active. Inactive employees get a restricted read-only view.

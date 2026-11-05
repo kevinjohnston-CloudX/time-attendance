@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getWmsSyncStatus, type BridgeHealth } from "@/actions/sync.actions";
@@ -124,7 +125,7 @@ function Kv({ label, value }: { label: string; value: ReactNode }) {
 
 export default async function WmsSyncPage() {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   if (!(await userHasPermission(session.user, "EMPLOYEE_MANAGE"))) redirect("/admin");
 
   const result = await getWmsSyncStatus(undefined);

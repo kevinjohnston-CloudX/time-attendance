@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { userHasPermission } from "@/lib/rbac/check-permission";
@@ -27,7 +28,7 @@ export default async function SupervisorLeavePage({
   searchParams: Promise<{ tab?: string; siteId?: string; departmentId?: string; shiftId?: string }>;
 }) {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   if (!await userHasPermission(session.user, "LEAVE_APPROVE_TEAM")) redirect("/dashboard");
 
   const { tab, siteId, departmentId, shiftId } = (await searchParams) ?? {};

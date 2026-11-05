@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { getTeamQueues } from "@/lib/team/team-overview";
@@ -17,7 +18,7 @@ import { WorkQueueList, workQueueRows } from "@/components/supervisor/work-queue
  */
 export default async function ApprovalsPage() {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
   if (!(await userHasPermission(session.user, "TIMESHEET_APPROVE_TEAM"))) redirect("/dashboard");
 
   const tenantId = (session.user as { tenantId?: string }).tenantId;

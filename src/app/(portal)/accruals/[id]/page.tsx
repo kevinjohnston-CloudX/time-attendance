@@ -1,4 +1,5 @@
 import { redirect, notFound } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { getSubordinateIds } from "@/lib/get-subordinate-ids";
 import { siteLimit } from "@/lib/rbac/scope";
 import Link from "next/link";
@@ -33,7 +34,7 @@ export default async function EmployeeAccrualsPage({
 }) {
   const { id } = await params;
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirect(SESSION_ENDED_HREF);
 
   const canViewAny  = await userHasPermission(session.user, "ACCRUAL_VIEW_ANY");
   const canViewTeam = canViewAny  || await userHasPermission(session.user, "ACCRUAL_VIEW_TEAM");

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 
 export default async function RootPage() {
@@ -6,5 +7,5 @@ export default async function RootPage() {
   if (session) {
     redirect("/dashboard");
   }
-  redirect("/login");
+  redirect(SESSION_ENDED_HREF);
 }
