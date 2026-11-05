@@ -55,7 +55,9 @@ async function manageableLogin(employeeId: string) {
   }
   if (!caller.isSuperAdmin) {
     if (target.id === caller.employeeId) {
-      return { error: "To change your own password, use Change password in your profile." } as const;
+      // There is no "change your own password" page: ask a colleague with
+      // the right to reset it. The message used to point to one that does not exist.
+      return { error: "You can't reset your own password. Ask another administrator to reset it for you." } as const;
     }
     const rank = await employeeRank(target.id, target.tenantId);
     if (rank === null || rank > caller.rank || (rank === caller.rank && !editsPeers(caller.rank))) {
