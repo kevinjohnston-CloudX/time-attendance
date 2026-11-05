@@ -1,5 +1,7 @@
 "use server";
 
+import { auth } from "@/lib/auth";
+import { manageOrView, userHasPermission } from "@/lib/rbac/check-permission";
 import { addMonths, addYears, differenceInMonths } from "date-fns";
 import { generatePeriodsForRuleSet } from "@/lib/pay-period-utils";
 import { moveTimecardsToRuleSet } from "@/lib/timesheet-migration";
@@ -2080,26 +2082,41 @@ export const getAuditLogs = withRBAC(
       : [];
     const sheet = new Map(timesheets.map((t) => [t.id, t]));
 
+    // An entry links only to a page the viewer can open, by the same
+    // permissions those pages check. Every entry used to link, and Payroll
+    // Admin, who reads the log but not rules, was sent to the Dashboard.
+    const session = await auth();
+    const can = (p: Parameters<typeof userHasPermission>[1]) => (session?.user ? userHasPermission(session.user, p) : Promise.resolve(false));
+    const [canEmployees, canRules, canPeriods, canPresence, canTimecards] = await Promise.all([
+      can("EMPLOYEE_MANAGE"),
+      session?.user ? manageOrView(session.user, "RULES_MANAGE", "RULES_VIEW").then((a) => a !== null) : false,
+      can("PAY_PERIOD_MANAGE"),
+      can("PRESENCE_VIEW_ANY"),
+      Promise.all((["TIMECARD_VIEW_TEAM", "TIMECARD_VIEW_ANY", "TIMECARD_EDIT_TEAM", "TIMECARD_EDIT_ANY"] as const).map(can)).then((a) => a.some(Boolean)),
+    ]);
+
     const hrefOf = (r: (typeof rows)[number]): string | null => {
       const id = encodeURIComponent(r.entityId);
       switch (r.entityType) {
         case "EMPLOYEE":
-          return `/admin/employees/${id}`;
+          return canEmployees ? `/admin/employees/${id}` : null;
         case "PAY_PERIOD":
           // Company settings changes are filed here with the company as the record.
           // The gate alert switch is one of them, and lives on Live Attendance.
-          if (r.action === "SETTINGS_UPDATE") return isGateAlertSwitch(r.changes) ? "/supervisor/on-site" : "/admin/settings";
-          return `/payroll/pay-periods?id=${id}`;
+          if (r.action === "SETTINGS_UPDATE") {
+            return isGateAlertSwitch(r.changes) ? (canPresence ? "/supervisor/on-site" : null) : (canPeriods ? "/admin/settings" : null);
+          }
+          return canPeriods ? `/payroll/pay-periods?id=${id}` : null;
         case "RULE_SET":
-          return r.action === "RULE_SET_DELETED" ? null : `/admin/rules-setup/rule-sets/${id}`;
+          return r.action === "RULE_SET_DELETED" || !canRules ? null : `/admin/rules-setup/rule-sets/${id}`;
         case "PTO_POLICY":
-          return r.action === "PTO_POLICY_DELETED" ? null : `/admin/rules-setup/leave-policies/${id}`;
+          return r.action === "PTO_POLICY_DELETED" || !canRules ? null : `/admin/rules-setup/leave-policies/${id}`;
         case "TIMESHEET": {
           const t = sheet.get(r.entityId);
-          return t ? `/payroll/timecards?employeeId=${encodeURIComponent(t.employeeId)}&periodId=${encodeURIComponent(t.payPeriodId)}` : null;
+          return t && canTimecards ? `/payroll/timecards?employeeId=${encodeURIComponent(t.employeeId)}&periodId=${encodeURIComponent(t.payPeriodId)}` : null;
         }
         case "ADP_SYNC":
-          return "/admin/adp";
+          return canEmployees ? "/admin/adp" : null;
         default:
           return null;
       }
