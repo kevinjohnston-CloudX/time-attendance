@@ -149,6 +149,7 @@ export default async function ExceptionsPage({
     exceptionType: ex.exceptionType,
     description: ex.description,
     occurredAt: ex.occurredAt,
+    zone: ex.zone,
     timesheetId: ex.timesheetId,
     employeeId: ex.timesheet.employeeId,
     employeeName: ex.timesheet.employee.user?.name ?? `Employee ${ex.timesheet.employeeId}`,

@@ -35,6 +35,8 @@ export type ExceptionRow = {
   exceptionType: string;
   description: string;
   occurredAt: Date;
+  /** The employee's clock (their zone, else their building's): times are read and saved on it. */
+  zone: string;
   timesheetId: string;
   employeeId: string;
   employeeName: string;

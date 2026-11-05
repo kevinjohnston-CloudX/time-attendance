@@ -3,6 +3,8 @@ import type { PayFrequency, PunchType } from "@prisma/client";
 import { format } from "date-fns";
 import { db } from "@/lib/db";
 import { scheduledWindow } from "@/lib/utils/shift-schedule";
+import { toSiteClock } from "@/lib/utils/date";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 /**
  * The open exceptions the Exceptions screen and its export read, already
@@ -13,6 +15,11 @@ import { scheduledWindow } from "@/lib/utils/shift-schedule";
  */
 
 /** A day (YYYY-MM-DD) as the pay period start dates store it. */
+/** The calendar day an instant falls on in a zone, as YYYY-MM-DD. */
+function siteDay(instant: Date, zone: string): string {
+  return format(toSiteClock(instant, zone), "yyyy-MM-dd");
+}
+
 export function dayRange(day: string) {
   return { gte: new Date(`${day}T00:00:00.000Z`), lt: new Date(`${day}T23:59:59.999Z`) };
 }
@@ -79,10 +86,13 @@ export async function readOpenExceptions({
       ruleSetFrequency: string | null;
       tenantFrequency: string;
       hasPunches: boolean;
+      personZone: string | null;
+      siteZone: string | null;
     }[]
   >`
     SELECT ex.id, ex."exceptionType"::text AS "exceptionType", ex.description, ex."occurredAt", ex."timesheetId",
-           ts."employeeId", emp."shiftId", u.name AS "userName", s.name AS "siteName", d.name AS "departmentName",
+           ts."employeeId", emp."shiftId", u.name AS "userName", s.name AS "siteName",
+           emp."timeZone" AS "personZone", s.timezone AS "siteZone", d.name AS "departmentName",
            pp.id AS "payPeriodId", pp."startDate", pp."endDate",
            rs.id AS "ruleSetId", rs."payFrequency"::text AS "ruleSetFrequency", tn."payFrequency"::text AS "tenantFrequency",
            EXISTS (
@@ -107,6 +117,10 @@ export async function readOpenExceptions({
     description: r.description,
     occurredAt: r.occurredAt,
     timesheetId: r.timesheetId,
+    // The employee's own clock: their zone, else their building's. The server
+    // runs on UTC in production, so a time or day read without it was off by
+    // the zone's offset (a 6:53 AM clock in read 11:53 AM).
+    zone: personTimeZone({ timeZone: r.personZone, site: { timezone: r.siteZone } }),
     timesheet: {
       employeeId: r.employeeId,
       employee: {
@@ -137,10 +151,10 @@ export async function readOpenExceptions({
    * exceptions fell on, and to three columns, and nothing but two short
    * strings per card ever reaches the browser.
    *
-   * <p>The days are bucketed with the same format() the action panel uses
-   * rather than by grouping on rounded_time::date in Postgres. The database
-   * would do the arithmetic in one query fewer and would put a night shift's
-   * clock out on the following day, because the column is stored in UTC.
+   * <p>Days and times are read on the employee's own clock (their zone,
+   * else their building's), never the server's: production runs on UTC, so
+   * a 6:53 AM Eastern clock in read 11:53 AM, and the card then saved that
+   * over the real one.
    */
   const timesheetIds = Array.from(new Set(rows.map((r) => r.timesheetId)));
   const recorded = new Map<string, { in: string | null; out: string | null }>();
@@ -150,21 +164,21 @@ export async function readOpenExceptions({
      * Only the punches on a day some exception here fell on, for that
      * exception's sheet: the only ones the lookup below ever reads. It used
      * to take every clock in and out on these sheets across the whole span
-     * of the list, three months of them, and throw most away. The day is
-     * the same one format() gives below, in the zone this process runs in,
-     * so a punch matches exactly when it used to.
+     * of the list, three months of them, and throw most away. Each day is
+     * the employee's own, so the database compares in their zone too.
      */
-    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const keys = Array.from(new Set(rows.map((r) => `${r.timesheetId}|${format(r.occurredAt, "yyyy-MM-dd")}`)));
+    const zoneOfSheet = new Map(rows.map((r) => [r.timesheetId, r.zone]));
+    const keys = Array.from(new Set(rows.map((r) => `${r.timesheetId}|${siteDay(r.occurredAt, r.zone)}`)));
     const keySheets = keys.map((k) => k.slice(0, k.indexOf("|")));
     const keyDays = keys.map((k) => k.slice(k.indexOf("|") + 1));
+    const keyZones = keySheets.map((sheet) => zoneOfSheet.get(sheet)!);
 
     const punches = await db.$queryRaw<{ timesheetId: string | null; punchType: PunchType; roundedTime: Date }[]>`
       SELECT p."timesheetId", p."punchType"::text AS "punchType", p."roundedTime"
       FROM   "punches" p
-      JOIN   unnest(${keySheets}::text[], ${keyDays}::date[]) AS k(sheet, day)
+      JOIN   unnest(${keySheets}::text[], ${keyDays}::date[], ${keyZones}::text[]) AS k(sheet, day, zone)
              ON  p."timesheetId" = k.sheet
-             AND ((p."roundedTime" AT TIME ZONE 'UTC') AT TIME ZONE ${zone})::date = k.day
+             AND ((p."roundedTime" AT TIME ZONE 'UTC') AT TIME ZONE k.zone)::date = k.day
       WHERE  p."punchType"::text IN ('CLOCK_IN', 'CLOCK_OUT')
         AND  p."isApproved"
         AND  p."correctedById" IS NULL
@@ -173,13 +187,15 @@ export async function readOpenExceptions({
 
     for (const p of punches) {
       if (!p.timesheetId) continue;
-      const key = `${p.timesheetId}|${format(p.roundedTime, "yyyy-MM-dd")}`;
+      const zone = zoneOfSheet.get(p.timesheetId)!;
+      const key = `${p.timesheetId}|${siteDay(p.roundedTime, zone)}`;
       const entry = recorded.get(key) ?? { in: null, out: null };
       // Read in time order, so the first clock in and the last clock out of
       // the day win. A split shift shows the outer edges of it, which is
       // what the exception was raised against.
-      if (p.punchType === "CLOCK_IN") entry.in = entry.in ?? format(p.roundedTime, "HH:mm");
-      else entry.out = format(p.roundedTime, "HH:mm");
+      const hhmm = format(toSiteClock(p.roundedTime, zone), "HH:mm");
+      if (p.punchType === "CLOCK_IN") entry.in = entry.in ?? hhmm;
+      else entry.out = hhmm;
       recorded.set(key, entry);
     }
   }
@@ -201,10 +217,10 @@ export async function readOpenExceptions({
     ...ex,
     scheduled: scheduledWindow(
       timesheet.employee.shiftId ? shiftById.get(timesheet.employee.shiftId) : null,
-      ex.occurredAt,
+      toSiteClock(ex.occurredAt, ex.zone),
     ),
     recorded:
-      recorded.get(`${ex.timesheetId}|${format(ex.occurredAt, "yyyy-MM-dd")}`) ??
+      recorded.get(`${ex.timesheetId}|${siteDay(ex.occurredAt, ex.zone)}`) ??
       { in: null, out: null },
     timesheet: {
       employeeId: timesheet.employeeId,

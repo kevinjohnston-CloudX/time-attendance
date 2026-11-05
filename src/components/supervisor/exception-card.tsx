@@ -10,7 +10,7 @@ import {
   resolveException,
 } from "@/actions/supervisor.actions";
 import { Badge, Button, Input, LinkButton, Select, Textarea } from "@/components/ui";
-import { formatTimeOfDay } from "@/lib/utils/date";
+import { formatTimeOfDay, fromSiteClock, toSiteClock } from "@/lib/utils/date";
 import { parseTimeOfDay, type Meridiem } from "@/lib/utils/time-of-day";
 import type { ExceptionRow } from "@/components/supervisor/exceptions-screen";
 import styles from "./exceptions.module.css";
@@ -49,10 +49,11 @@ function splitTime(hhmm: string | null): { text: string; meridiem: Meridiem } {
   return { text: m[1], meridiem: m[2] as Meridiem };
 }
 
-function at(day: Date, time: { hours: number; minutes: number }): string {
-  const d = new Date(day);
+/** That time of day on the exception's day, on the employee's clock, as the moment to save. */
+function at(day: Date, time: { hours: number; minutes: number }, zone: string): string {
+  const d = toSiteClock(day, zone);
   d.setHours(time.hours, time.minutes, 0, 0);
-  return d.toISOString();
+  return fromSiteClock(d, zone).toISOString();
 }
 
 /** What was recorded, in words, because half a range needs saying rather than drawing. */
@@ -107,7 +108,7 @@ export function ExceptionCard({
   const addsPunches = isMissingPunch || isAbsent;
 
   const dayPunches = (punches ?? []).filter(
-    (p) => format(p.roundedTime, "yyyy-MM-dd") === format(row.occurredAt, "yyyy-MM-dd"),
+    (p) => format(toSiteClock(p.roundedTime, row.zone), "yyyy-MM-dd") === format(toSiteClock(row.occurredAt, row.zone), "yyyy-MM-dd"),
   );
   const existingIn = dayPunches.find((p) => p.punchType === "CLOCK_IN") ?? null;
   const existingOut = dayPunches.find((p) => p.punchType === "CLOCK_OUT") ?? null;
@@ -144,8 +145,9 @@ export function ExceptionCard({
       const first = rows[0];
       if (first) {
         setPunchId(first.id);
-        setNewTime(format(first.roundedTime, "h:mm"));
-        setNewHalf(format(first.roundedTime, "a").toUpperCase() === "PM" ? "PM" : "AM");
+        const shown = toSiteClock(first.roundedTime, row.zone);
+        setNewTime(format(shown, "h:mm"));
+        setNewHalf(format(shown, "a").toUpperCase() === "PM" ? "PM" : "AM");
       }
     } finally {
       setLoadingPunches(false);
@@ -201,8 +203,8 @@ export function ExceptionCard({
           // nothing to write and nothing to put in the audit log.
           if (
             side.existing &&
-            side.existing.roundedTime.getHours() === parsed.hours &&
-            side.existing.roundedTime.getMinutes() === parsed.minutes
+            toSiteClock(side.existing.roundedTime, row.zone).getHours() === parsed.hours &&
+            toSiteClock(side.existing.roundedTime, row.zone).getMinutes() === parsed.minutes
           ) {
             continue;
           }
@@ -210,7 +212,7 @@ export function ExceptionCard({
           const result = side.existing
             ? await correctPunchAndResolve({
                 originalPunchId: side.existing.id,
-                newPunchTime: at(row.occurredAt, parsed),
+                newPunchTime: at(row.occurredAt, parsed, row.zone),
                 reason: reasonText,
                 exceptionId: row.id,
               })
@@ -218,7 +220,7 @@ export function ExceptionCard({
                 timesheetId: row.timesheetId,
                 exceptionId: row.id,
                 punchType: side.punchType,
-                punchTime: at(row.occurredAt, parsed),
+                punchTime: at(row.occurredAt, parsed, row.zone),
                 reason: reasonText,
               });
 
@@ -241,7 +243,7 @@ export function ExceptionCard({
         }
         const result = await correctPunchAndResolve({
           originalPunchId: punchId,
-          newPunchTime: at(row.occurredAt, parsed),
+          newPunchTime: at(row.occurredAt, parsed, row.zone),
           reason: reasonText,
           exceptionId: row.id,
         });
@@ -328,7 +330,7 @@ export function ExceptionCard({
           className={`${styles.cardDate} tabular whitespace-nowrap`}
           style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
         >
-          {format(row.occurredAt, "EEE MMM d, yyyy")}
+          {format(toSiteClock(row.occurredAt, row.zone), "EEE MMM d, yyyy")}
         </span>
         {/* On a phone the kind of exception is a pill beside the day, in
             place of the first of the four facts. */}
@@ -458,13 +460,13 @@ export function ExceptionCard({
                     onChange={(e) => {
                       setPunchId(e.target.value);
                       const p = (punches ?? []).find((x) => x.id === e.target.value);
-                      if (p) setNewTime(format(p.roundedTime, "HH:mm"));
+                      if (p) setNewTime(format(toSiteClock(p.roundedTime, row.zone), "HH:mm"));
                     }}
                     style={{ width: "100%" }}
                   >
                     {(punches ?? []).map((p) => (
                       <option key={p.id} value={p.id}>
-                        {PUNCH_LABEL[p.punchType] ?? p.punchType} {format(p.roundedTime, "MMM d, h:mm a")}
+                        {PUNCH_LABEL[p.punchType] ?? p.punchType} {format(toSiteClock(p.roundedTime, row.zone), "MMM d, h:mm a")}
                       </option>
                     ))}
                   </Select>
