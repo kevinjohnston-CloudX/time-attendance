@@ -1739,6 +1739,10 @@ export function TimecardViewer({
         if (!timesheetId) return;
 
         // ── Collect per-day change descriptions before saving ────────
+        // Reason codes only: every other change here notes its own day on the
+        // server as it is saved, with the reason typed for it (change-note.ts,
+        // and the meal waivers in timesheet.actions). Noting them here too put
+        // each change on the day twice.
         const dayChanges = new Map<string, string[]>();
         function addChange(dayKey: string, desc: string) {
           const list = dayChanges.get(dayKey) ?? [];
@@ -1746,71 +1750,11 @@ export function TimecardViewer({
           dayChanges.set(dayKey, list);
         }
 
-        for (const [key, payCodeId] of pendingPayCodes.entries()) {
-          if (key.startsWith("absent:")) {
-            const segmentDate = key.slice(7);
-            const oldSeg = timecard?.segments.find(
-              (s) =>
-                format(parseUtcDate(s.segmentDate), "yyyy-MM-dd") === segmentDate &&
-                s.segmentType === "LEAVE" &&
-                s.durationMinutes === 0
-            );
-            const oldLabel = oldSeg?.payCode?.label ?? "None";
-            const newLabel = payCodes.find((c) => c.id === payCodeId)?.label ?? (payCodeId ? "Unknown" : "Cleared");
-            addChange(segmentDate, `Pay code: ${oldLabel} → ${newLabel}`);
-          } else {
-            const seg = timecard?.segments.find((s) => s.id === key);
-            if (seg) {
-              const segDate = format(parseUtcDate(seg.segmentDate), "yyyy-MM-dd");
-              const oldLabel = seg.payCode?.label ?? "None";
-              const newLabel = payCodes.find((c) => c.id === payCodeId)?.label ?? (payCodeId ? "Unknown" : "Cleared");
-              addChange(segDate, `Pay code: ${oldLabel} → ${newLabel}`);
-            }
-          }
-        }
-
         for (const [segmentDate, reasonCodeId] of pendingReasonCodes.entries()) {
           const oldReason = timecard?.dayReasons.find((dr) => dr.segmentDate === segmentDate);
           const oldLabel = oldReason?.reasonCode.label ?? "None";
           const newLabel = reasonCodes.find((r) => r.id === reasonCodeId)?.label ?? (reasonCodeId ? "Unknown" : "Cleared");
           addChange(segmentDate, `Reason code: ${oldLabel} → ${newLabel}`);
-        }
-
-        for (const [punchId, newDate] of pendingPunchEdits.entries()) {
-          const punch = timecard?.punches.find((p) => p.id === punchId);
-          if (punch) {
-            const dayKey = format(atSite(punch.roundedTime), "yyyy-MM-dd");
-            const typeLabel = PUNCH_TYPE_LABEL[punch.punchType as PunchTypeValue] ?? punch.punchType;
-            const oldTime = format(atSite(punch.roundedTime), "h:mm a");
-            const newTime = format(newDate, "h:mm a");
-            addChange(dayKey, `${typeLabel} corrected: ${oldTime} → ${newTime}`);
-          }
-        }
-
-        for (const { dayKey, punchType, punchDate } of pendingNewPunches) {
-          const typeLabel = punchType === "CLOCK_IN" ? "Clock In" : "Clock Out";
-          addChange(dayKey, `${typeLabel} added: ${format(punchDate, "h:mm a")}`);
-        }
-
-        for (const segmentDate of pendingWaiverToggles) {
-          const hasWaiver = timecard?.mealWaivers.some((w) => w.segmentDate === segmentDate);
-          addChange(segmentDate, hasWaiver ? "Meal waiver removed" : "Meal waiver added");
-        }
-
-        for (const { dayKey, inTime, outTime } of pendingDeletions) {
-          const timeRange = [inTime, outTime].filter(Boolean).join(" – ");
-          addChange(dayKey, `Entry deleted${timeRange ? `: ${timeRange}` : ""}`);
-        }
-        for (const { dayKey, hours } of pendingHoursEntries) {
-          addChange(dayKey, `Manual hours added: ${hours}h`);
-        }
-        if (reason) {
-          const reasonDays = new Set<string>(pendingDeletions.map((d) => d.dayKey));
-          for (const punchId of pendingPunchEdits.keys()) {
-            const punch = timecard?.punches.find((p) => p.id === punchId);
-            if (punch) reasonDays.add(format(atSite(punch.roundedTime), "yyyy-MM-dd"));
-          }
-          for (const dayKey of reasonDays) addChange(dayKey, `Reason: ${reason}`);
         }
         // ─────────────────────────────────────────────────────────────
 
