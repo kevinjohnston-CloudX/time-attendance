@@ -5,7 +5,7 @@ import { siteLimit } from "@/lib/rbac/scope";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { userHasPermission, manageOrView } from "@/lib/rbac/check-permission";
-import { getEmployeeById } from "@/actions/admin.actions";
+import { ownCompany } from "@/lib/rbac/company";
 import { LeaveBalancesPanel } from "@/components/admin/leave-balances-panel";
 import { Card, LinkButton, PageHeader } from "@/components/ui";
 import { db } from "@/lib/db";
@@ -70,9 +70,16 @@ export default async function EmployeeAccrualsPage({
   const yearStart = new Date(`${year}-01-01T00:00:00Z`);
   const yearEnd   = new Date(`${year + 1}-01-01T00:00:00Z`);
 
-  const [empResult, leaveTypes, leaveBalanceRows, accrualSums, timecardDeductionEntries, approvedRequests, postedRequests, pastYearRows] =
+  const [employeeRow, leaveTypes, leaveBalanceRows, accrualSums, timecardDeductionEntries, approvedRequests, postedRequests, pastYearRows] =
     await Promise.all([
-      getEmployeeById({ employeeId: id }),
+      // Read here, inside the scope checked above, with only what this page
+      // shows. It went through the employee editor's lookup, which needs
+      // "manage employees": Employees and Supervisors, whose menu offers this
+      // page, got "Page not found" on their own accruals.
+      db.employee.findFirst({
+        where: { id, tenantId: ownCompany(session.user.tenantId) },
+        select: { id: true, employeeCode: true, wmsId: true, hireDate: true, payCategoryId: true, user: { select: { name: true } } },
+      }),
       // The employee's own company's leave types. Every company's were listed,
       // so a second company (CloudTime Demo, a copy of the first) showed each
       // leave type twice, the copy as "No policy" with nothing on it.
@@ -109,9 +116,9 @@ export default async function EmployeeAccrualsPage({
       }),
     ]);
 
-  if (!empResult.success) notFound();
+  if (!employeeRow) notFound();
 
-  const employee = empResult.data;
+  const employee = employeeRow;
 
   const timecardRequestIds = new Set(
     timecardDeductionEntries.map((e) => e.leaveRequestId).filter(Boolean)
