@@ -94,3 +94,19 @@ export async function generateTempPassword(): Promise<{
   const hash = await bcrypt.hash(plaintext, 12);
   return { plaintext, hash };
 }
+
+/**
+ * Whether a sync should clear a person's termination date: ADP has them
+ * active and the date is from a past employment (they are being reactivated,
+ * or the date has already passed). The time clock and the gate treat anyone
+ * with a past termination date as gone, so a rehire through ADP kept being
+ * refused. A date still ahead (a notice period) stays.
+ */
+export function clearsTerminationDate(
+  existing: { isActive: boolean; terminatedAt: Date | null },
+  adpActive: boolean,
+  now: Date = new Date(),
+): boolean {
+  if (!adpActive || !existing.terminatedAt) return false;
+  return !existing.isActive || existing.terminatedAt.getTime() < now.getTime();
+}

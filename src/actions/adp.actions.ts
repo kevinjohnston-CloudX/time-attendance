@@ -12,6 +12,7 @@ import { PAY_BUCKET_TO_ADP_CODE } from "@/lib/integrations/adp/types";
 import type { AdpEarningEntry } from "@/lib/integrations/adp/types";
 import {
   mapAdpWorker,
+  clearsTerminationDate,
   generateUsername,
   generateTempPassword,
 } from "@/lib/integrations/adp/mapper";
@@ -230,6 +231,11 @@ export const syncAdpEmployees = withRBAC(
               updates.terminatedAt = mapped.terminatedAt;
             }
           }
+          // Active in ADP: an old termination date goes, as a manual
+          // reactivation clears it (see clearsTerminationDate). The old date
+          // is kept in the audit history below.
+          const clearsTermination = clearsTerminationDate(existing, mapped.isActive);
+          if (clearsTermination) updates.terminatedAt = null;
 
           const hasChanges =
             Object.keys(updates).length > 0 ||
@@ -254,6 +260,23 @@ export const syncAdpEmployees = withRBAC(
                   ]
                 : []),
             ]);
+
+            if (clearsTermination) {
+              await writeAuditLog({
+                tenantId,
+                actorId,
+                entityType: "EMPLOYEE",
+                entityId: existing.id,
+                action: "EMPLOYEE_UPDATED",
+                changes: {
+                  fields: [
+                    ...(existing.isActive ? [] : [{ field: "Status", before: "Inactive", after: "Active" }]),
+                    { field: "Termination date", before: existing.terminatedAt!.toISOString().slice(0, 10), after: null },
+                  ],
+                  source: "ADP sync",
+                },
+              });
+            }
 
             const activeChange = activeChangeEvent(existing.isActive, typeof updates.isActive === "boolean" ? updates.isActive : existing.isActive);
             if (activeChange) webhookIds.push(...(await queueEmployeeEvent(tenantId, existing.id, activeChange)));
