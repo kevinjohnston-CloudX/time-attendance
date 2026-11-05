@@ -9,6 +9,7 @@ import {
   getExceptionPunches,
   resolveException,
 } from "@/actions/supervisor.actions";
+import { approveMissedPunch, rejectMissedPunch } from "@/actions/punch.actions";
 import { Badge, Button, Input, LinkButton, Select, Textarea } from "@/components/ui";
 import { formatTimeOfDay, fromSiteClock, toSiteClock } from "@/lib/utils/date";
 import { parseTimeOfDay, type Meridiem } from "@/lib/utils/time-of-day";
@@ -258,6 +259,27 @@ export function ExceptionCard({
     });
   }
 
+  /** The employee's own request, taken as asked or turned down. */
+  function decideRequest(approve: boolean) {
+    const ask = row.requested;
+    if (!ask) return;
+    startTransition(async () => {
+      setError(null);
+      const result = approve
+        ? await approveMissedPunch({ punchId: ask.punchId, exceptionId: row.id })
+        : await rejectMissedPunch({ punchId: ask.punchId });
+      if (!result.success) {
+        setError(result.error ?? "That did not save.");
+        return;
+      }
+      onDone(
+        approve
+          ? `Request approved and exception resolved for ${row.employeeName}`
+          : `Request rejected for ${row.employeeName}. The exception stays open.`,
+      );
+    });
+  }
+
   function saveNote() {
     if (!note.trim()) return;
     startTransition(async () => {
@@ -354,6 +376,15 @@ export function ExceptionCard({
         >
           {row.description}
         </span>
+        {row.requested && (
+          <p
+            className="tabular"
+            style={{ margin: "4px 0 0", font: "var(--type-body2)", color: "var(--text-secondary)" }}
+          >
+            Requested: {PUNCH_LABEL[row.requested.punchType] ?? row.requested.punchType} at{" "}
+            {formatTimeOfDay(row.requested.time)?.replace(/ (AM|PM)\b/, "\u00a0$1")}
+          </p>
+        )}
       </div>
 
       {/* The four facts, as a grid whose 1px gaps are the dividers. */}
@@ -401,8 +432,19 @@ export function ExceptionCard({
 
       {mode === null && (
         <div className={`${styles.cardActions} flex flex-wrap items-center gap-2 px-4 py-3`}>
+          {row.requested && (
+            <>
+              <Button size="sm" disabled={isPending} onClick={() => decideRequest(true)}>
+                Approve Request
+              </Button>
+              <Button hierarchy="secondary" size="sm" disabled={isPending} onClick={() => decideRequest(false)}>
+                Reject Request
+              </Button>
+            </>
+          )}
           <Button
             size="sm"
+            hierarchy={row.requested ? "secondary" : undefined}
             disabled={loadingPunches || (!addsPunches && !row.hasPunches)}
             onClick={openPunchForm}
           >

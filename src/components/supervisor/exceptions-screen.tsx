@@ -47,6 +47,8 @@ export type ExceptionRow = {
   hasPunches: boolean;
   scheduled: { start: string | null; end: string | null };
   recorded: { in: string | null; out: string | null };
+  /** The employee's own missed punch request for this day, waiting for a decision. */
+  requested: { punchId: string; punchType: string; time: string; note: string | null } | null;
 };
 
 export type Option = { id: string; name: string };

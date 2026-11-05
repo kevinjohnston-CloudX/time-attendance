@@ -49,6 +49,7 @@ const NAMED: Record<string, string> = {
   PUNCH_DELETED: "Punch deleted",
   MISSED_PUNCH_REQUESTED: "Missed punch requested",
   MISSED_PUNCH_APPROVED: "Missed punch approved",
+  MISSED_PUNCH_REJECTED: "Missed punch rejected",
   TIMESHEET_SUBMITTED: "Timesheet submitted",
   TIMESHEET_SUP_APPROVED: "Timesheet approved by supervisor",
   TIMESHEET_PAYROLL_APPROVED: "Timesheet approved by payroll",

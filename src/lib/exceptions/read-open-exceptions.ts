@@ -200,6 +200,38 @@ export async function readOpenExceptions({
     }
   }
 
+  /*
+   * The employee's own missed punch request behind a missing punch, if any:
+   * a punch they reported (manual, not yet approved or rejected, not a
+   * correction), on that sheet and day. The card offers to approve or reject
+   * it; nothing anywhere could, so requests sat "Pending" for good.
+   */
+  const requested = new Map<string, { punchId: string; punchType: PunchType; time: string; note: string | null }>();
+  const missingSheets = Array.from(new Set(rows.filter((r) => r.exceptionType === "MISSING_PUNCH").map((r) => r.timesheetId)));
+  if (missingSheets.length > 0) {
+    const zoneOf = new Map(rows.map((r) => [r.timesheetId, r.zone]));
+    const asks = await db.punch.findMany({
+      where: {
+        timesheetId: { in: missingSheets },
+        source: "MANUAL",
+        isApproved: false,
+        isRejected: false,
+        correctedById: null,
+        correctsId: null,
+        approvedById: null,
+      },
+      orderBy: { punchTime: "asc" },
+      select: { id: true, timesheetId: true, punchType: true, punchTime: true, note: true },
+    });
+    for (const a of asks) {
+      const zone = zoneOf.get(a.timesheetId!)!;
+      const key = `${a.timesheetId}|${siteDay(a.punchTime, zone)}`;
+      if (!requested.has(key)) {
+        requested.set(key, { punchId: a.id, punchType: a.punchType, time: format(toSiteClock(a.punchTime, zone), "HH:mm"), note: a.note });
+      }
+    }
+  }
+
   const shiftIds = Array.from(
     new Set(rows.map((r) => r.timesheet.employee.shiftId).filter((id): id is string => !!id)),
   );
@@ -222,6 +254,10 @@ export async function readOpenExceptions({
     recorded:
       recorded.get(`${ex.timesheetId}|${siteDay(ex.occurredAt, ex.zone)}`) ??
       { in: null, out: null },
+    requested:
+      ex.exceptionType === "MISSING_PUNCH"
+        ? requested.get(`${ex.timesheetId}|${siteDay(ex.occurredAt, ex.zone)}`) ?? null
+        : null,
     timesheet: {
       employeeId: timesheet.employeeId,
       employee:   timesheet.employee,

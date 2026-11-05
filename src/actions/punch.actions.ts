@@ -17,6 +17,7 @@ import {
   correctPunchSchema,
   deletePunchSchema,
   approveMissedPunchSchema,
+  rejectMissedPunchSchema,
   type RecordPunchInput,
   type RequestMissedPunchInput,
   type CorrectPunchInput,
@@ -67,8 +68,10 @@ export const requestMissedPunch = withRBAC(
       },
     });
 
-    const payPeriod = await findOpenPayPeriod(tenantId, employee.ruleSetId, { timezone: personTimeZone(employee) });
-    if (!payPeriod) throw new Error("No active pay period. Contact payroll.");
+    // The pay period of the day the punch was missed, not today's: a Monday
+    // report of last Friday's clock out belongs on last week's timecard.
+    const payPeriod = await findOpenPayPeriod(tenantId, employee.ruleSetId, { at: punchTime, timezone: personTimeZone(employee) });
+    if (!payPeriod) throw new Error("The pay period for that day is closed. Ask payroll to add the punch.");
 
     const timesheet = await findOrCreateTimesheet(employeeId, payPeriod.id);
 
@@ -126,9 +129,9 @@ export const requestMissedPunch = withRBAC(
 
 export const approveMissedPunch = withRBAC(
   "PUNCH_EDIT_TEAM",
-  async (ctx, input: { punchId: string }): Promise<Punch> => {
+  async (ctx, input: { punchId: string; exceptionId: string }): Promise<Punch> => {
     const { employeeId: supervisorId, tenantId } = ctx;
-    const { punchId } = approveMissedPunchSchema.parse(input);
+    const { punchId, exceptionId } = approveMissedPunchSchema.parse(input);
 
     // Only a punch of someone the caller manages, and never their own.
     const scoped = await punchInScope(ctx, punchId, "PUNCH_EDIT_ANY");
@@ -142,21 +145,38 @@ export const approveMissedPunch = withRBAC(
     }
 
     if (punch.isApproved) throw new Error("Punch is already approved.");
+    if (punch.isRejected || punch.correctedById || punch.source !== "MANUAL") {
+      throw new Error("This request was already handled. Reload the page to see where it stands.");
+    }
+
+    // On the timecard of the day it belongs to. Requests used to be filed on
+    // the current pay period whatever day they were for; one filed that way
+    // moves to its own period's timecard as it is approved.
+    const owner = await db.employee.findUniqueOrThrow({
+      where: { id: punch.employeeId },
+      select: { ruleSetId: true, timeZone: true, site: { select: { timezone: true } } },
+    });
+    const period = await findOpenPayPeriod(tenantId, owner.ruleSetId, { at: punch.punchTime, timezone: personTimeZone(owner) });
+    if (!period) throw new Error("The pay period for that day is closed. Ask payroll to add the punch.");
+    const home = await findOrCreateTimesheet(punch.employeeId, period.id);
+    assertEditable(home.status);
 
     const updated = await db.$transaction(async (tx) => {
       const p = await tx.punch.update({
         where: { id: punch.id },
         data: {
+          timesheetId: home.id,
           isApproved: true,
           approvedById: supervisorId,
           approvedAt: new Date(),
         },
       });
-      // Resolve the matching MISSING_PUNCH exception
+      // The exception this request answers, and no other: it used to resolve
+      // every open missing punch on the timecard.
       await tx.exception.updateMany({
         where: {
+          id: exceptionId,
           timesheetId: punch.timesheetId!,
-          exceptionType: "MISSING_PUNCH",
           resolvedAt: null,
         },
         data: {
@@ -180,11 +200,48 @@ export const approveMissedPunch = withRBAC(
       include: { employee: { include: { ruleSet: true } } },
     });
     await rebuildSegments(updated.timesheetId!, ts.employee.ruleSet);
+    if (punch.timesheetId && punch.timesheetId !== updated.timesheetId) {
+      await rebuildSegments(punch.timesheetId, ts.employee.ruleSet);
+    }
 
     revalidatePath("/time/history");
     revalidatePath("/supervisor/exceptions");
     revalidatePath(`/time/timesheet/${updated.timesheetId!}`);
     return updated;
+  }
+);
+
+// ─── rejectMissedPunch ────────────────────────────────────────────────────────
+
+/**
+ * Turns down an employee's missed punch request. The punch never counts and
+ * leaves their punch history; the exception stays open, so the supervisor can
+ * still add the right time or resolve it with a note.
+ */
+export const rejectMissedPunch = withRBAC(
+  "PUNCH_EDIT_TEAM",
+  async (ctx, input: { punchId: string }): Promise<void> => {
+    const { employeeId: supervisorId, tenantId } = ctx;
+    const { punchId } = rejectMissedPunchSchema.parse(input);
+
+    // Only a punch of someone the caller manages, and never their own.
+    const scoped = await punchInScope(ctx, punchId, "PUNCH_EDIT_ANY");
+    if (scoped.employeeId === supervisorId) throw new Error("You can't review your own punch");
+    const { count } = await db.punch.updateMany({
+      where: { id: scoped.id, source: "MANUAL", isApproved: false, isRejected: false, correctedById: null, correctsId: null },
+      data: { isRejected: true, rejectionReason: "Missed punch request rejected by supervisor" },
+    });
+    if (count === 0) throw new Error("This request was already handled. Reload the page to see where it stands.");
+    await writeAuditLog({
+      tenantId,
+      actorId: supervisorId,
+      action: "MISSED_PUNCH_REJECTED",
+      entityType: "PUNCH",
+      entityId: scoped.id,
+    });
+
+    revalidatePath("/time/history");
+    revalidatePath("/supervisor/exceptions");
   }
 );
 

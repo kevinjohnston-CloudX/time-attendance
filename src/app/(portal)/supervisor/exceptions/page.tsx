@@ -166,6 +166,7 @@ export default async function ExceptionsPage({
     hasPunches: ex.timesheet.hasPunches,
     scheduled: ex.scheduled,
     recorded: ex.recorded,
+    requested: ex.requested,
   }));
 
   return (

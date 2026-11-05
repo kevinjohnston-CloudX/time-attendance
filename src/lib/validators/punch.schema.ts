@@ -36,6 +36,12 @@ export const deletePunchSchema = z.object({
 
 export const approveMissedPunchSchema = z.object({
   punchId: z.string().cuid(),
+  /** The exception the request answers: it alone is resolved. */
+  exceptionId: z.string().min(1),
+});
+
+export const rejectMissedPunchSchema = z.object({
+  punchId: z.string().cuid(),
 });
 
 export const timeclockScanSchema = z.object({
