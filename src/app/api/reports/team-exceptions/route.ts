@@ -3,7 +3,8 @@ import { csvCell } from "@/lib/csv-cell";
 import { format } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
 import { getTeamExceptions } from "@/actions/supervisor.actions";
-import { formatTimeOfDay } from "@/lib/utils/date";
+import { formatTimeOfDay, toSiteClock } from "@/lib/utils/date";
+import { periodLastDay } from "@/lib/pay-period-display";
 import { recordDownload } from "@/lib/audit/downloads";
 
 /**
@@ -92,7 +93,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         emp.site?.name ?? "",
         emp.department?.name ?? "",
         EXCEPTION_LABEL[ex.exceptionType] ?? ex.exceptionType,
-        format(ex.occurredAt, "yyyy-MM-dd"),
+        format(toSiteClock(ex.occurredAt, ex.zone), "yyyy-MM-dd"),
         // On a 12 hour clock, like every screen. A spreadsheet is read by
         // the same people.
         formatTimeOfDay(ex.scheduled.start) ?? "",
@@ -100,7 +101,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         formatTimeOfDay(ex.recorded.in) ?? "",
         formatTimeOfDay(ex.recorded.out) ?? "",
         format(parseUtcDate(ex.timesheet.payPeriod.startDate), "yyyy-MM-dd"),
-        format(parseUtcDate(ex.timesheet.payPeriod.endDate), "yyyy-MM-dd"),
+        // The last day, as every screen shows it; the stored end is the next period's first day.
+        format(periodLastDay(ex.timesheet.payPeriod.endDate, ex.timesheet.payPeriod.ruleSet?.payFrequency ?? ex.timesheet.payPeriod.tenant.payFrequency), "yyyy-MM-dd"),
         ex.description,
       ]
         .map(csvCell)

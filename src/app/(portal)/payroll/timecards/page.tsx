@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+import type { PayFrequency } from "@prisma/client";
+import { periodLastDay } from "@/lib/pay-period-display";
 import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
@@ -37,6 +39,11 @@ import { ownCompany } from "@/lib/rbac/company";
  * because they sit on the same state as the employee picker, and splitting a
  * toolbar from the list it filters is how the two drift apart.
  */
+/** A calendar day (as the display helpers hold it) as the UTC midnight dates are stored at. */
+function utcDay(d: Date): Date {
+  return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+}
+
 export default async function TimecardsPage({
   searchParams,
 }: {
@@ -235,7 +242,10 @@ export default async function TimecardsPage({
   // The pay rate in effect during this period, from the pay rate history.
   const periodRateRow = timecard
     ? await db.employeePayRate.findFirst({
-        where: { employeeId: timecard.employeeId, effectiveDate: { lt: timecard.payPeriod.endDate } },
+        // In effect on the period's last day. The stored end is the next
+        // period's first day (at 5 PM UTC), so a rate starting that day used
+        // to be read as this period's.
+        where: { employeeId: timecard.employeeId, effectiveDate: { lte: utcDay(periodLastDay(timecard.payPeriod.endDate, payFrequency as PayFrequency)) } },
         orderBy: { effectiveDate: "desc" },
         select: { rate1: true },
       })

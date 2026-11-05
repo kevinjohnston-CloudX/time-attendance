@@ -9,7 +9,7 @@ import { assertMissedPunchFix, fixesMissedPunchesOnly } from "@/lib/timecards/mi
 import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
-import { computeRoundedTime, MAX_OVERNIGHT_MS, snapToLocalTime } from "@/lib/utils/date";
+import { computeRoundedTime, MAX_OVERNIGHT_MS, snapToLocalTime, toSiteClock } from "@/lib/utils/date";
 import {
   manualPunchPairSchema,
   singleManualPunchSchema,
@@ -332,8 +332,11 @@ async function saveManualPunches(
     if (punchType === "CLOCK_IN" && fixOnly) {
       inheritedPayCodeId = ruleSet.defaultPayCodeId ?? null;
     } else if (punchType === "CLOCK_IN") {
-      const dayStart = new Date(Date.UTC(punchDate.getUTCFullYear(), punchDate.getUTCMonth(), punchDate.getUTCDate()));
-      const dayEnd = new Date(Date.UTC(punchDate.getUTCFullYear(), punchDate.getUTCMonth(), punchDate.getUTCDate() + 1));
+      // The employee's own day, not the UTC one: a clock in typed after 7 or
+      // 8 PM Eastern took the next day's pay code marker.
+      const local = toSiteClock(punchDate, personTimeZone(ts.employee, "UTC"));
+      const dayStart = new Date(Date.UTC(local.getFullYear(), local.getMonth(), local.getDate()));
+      const dayEnd = new Date(Date.UTC(local.getFullYear(), local.getMonth(), local.getDate() + 1));
       const absentMarker = await db.workSegment.findFirst({
         where: {
           timesheetId,
