@@ -16,6 +16,7 @@ export const LEGACY_MAP: Record<string, PermissionTuple> = {
   PUNCH_VIEW_TEAM:        { resource: "punch",     action: "read",    scope: "team" },
   PUNCH_EDIT_TEAM:        { resource: "punch",     action: "write",   scope: "team" },
   PUNCH_EDIT_ANY:         { resource: "punch",     action: "write",   scope: "all" },
+  PUNCH_FIX_MISSED_TEAM:  { resource: "punch",     action: "execute", scope: "team" },
   // Timesheet
   TIMESHEET_SUBMIT_OWN:   { resource: "timesheet", action: "write",   scope: "own" },
   TIMESHEET_APPROVE_TEAM: { resource: "timesheet", action: "execute", scope: "team" },

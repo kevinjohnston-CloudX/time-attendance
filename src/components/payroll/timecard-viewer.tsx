@@ -269,6 +269,12 @@ interface TimecardViewerProps {
   selectedDepartmentId: string | null;
   userRole: string;
   readOnly?: boolean;
+  /**
+   * May fix missed punches and nothing else (PUNCH_FIX_MISSED_TEAM): the
+   * Missing cells take the missing clock in or out; every other control stays
+   * read only, and the server holds the same line (lib/timecards/missed-punch-fix).
+   */
+  missedPunchesOnly?: boolean;
   /** May lock and unlock a single timecard (pay period managers). */
   canLockTimecards?: boolean;
   /** The line under the page title, after the pay frequency: the headcount. */
@@ -782,6 +788,7 @@ export function TimecardViewer({
   selectedDepartmentId,
   userRole,
   readOnly = false,
+  missedPunchesOnly = false,
   canLockTimecards = false,
   subtitle,
   headerActions,
@@ -1092,9 +1099,13 @@ export function TimecardViewer({
   // An inactive employee's timecards are closed to changes, and none is made
   // for them; the server refuses either way (inactive-timecards).
   const selectedInactive = employees.find((e) => e.employeeId === selectedEmployeeId)?.isActive === false;
-  const canEdit = !readOnly && !selectedInactive && (timecard
+  const canChange = !readOnly && !selectedInactive && (timecard
     ? (timecard.status !== "LOCKED" && timecard.status !== "PAYROLL_APPROVED")
     : (!!selectedEmployeeId && !!selectedPeriodId));
+  // Every change on the timecard, or, for a supervisor allowed only that,
+  // the missing clock in or out on a day marked Missed punch.
+  const canEdit = canChange && !missedPunchesOnly;
+  const canFixMissed = canChange && !!timecard;
 
   const canDeleteManual =
     !!canEdit &&
@@ -1386,7 +1397,7 @@ export function TimecardViewer({
   }
 
   function startAddingPunch(dayKey: string, pairIndex: number, punchType: "CLOCK_IN" | "CLOCK_OUT", day: Date, pairedTime: Date | null = null) {
-    if (!canEdit) return;
+    if (!canEdit && !canFixMissed) return;
     setAddingPunch({ dayKey, pairIndex, punchType, pairedTime });
     setEditingPunchId(null);
     setEditTimeStr("");
@@ -1670,7 +1681,7 @@ export function TimecardViewer({
    * does closing or reloading the tab. The browser's own Back button is the
    * one way out this cannot stop.
    */
-  const dirty = !!canEdit && hasPendingChanges;
+  const dirty = (!!canEdit || !!canFixMissed) && hasPendingChanges;
   const [leaveTo, setLeaveTo] = useState<(() => void) | null>(null);
   const dirtyRef = useRef(dirty);
   const leavingRef = useRef(false);
@@ -2502,11 +2513,15 @@ export function TimecardViewer({
                     )}
                     {/* Said beside the status rather than in a line over the
                         grid: it is a fact about this timecard, like its status. */}
-                    {!canEdit && (
+                    {!canEdit && (canFixMissed ? (
+                      <span title="You can add the missing clock in or clock out on a day marked Missed punch. HR and payroll make every other change.">
+                        <Badge>Missed punches only</Badge>
+                      </span>
+                    ) : (
                       <span title="These hours cannot be changed from here.">
                         <Badge>Read only</Badge>
                       </span>
-                    )}
+                    ))}
                   </div>
                   <p className="m-0 flex flex-wrap items-center gap-x-1.5" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
                     <span>{displayCode}</span>
@@ -2623,6 +2638,7 @@ export function TimecardViewer({
                       {timecard && <RecalculateButton timesheetId={timecard.timesheetId} />}
                     </>
                   )}
+                  {!canEdit && canFixMissed && timecard && <RecalculateButton timesheetId={timecard.timesheetId} />}
                 </div>
               </div>
                 );
@@ -2941,7 +2957,7 @@ export function TimecardViewer({
                                     <button type="button" onClick={() => setPendingNewPunches((prev) => prev.filter((p) => !(p.dayKey === dayKey && p.pairIndex === 0 && p.punchType === "CLOCK_IN")))} className="rounded bg-transparent p-0.5 ta-hoverable" style={{ border: 0, cursor: "pointer", color: "var(--icon-error)" }} title="Remove pending"><X className="h-2.5 w-2.5" /></button>
                                   </div>
                                 );
-                                return hasMissingPunch && canEdit ? (
+                                return hasMissingPunch && (canEdit || canFixMissed) ? (
                                   <button
                                     type="button"
                                     onClick={() => startAddingPunch(dayKey, 0, "CLOCK_IN", day, lastOut ? atSite(lastOut.roundedTime) : null)}
@@ -3008,7 +3024,7 @@ export function TimecardViewer({
                                     <button type="button" onClick={() => setPendingNewPunches((prev) => prev.filter((p) => !(p.dayKey === dayKey && p.pairIndex === 0 && p.punchType === "CLOCK_OUT")))} className="rounded bg-transparent p-0.5 ta-hoverable" style={{ border: 0, cursor: "pointer", color: "var(--icon-error)" }} title="Remove pending"><X className="h-2.5 w-2.5" /></button>
                                   </div>
                                 );
-                                return hasMissingPunch && canEdit ? (
+                                return hasMissingPunch && (canEdit || canFixMissed) ? (
                                   <button
                                     type="button"
                                     onClick={() => startAddingPunch(dayKey, 0, "CLOCK_OUT", day, firstIn ? atSite(firstIn.roundedTime) : null)}
@@ -3590,7 +3606,7 @@ export function TimecardViewer({
                                     // A later pair left open reads as missing too, as the
                                     // first pair does, and adding it starts from that pair's in.
                                     if (hasMissingPunch) {
-                                      return canEdit ? (
+                                      return canEdit || canFixMissed ? (
                                         <button
                                           type="button"
                                           onClick={() => startAddingPunch(dayKey, pairIdx, "CLOCK_OUT", day, pairIn ? atSite(pairIn.roundedTime) : null)}
@@ -4219,7 +4235,7 @@ export function TimecardViewer({
                   Edits in the grid are queued, not written, so the way to
                   write them sits where the eye ends up after making one, and
                   says how many are waiting. */}
-              {canEdit && hasPendingChanges && (
+              {(canEdit || canFixMissed) && hasPendingChanges && (
                 <div
                   className={`${grid.saveBar} flex shrink-0 flex-wrap items-center gap-3 px-5 py-3`}
                   style={{ borderTop: "1px solid var(--stroke-warning)", background: "var(--surface-warning)" }}

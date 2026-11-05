@@ -4,7 +4,7 @@ import { assertActiveForChange, assertEditable, timesheetInScope } from "@/lib/r
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
-import { TIMECARD_EDITORS, TIMECARD_EDITORS_COMPANY } from "@/lib/rbac/permissions";
+import { MISSED_PUNCH_FIXERS, TIMECARD_EDITORS, TIMECARD_EDITORS_COMPANY } from "@/lib/rbac/permissions";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { timesheetIdSchema, type TimesheetIdInput } from "@/lib/validators/timesheet.schema";
@@ -35,7 +35,9 @@ export const recalculateSegments = withRBAC(
 // ─── recalculateSegmentsAdmin ─────────────────────────────────────────────────
 
 export const recalculateSegmentsAdmin = withRBAC(
-  TIMECARD_EDITORS,
+  // Working the hours out again changes no entry, so a supervisor allowed
+  // only to fix missed punches may too.
+  MISSED_PUNCH_FIXERS,
   async (ctx, input: TimesheetIdInput): Promise<void> => {
     const { timesheetId } = timesheetIdSchema.parse(input);
     await timesheetInScope(ctx, timesheetId, TIMECARD_EDITORS_COMPANY);
