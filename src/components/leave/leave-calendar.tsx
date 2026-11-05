@@ -4,8 +4,9 @@ import { useState } from "react";
 import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek,
   eachDayOfInterval, isSameMonth, isToday, format, parseISO,
-  addMonths, subMonths, isWithinInterval, startOfDay, endOfDay,
+  addMonths, subMonths,
 } from "date-fns";
+import { leaveDayKeys } from "@/lib/leave-days";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { leaveTone, type BadgeTone } from "@/components/ui";
 import { LEAVE_STATUS_LABEL, type LeaveRequestStatusValue } from "@/lib/state-machines/labels";
@@ -82,6 +83,7 @@ type LeaveRequest = {
   endDate: string | Date;
   leaveType: { name: string };
   durationMinutes: number;
+  selectedDays?: unknown;
 };
 
 export function LeaveCalendar({ requests, className }: { requests: LeaveRequest[]; className?: string }) {
@@ -102,9 +104,7 @@ export function LeaveCalendar({ requests, className }: { requests: LeaveRequest[
   function requestForDay(day: Date): LeaveRequest | null {
     const matching = requests.filter((req) => {
       if (req.status === "CANCELLED") return false;
-      const s = startOfDay(parseLeaveDate(req.startDate as string));
-      const e = endOfDay(parseLeaveDate(req.endDate as string));
-      return isWithinInterval(day, { start: s, end: e });
+      return leaveDayKeys(req).includes(format(day, "yyyy-MM-dd"));
     });
     if (matching.length === 0) return null;
     return matching.sort(

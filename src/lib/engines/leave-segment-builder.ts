@@ -10,6 +10,7 @@ import { db } from "@/lib/db";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
 import { assertActiveForChange } from "@/lib/inactive-timecards";
 import { periodDayRange } from "@/lib/pay-period-days";
+import { daySeconds } from "@/lib/leave-days";
 import type { LeaveCategory, PayBucket } from "@prisma/client";
 import type { TxClient } from "@/types/prisma";
 
@@ -208,12 +209,11 @@ export async function syncLeaveSegments(
     ];
 
     // 4. Build a map of date → timesheetId (finding or creating timesheets)
-    const leaveDays = eachDayOfInterval({
-      start: toLocalDay(request.startDate),
-      end: toLocalDay(request.endDate),
-    });
-    // In seconds, as leave is kept (lib/leave-time): a 0.56 hour line is 0.56.
-    const secondsPerDay = Math.round(request.durationSeconds / leaveDays.length);
+    // The days the person picked, each with its own hours. A request with no
+    // list of days (imported ones) is spread evenly over its first to last day.
+    const secondsByDay = daySeconds(request.selectedDays, request.durationSeconds, leaveFirst, leaveLast)
+      ?? evenSpread(request.durationSeconds, request.startDate, request.endDate);
+    const leaveDays = [...secondsByDay.keys()].map((d) => parseISO(d));
     const bucket = CATEGORY_TO_BUCKET[request.leaveType.category];
 
     const timesheetsByDate = new Map<string, string>();
@@ -225,7 +225,7 @@ export async function syncLeaveSegments(
       const overlapDays = overlapStart > overlapEnd
         ? []
         : eachDayOfInterval({ start: overlapStart, end: overlapEnd })
-            .filter((day) => !timesheetsByDate.has(format(day, "yyyy-MM-dd")));
+            .filter((day) => secondsByDay.has(format(day, "yyyy-MM-dd")) && !timesheetsByDate.has(format(day, "yyyy-MM-dd")));
 
       if (overlapDays.length === 0) continue;
 
@@ -245,6 +245,8 @@ export async function syncLeaveSegments(
       .filter((day) => timesheetsByDate.has(format(day, "yyyy-MM-dd")))
       .map((day) => {
         const dayStart = startOfDay(day);
+        // In seconds, as leave is kept (lib/leave-time): a 0.56 hour line is 0.56.
+        const secondsPerDay = secondsByDay.get(format(day, "yyyy-MM-dd"))!;
         // Nominal 09:00-17:00 for display purposes
         const start = new Date(dayStart.getTime() + 9 * 60 * 60_000);
         const end = new Date(start.getTime() + secondsPerDay * 1000);
@@ -280,6 +282,13 @@ export async function syncLeaveSegments(
   };
   if (outer) return run(outer);
   await db.$transaction(run);
+}
+
+/** Every calendar day from first to last, sharing the total evenly. */
+function evenSpread(totalSeconds: number, startDate: Date, endDate: Date): Map<string, number> {
+  const days = eachDayOfInterval({ start: toLocalDay(startDate), end: toLocalDay(endDate) });
+  const each = Math.round(totalSeconds / days.length);
+  return new Map(days.map((d) => [format(d, "yyyy-MM-dd"), each]));
 }
 
 /**

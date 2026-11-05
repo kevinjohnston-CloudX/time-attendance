@@ -15,6 +15,7 @@ import {
   startOfWeek,
   subMonths,
 } from "date-fns";
+import { leaveDayKeys } from "@/lib/leave-days";
 import { AlertTriangle, CalendarOff, CheckCircle2, ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 import {
   Badge,
@@ -66,6 +67,8 @@ interface LeaveRequestRow {
   startDate: Date | string;
   endDate: Date | string;
   durationMinutes: number;
+  /** The days picked, as the request form saved them. */
+  selectedDays?: unknown;
   status: string;
   note: string | null;
   submittedAt: Date | string | null;
@@ -466,9 +469,7 @@ export function LeaveTabs({
   };
   const approvedMap = new Map<string, Entry[]>();
   for (const req of upcoming) {
-    const days = eachDayOfInterval({ start: parseLeaveDate(req.startDate), end: parseLeaveDate(req.endDate) });
-    for (const day of days) {
-      const key = format(day, "yyyy-MM-dd");
+    for (const key of leaveDayKeys(req)) {
       if (!approvedMap.has(key)) approvedMap.set(key, []);
       approvedMap.get(key)!.push({
         name: req.employee.user?.name ?? "Unknown",
@@ -481,9 +482,7 @@ export function LeaveTabs({
 
   const pendingMap = new Map<string, Entry[]>();
   for (const req of pending) {
-    const days = eachDayOfInterval({ start: parseLeaveDate(req.startDate), end: parseLeaveDate(req.endDate) });
-    for (const day of days) {
-      const key = format(day, "yyyy-MM-dd");
+    for (const key of leaveDayKeys(req)) {
       if (!pendingMap.has(key)) pendingMap.set(key, []);
       pendingMap.get(key)!.push({
         name: req.employee.user?.name ?? "Unknown",
@@ -505,9 +504,8 @@ export function LeaveTabs({
   const conflictNames = new Map<string, string[]>();
   for (const req of pending) {
     const names = new Set<string>();
-    const days = eachDayOfInterval({ start: parseLeaveDate(req.startDate), end: parseLeaveDate(req.endDate) });
-    for (const day of days) {
-      for (const a of approvedMap.get(format(day, "yyyy-MM-dd")) ?? []) {
+    for (const key of leaveDayKeys(req)) {
+      for (const a of approvedMap.get(key) ?? []) {
         if (a.employeeId !== req.employeeId) names.add(a.name);
       }
     }
@@ -1581,7 +1579,7 @@ function RequestCard({
 }) {
   const start = parseLeaveDate(req.startDate);
   const end = parseLeaveDate(req.endDate);
-  const days = differenceInCalendarDays(end, start) + 1;
+  const days = leaveDayKeys(req).length;
   const status = req.status as LeaveRequestStatusValue;
   const clashes = conflictWith ?? [];
   const name = req.employee.user?.name ?? `Employee ${req.employeeId}`;

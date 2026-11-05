@@ -104,6 +104,7 @@ export default async function MyLeavePage() {
     endDate:   (r.endDate   instanceof Date ? r.endDate.toISOString()   : String(r.endDate)).slice(0, 10),
     leaveType: { name: r.leaveType.name },
     durationMinutes: r.durationMinutes,
+    selectedDays: r.selectedDays,
   }));
 
   return (

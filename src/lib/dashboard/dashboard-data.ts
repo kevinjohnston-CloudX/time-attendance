@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { leaveDayKeys } from "@/lib/leave-days";
 import { parseUtcDate, startOfDayInTz, toSiteClock } from "@/lib/utils/date";
 import type { BadgeTone } from "@/components/ui";
 import { directReportsOf } from "@/lib/get-subordinate-ids";
@@ -354,6 +355,7 @@ export async function getUpcoming(
             endDate: true,
             status: true,
             durationMinutes: true,
+            selectedDays: true,
             leaveType: { select: { name: true } },
           },
         })
@@ -383,7 +385,7 @@ export async function getUpcoming(
     const span =
       parseUtcDate(l.startDate).getTime() === parseUtcDate(l.endDate).getTime()
         ? `${l.leaveType.name} (${days}h)`
-        : `${l.leaveType.name}, ${Math.round((parseUtcDate(l.endDate).getTime() - parseUtcDate(l.startDate).getTime()) / 86_400_000) + 1} days (${days}h)`;
+        : `${l.leaveType.name}, ${leaveDayKeys(l).length} days (${days}h)`;
     rows.push({
       key: l.id,
       date: parseUtcDate(l.startDate),
