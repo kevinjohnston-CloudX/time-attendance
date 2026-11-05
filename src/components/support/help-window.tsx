@@ -245,7 +245,7 @@ export function HelpWindow({ onClose, photo = null }: { onClose: () => void; pho
       return false;
     }
     if (overBudget) {
-      setFailure("Attachments exceed 9 MB. Remove a file and try again.");
+      setFailure("Attachments exceed 4 MB. Remove a file and try again.");
       return false;
     }
     return true;
@@ -300,7 +300,7 @@ export function HelpWindow({ onClose, photo = null }: { onClose: () => void; pho
   const hint = sent
     ? ""
     : overBudget
-      ? `Attachments exceed 9 MB (${formatBytes(filesSize + bodySize)}). Remove a file or screenshot.`
+      ? `Attachments exceed 4 MB (${formatBytes(filesSize + bodySize)}). Remove a file or screenshot.`
       : "Paste screenshots into Details, or drag files into this window.";
 
   return (
@@ -421,7 +421,7 @@ export function HelpWindow({ onClose, photo = null }: { onClose: () => void; pho
                   setFieldError((prev) => (prev?.field === "details" ? null : prev));
                 }}
                 onNonImageFiles={addFiles}
-                onTooBig={() => setFailure("This image would exceed the 9 MB limit. Attach a smaller one.")}
+                onTooBig={() => setFailure("This image would exceed the 4 MB limit. Attach a smaller one.")}
                 budgetLeft={() => SUPPORT_LIMITS.totalBytes - filesSizeRef.current}
               />
               {fieldError?.field === "details" && (

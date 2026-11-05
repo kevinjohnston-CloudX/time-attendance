@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Upload, X, Search } from "lucide-react";
 import { uploadDocument } from "@/actions/document.actions";
+import { MAX_FILE_SIZE_BYTES } from "@/lib/validators/document.schema";
 import { Banner, Button, Input } from "@/components/ui";
 import styles from "./documents.module.css";
 import { Overlay } from "@/components/ui/overlay";
@@ -104,6 +105,9 @@ export function UploadDocumentForm({ employees }: Props) {
     e.preventDefault();
     if (!selectedEmployee) { setError("Please select an employee."); return; }
     if (!file) { setError("Please select a file."); return; }
+    // Checked here too: a file over the limit never reaches the server, which
+    // refuses the whole request, so it can only be answered from here.
+    if (file.size > MAX_FILE_SIZE_BYTES) { setError("That file is over the 4 MB limit. Choose a smaller one."); return; }
     setError(null);
 
     const fd = new FormData();
@@ -112,7 +116,9 @@ export function UploadDocumentForm({ employees }: Props) {
     fd.append("title", title);
 
     startTransition(async () => {
-      const res = await uploadDocument(fd);
+      // A request the server refused outright (too large, connection lost)
+      // used to drop the page to the error screen.
+      const res = await uploadDocument(fd).catch(() => ({ success: false as const, error: "The upload did not go through. Check the file and try again." }));
       if (res.success) {
         // Clear first, then raise the flag: reset() switches `success` off, so
         // the old order set it and immediately unset it in the same batch and
@@ -255,7 +261,7 @@ export function UploadDocumentForm({ employees }: Props) {
                   style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}
                 />
                 <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
-                  PDF, JPG, PNG or Word, up to 10 MB.
+                  PDF, JPG, PNG or Word, up to 4 MB.
                 </span>
               </div>
 

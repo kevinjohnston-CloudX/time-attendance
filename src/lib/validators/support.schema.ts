@@ -6,9 +6,10 @@ import { z } from "zod";
  * from the database (see support.actions.ts).
  */
 
-/** Files and pasted screenshots together stay under the 10 MB a server action
- *  takes, with room for the rest of the request. */
-export const SUPPORT_LIMITS = { files: 10, totalBytes: 9 * 1024 * 1024 } as const;
+/** Files and pasted screenshots together stay under 4 MB: the live site runs
+ *  on Vercel, which refuses any request over 4.5 MB, and the rest of the
+ *  request needs room too. */
+export const SUPPORT_LIMITS = { files: 10, totalBytes: 4 * 1024 * 1024 } as const;
 
 export const SUPPORT_TYPES = ["system_issue", "suggestion", "question"] as const;
 export const SUPPORT_IMPACTS = ["idea", "workable", "blocking"] as const;

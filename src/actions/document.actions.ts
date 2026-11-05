@@ -63,7 +63,7 @@ export async function uploadDocument(
     if (!isAllowedMime(file.type))
       return { success: false, error: "File type not allowed. Use PDF, JPG, PNG, DOC, or DOCX." };
     if (file.size > MAX_FILE_SIZE_BYTES)
-      return { success: false, error: "That file is over the 10 MB limit. Choose a smaller one." };
+      return { success: false, error: "That file is over the 4 MB limit. Choose a smaller one." };
 
     // Tenant-scope guard: verify the employee belongs to this tenant
     const employee = await db.employee.findUnique({

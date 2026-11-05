@@ -21,7 +21,12 @@ export const ALLOWED_MIME_TYPES = [
 
 export type AllowedMimeType = (typeof ALLOWED_MIME_TYPES)[number];
 
-export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+/**
+ * 4 MB. The live site runs on Vercel, which refuses any request over 4.5 MB
+ * before CloudTime sees it, so the 10 MB this used to allow failed on the
+ * live site for anything over 4.5 MB.
+ */
+export const MAX_FILE_SIZE_BYTES = 4 * 1024 * 1024;
 
 const MIME_TO_EXT: Record<AllowedMimeType, string> = {
   "application/pdf": "pdf",

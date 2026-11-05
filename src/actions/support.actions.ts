@@ -122,7 +122,7 @@ export async function sendSupportRequest(
   if (files.length > SUPPORT_LIMITS.files) return { success: false, error: `Attach at most ${SUPPORT_LIMITS.files} files.` };
   const total = files.reduce((n, f) => n + f.size, 0) + input.html.length;
   if (total > SUPPORT_LIMITS.totalBytes) {
-    return { success: false, error: "The files and screenshots are over 9 MB together. Remove some and try again." };
+    return { success: false, error: "The files and screenshots are over 4 MB together. Remove some and try again." };
   }
 
   const who = await whoIsAsking(session.user.id, session.user.tenantId ?? null);
