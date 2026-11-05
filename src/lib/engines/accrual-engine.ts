@@ -685,6 +685,18 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
   const alreadyResetThisYear = new Set(
     yearResets.map((r) => `${r.employeeId}:${r.leaveTypeId}`)
   );
+  // Carry overs already made into this year (CARRY_OVER, dated in the year).
+  const yearCarries = await db.leaveAccrualLedger.findMany({
+    where: {
+      action: "CARRY_OVER",
+      payPeriodEnd: { gte: yearStart, lt: yearEnd },
+      employeeId: { in: employeeIds },
+    },
+    select: { employeeId: true, leaveTypeId: true },
+  });
+  const carriedThisYear = new Set(
+    yearCarries.map((r) => `${r.employeeId}:${r.leaveTypeId}`)
+  );
 
   // Build lookup maps
   const ruleMap = new Map<string, typeof rules>();
@@ -808,37 +820,39 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
 
       const rateMode: AccrualRateMode = pConfig.rateMode ?? "YEARLY";
 
-      // Carry-over: if this is the first accrual of the year, seed opening balance.
-      // Skipped on reset days — balance resets to 0 so carry-over is irrelevant.
+      // The year is opened once per person and leave type: by its reset, its
+      // carry over or its first accrual. It used to be "this year's row does
+      // not exist yet", but approving leave dated next year creates that row
+      // early, and then the carry over never came. Last year's balance is
+      // read only for a year not yet opened.
       const balanceKey = { employeeId: employee.id, leaveTypeId: leaveType.id, accrualYear };
-      const existingThisYear = await db.leaveBalance.findUnique({
-        where: { employeeId_leaveTypeId_accrualYear: balanceKey },
-        select: { id: true },
-      });
-
-      let openingCarryOver = 0;
-      if (!existingThisYear && rule && !isResetDay) {
-        const prevYear = await db.leaveBalance.findUnique({
-          where: {
-            employeeId_leaveTypeId_accrualYear: {
-              employeeId: employee.id,
-              leaveTypeId: leaveType.id,
-              accrualYear: accrualYear - 1,
+      const pairKey = `${employee.id}:${leaveType.id}`;
+      const yearOpened = alreadyResetThisYear.has(pairKey) || carriedThisYear.has(pairKey) || accrualSumMap.has(pairKey);
+      const prevYearSeconds = yearOpened
+        ? 0
+        : (await db.leaveBalance.findUnique({
+            where: {
+              employeeId_leaveTypeId_accrualYear: {
+                employeeId: employee.id,
+                leaveTypeId: leaveType.id,
+                accrualYear: accrualYear - 1,
+              },
             },
-          },
-          select: { balanceSeconds: true },
-        });
-        if (prevYear && prevYear.balanceSeconds > 0 && pConfig?.carryOverEnabled !== false) {
-          const capSeconds = rule.carryOverHours != null ? hoursToSeconds(rule.carryOverHours) : null;
-          openingCarryOver = capSeconds != null
-            ? Math.min(prevYear.balanceSeconds, capSeconds)
-            : prevYear.balanceSeconds;
-        }
+            select: { balanceSeconds: true },
+          }))?.balanceSeconds ?? 0;
+
+      // Carry-over on the year's first accrual. On a reset day the reset below
+      // makes it instead.
+      let openingCarryOver = 0;
+      if (!yearOpened && rule && !isResetDay && prevYearSeconds > 0 && pConfig?.carryOverEnabled !== false) {
+        const capSeconds = rule.carryOverHours != null ? hoursToSeconds(rule.carryOverHours) : null;
+        openingCarryOver = capSeconds != null ? Math.min(prevYearSeconds, capSeconds) : prevYearSeconds;
       }
 
+      // Added to whatever the row already holds (leave approved ahead of the year).
       const existing = await db.leaveBalance.upsert({
         where: { employeeId_leaveTypeId_accrualYear: balanceKey },
-        update: {},
+        update: openingCarryOver > 0 ? { balanceSeconds: { increment: openingCarryOver } } : {},
         create: {
           employeeId: employee.id,
           leaveTypeId: leaveType.id,
@@ -848,16 +862,18 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
         },
       });
 
-      if (!existingThisYear && openingCarryOver > 0) {
+      if (openingCarryOver > 0) {
         await db.leaveAccrualLedger.create({
           data: {
             employeeId: employee.id,
             leaveTypeId: leaveType.id,
-            action: "ADJUSTMENT",
+            action: "CARRY_OVER",
             deltaSeconds: openingCarryOver,
-            balanceAfterSeconds: openingCarryOver,
+            balanceAfterSeconds: existing.balanceSeconds,
+            payPeriodEnd: postingDate,
           },
         });
+        carriedThisYear.add(pairKey);
       }
 
       // Balance reset: zero the balance, then restore carry-over up to the policy limit.
@@ -866,20 +882,28 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
       const resetKey = `${employee.id}:${leaveType.id}`;
       let balanceAfterReset = existing.balanceSeconds;
       if (isResetDay && !alreadyResetThisYear.has(resetKey)) {
+        // A reset that opens the year (January 1) resets last year's balance:
+        // this year's row was only just opened, and resetting it carried over
+        // nothing, so every carried hour was lost on New Year's Day. Last
+        // year's row is left as it was, for the record; whatever this year's
+        // row already holds (leave approved ahead) stays and the carry adds
+        // to it. A reset later in the year resets this year's row, as before.
+        const startsYear = !yearOpened;
+        const sourceSeconds = startsYear ? prevYearSeconds : existing.balanceSeconds;
         const coSeconds = rule?.carryOverHours != null ? hoursToSeconds(rule.carryOverHours) : null;
         const resetCarryOver = pConfig?.carryOverEnabled === false
           ? 0
           : coSeconds != null
-            ? Math.min(existing.balanceSeconds, coSeconds)
-            : existing.balanceSeconds; // unlimited carry-over = preserve full balance
-        if (existing.balanceSeconds > 0) {
+            ? Math.min(sourceSeconds, coSeconds)
+            : sourceSeconds; // unlimited carry-over = preserve full balance
+        if (sourceSeconds > 0) {
           await db.$transaction([
-            db.leaveBalance.update({ where: { id: existing.id }, data: { balanceSeconds: 0 } }),
+            ...(startsYear ? [] : [db.leaveBalance.update({ where: { id: existing.id }, data: { balanceSeconds: 0 } })]),
             db.leaveAccrualLedger.create({
               data: {
                 employeeId: employee.id, leaveTypeId: leaveType.id,
                 action: "BALANCE_RESET",
-                deltaSeconds: -existing.balanceSeconds, balanceAfterSeconds: 0,
+                deltaSeconds: -sourceSeconds, balanceAfterSeconds: startsYear ? existing.balanceSeconds : 0,
                 payPeriodEnd: postingDate,
               },
             }),
@@ -924,23 +948,24 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
                 }),
               ]);
             }
-            balanceAfterReset = 0;
+            balanceAfterReset = startsYear ? existing.balanceSeconds : 0;
           } else {
+            const afterCarry = startsYear ? existing.balanceSeconds + resetCarryOver : resetCarryOver;
             await db.$transaction([
-              db.leaveBalance.update({ where: { id: existing.id }, data: { balanceSeconds: resetCarryOver } }),
+              db.leaveBalance.update({ where: { id: existing.id }, data: { balanceSeconds: afterCarry } }),
               db.leaveAccrualLedger.create({
                 data: {
                   employeeId: employee.id, leaveTypeId: leaveType.id,
                   action: "CARRY_OVER",
-                  deltaSeconds: resetCarryOver, balanceAfterSeconds: resetCarryOver,
+                  deltaSeconds: resetCarryOver, balanceAfterSeconds: afterCarry,
                   payPeriodEnd: postingDate,
                 },
               }),
             ]);
-            balanceAfterReset = resetCarryOver;
+            balanceAfterReset = afterCarry;
           }
         } else {
-          balanceAfterReset = 0;
+          balanceAfterReset = startsYear ? existing.balanceSeconds : 0;
         }
         alreadyResetThisYear.add(resetKey);
       }
@@ -997,6 +1022,65 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
   }
 
   return { posted };
+}
+
+/**
+ * The carry over a year will open with for this person and leave type, while
+ * that year has not been opened yet (no reset, carry over or accrual dated in
+ * it): last year's balance, capped by their policy's carry over limit, or 0.
+ * The policy is picked as the nightly run picks it (pay category, then site,
+ * then the company default) and the tier by service on January 1. Lets leave
+ * dated next year be approved against what the person will have then, not
+ * against a year that is empty until it opens.
+ */
+export async function pendingCarrySeconds(employeeId: string, leaveTypeId: string, year: number): Promise<number> {
+  const yearStart = new Date(`${year}-01-01T00:00:00Z`);
+  const yearEnd = new Date(`${year + 1}-01-01T00:00:00Z`);
+  const opened = await db.leaveAccrualLedger.findFirst({
+    where: { employeeId, leaveTypeId, action: { in: ["ACCRUAL", "CARRY_OVER", "BALANCE_RESET"] }, payPeriodEnd: { gte: yearStart, lt: yearEnd } },
+    select: { id: true },
+  });
+  if (opened) return 0;
+  const prev = await db.leaveBalance.findUnique({
+    where: { employeeId_leaveTypeId_accrualYear: { employeeId, leaveTypeId, accrualYear: year - 1 } },
+    select: { balanceSeconds: true },
+  });
+  if (!prev || prev.balanceSeconds <= 0) return 0;
+
+  const emp = await db.employee.findUnique({
+    where: { id: employeeId },
+    select: {
+      siteId: true, payCategoryId: true, tenantId: true, hireDate: true,
+      adjustedHireDate: true, titleChangeDate: true, orientationDate: true, userDate2: true,
+    },
+  });
+  if (!emp) return 0;
+  const covers = { isActive: true, rules: { some: { leaveTypeId } } };
+  const policyId =
+    (emp.payCategoryId
+      ? (await db.payCategoryPtoPolicy.findFirst({ where: { payCategoryId: emp.payCategoryId, ptoPolicy: covers }, select: { ptoPolicyId: true } }))?.ptoPolicyId
+      : undefined) ??
+    (await db.sitePtoPolicy.findFirst({ where: { siteId: emp.siteId, leaveTypeId, ptoPolicy: covers }, select: { ptoPolicyId: true } }))?.ptoPolicyId ??
+    (await db.ptoPolicy.findFirst({ where: { tenantId: emp.tenantId, isDefault: true, ...covers }, select: { id: true } }))?.id;
+  if (!policyId) return 0;
+  const policy = await db.ptoPolicy.findUnique({
+    where: { id: policyId },
+    select: { carryOverEnabled: true, serviceMonthBasis: true, rules: { where: { leaveTypeId }, orderBy: { minTenureMonths: "asc" } } },
+  });
+  if (!policy || policy.carryOverEnabled === false) return 0;
+  const basis: ServiceMonthBasis = policy.serviceMonthBasis ?? "HIRE_DATE";
+  const basisRaw =
+    basis === "ADJUSTED_HIRE_DATE" ? (emp.adjustedHireDate ?? emp.hireDate) :
+    basis === "TITLE_CHANGE_DATE"  ? (emp.titleChangeDate  ?? emp.hireDate) :
+    basis === "ORIENTATION_DATE"   ? (emp.orientationDate  ?? emp.hireDate) :
+    basis === "USER_DATE_2"        ? (emp.userDate2        ?? emp.hireDate) :
+    emp.hireDate;
+  const tenureMonths = differenceInMonths(yearStart, basisRaw);
+  const rule = policy.rules.find(
+    (t) => t.minTenureMonths <= tenureMonths && (t.maxTenureMonths === null || tenureMonths < t.maxTenureMonths),
+  );
+  if (!rule) return 0;
+  return rule.carryOverHours != null ? Math.min(prev.balanceSeconds, hoursToSeconds(rule.carryOverHours)) : prev.balanceSeconds;
 }
 
 /**

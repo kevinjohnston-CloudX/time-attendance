@@ -5,7 +5,7 @@ import { companyDataProtection, leaveTypeTakesNoNote, noteKeptOut } from "@/lib/
 import { shiftMeal } from "@/lib/shift-meal";
 import { validateLeaveTransition } from "@/lib/state-machines/leave-state";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
-import { reverseLeaveUsage } from "@/lib/engines/accrual-engine";
+import { pendingCarrySeconds, reverseLeaveUsage } from "@/lib/engines/accrual-engine";
 import { hoursToSeconds, secondsToHours } from "@/lib/leave-time";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { assertLeaveTypeAllowed } from "@/lib/pay-code-availability";
@@ -175,9 +175,15 @@ export async function validateBalanceForApproval(leaveRequestId: string): Promis
     select: { balanceSeconds: true, usedSeconds: true },
   });
 
+  // Leave dated in a year not opened yet is checked against what the person
+  // will open it with (their carry over), not an empty year: approving
+  // January leave in November used to be refused, or drove next year negative.
+  const ahead = accrualYear > new Date().getUTCFullYear()
+    ? await pendingCarrySeconds(employeeId, leaveTypeId, accrualYear)
+    : 0;
   // In seconds, as leave is kept (lib/leave-time): a 0.56 hour balance does
   // not cover a 34 minute request, which whole minutes made it look to.
-  const current   = balance?.balanceSeconds ?? 0;
+  const current   = (balance?.balanceSeconds ?? 0) + ahead;
   const used      = balance?.usedSeconds    ?? 0;
   const projected = current - durationSeconds;
 
