@@ -1,3 +1,4 @@
+import { findOpenPayPeriod } from "@/lib/utils/punch-helpers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
@@ -31,24 +32,16 @@ export default async function PunchPage() {
   const tenantId = (session.user as { tenantId?: string }).tenantId;
   const now = new Date();
 
-  const [employee, payPeriod] = await Promise.all([
-    db.employee.findUnique({
-      where: { id: employeeId },
-      select: { timeZone: true, webPunchEnabled: true, site: { select: { name: true, timezone: true } }, shift: { select: { name: true } } },
-    }),
-    tenantId
-      ? db.payPeriod.findFirst({
-          where: {
-            tenantId,
-            ruleSetId: { not: null },
-            startDate: { lte: now },
-            endDate: { gt: now },
-            status: "OPEN",
-          },
-          select: { id: true, startDate: true, endDate: true },
-        })
-      : null,
-  ]);
+  const employee = await db.employee.findUnique({
+    where: { id: employeeId },
+    select: { timeZone: true, webPunchEnabled: true, ruleSetId: true, site: { select: { name: true, timezone: true } }, shift: { select: { name: true } } },
+  });
+  // Their own rule set's period, on their building's day, as their timecard
+  // is filed. It used to be whichever rule set's open period came back first,
+  // so Pay period and Overtime read 0.00 with another schedule's dates.
+  const payPeriod = tenantId && employee
+    ? await findOpenPayPeriod(tenantId, employee.ruleSetId, { timezone: personTimeZone(employee) })
+    : null;
 
   // Today, this week and what is next all follow the clock where this person
   // works. The server's own clock is UTC in production, which started the

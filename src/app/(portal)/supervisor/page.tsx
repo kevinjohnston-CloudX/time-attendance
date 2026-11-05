@@ -1,3 +1,4 @@
+import { findOpenPayPeriod } from "@/lib/utils/punch-helpers";
 import { redirect } from "next/navigation";
 import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import Link from "next/link";
@@ -77,7 +78,7 @@ export default async function TeamOverviewPage() {
     (await userHasPermission(session.user, "TIMESHEET_APPROVE_ANY"));
   const now = new Date();
 
-  const [queues, exceptionTypes, timeOff, presence, payPeriod, me, canSeeOnSite] = await Promise.all([
+  const [queues, exceptionTypes, timeOff, presence, anyOpenPeriod, me, canSeeOnSite] = await Promise.all([
     getTeamQueues(tenantId, employeeId, isPayroll, now),
     getExceptionTypes(tenantId, employeeId, isPayroll),
     getTimeOffAhead(tenantId, employeeId, isPayroll, now),
@@ -89,11 +90,18 @@ export default async function TeamOverviewPage() {
     employeeId
       ? db.employee.findFirst({
           where: { id: employeeId, tenantId },
-          select: { timeZone: true, site: { select: { name: true, timezone: true } } },
+          select: { timeZone: true, ruleSetId: true, site: { select: { name: true, timezone: true } } },
         })
       : null,
     userHasPermission(session.user, "PRESENCE_VIEW_ANY"),
   ]);
+
+  // The viewer's own rule set's period, on their building's day, as the
+  // Dashboard reads it; any open period only for a login with no employee
+  // record. Whichever rule set came back first used to label this line.
+  const payPeriod = me
+    ? await findOpenPayPeriod(tenantId, me.ruleSetId, { timezone: personTimeZone(me) })
+    : anyOpenPeriod;
 
   // ── Pay period line ───────────────────────────────────────────────────────
   const periodLabel = payPeriod

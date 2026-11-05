@@ -1,3 +1,4 @@
+import { findOpenPayPeriod } from "@/lib/utils/punch-helpers";
 import { auth } from "@/lib/auth";
 import {
   Badge,
@@ -82,8 +83,9 @@ export default async function DashboardPage({
   // Three rounds, each waiting only on what it needs: what is open now and who
   // this is, then everything that hangs off the open period, then the counts
   // for the period the overview is showing.
-  const [payPeriod, allLeaveBalances, myLeaveRequests, me, hasPayrollAccess, canApproveTeam, canPunch, canRequestLeave, ownTime, canSeeTeamPeople, canSeeTeamTimecards, canSeeTeamPunches] = await Promise.all([
-    tenantId
+  const [anyOpenPeriod, allLeaveBalances, myLeaveRequests, me, hasPayrollAccess, canApproveTeam, canPunch, canRequestLeave, ownTime, canSeeTeamPeople, canSeeTeamTimecards, canSeeTeamPunches] = await Promise.all([
+    // Only for a login with no employee record of its own (see payPeriod).
+    tenantId && !employeeId
       ? db.payPeriod.findFirst({
           where: {
             tenantId,
@@ -92,7 +94,7 @@ export default async function DashboardPage({
             endDate:   { gt: now },
             status: "OPEN",
           },
-          select: { id: true, tenantId: true, startDate: true, endDate: true, status: true },
+          select: { id: true, tenantId: true, ruleSetId: true, startDate: true, endDate: true, status: true },
         })
       : null,
 
@@ -119,7 +121,7 @@ export default async function DashboardPage({
     employeeId
       ? db.employee.findUnique({
           where: { id: employeeId },
-          select: { timeZone: true, webPunchEnabled: true, site: { select: { name: true, timezone: true } } },
+          select: { timeZone: true, webPunchEnabled: true, ruleSetId: true, site: { select: { name: true, timezone: true } } },
         })
       : null,
 
@@ -145,6 +147,15 @@ export default async function DashboardPage({
   const siteZone = personTimeZone(me);
   const siteNow = toSiteClock(now, siteZone);
 
+  // This person's own pay period: their rule set's, on their building's day,
+  // as their timecard is filed. It used to be whichever rule set's open period
+  // the database returned first, so most people's card read 0.00 hours and
+  // showed another schedule's dates. A login with no employee record (a super
+  // admin inside a company) keeps any open period, for the overview.
+  const payPeriod = me && tenantId
+    ? await findOpenPayPeriod(tenantId, me.ruleSetId, { timezone: siteZone })
+    : anyOpenPeriod;
+
   // ── The cards, and the periods either side of this one ────────────────────
   const [currentTimesheet, today, exceptionsFeed, presence, upcoming, prevPP, nextPP] = await Promise.all([
     payPeriod && employeeId
@@ -165,14 +176,14 @@ export default async function DashboardPage({
       : [],
     hasPayrollAccess && tenantId && payPeriod
       ? db.payPeriod.findFirst({
-          where: { tenantId, ruleSetId: { not: null }, endDate: { lt: payPeriod.startDate } },
+          where: { tenantId, ruleSetId: payPeriod.ruleSetId, endDate: { lt: payPeriod.startDate } },
           orderBy: { endDate: "desc" },
           select: { id: true, startDate: true, endDate: true },
         })
       : null,
     hasPayrollAccess && tenantId && payPeriod
       ? db.payPeriod.findFirst({
-          where: { tenantId, ruleSetId: { not: null }, startDate: { gt: payPeriod.endDate } },
+          where: { tenantId, ruleSetId: payPeriod.ruleSetId, startDate: { gt: payPeriod.endDate } },
           orderBy: { startDate: "asc" },
           select: { id: true, startDate: true, endDate: true },
         })
