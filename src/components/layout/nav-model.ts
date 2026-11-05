@@ -349,12 +349,19 @@ export function phoneTabs({
       ...(can("PUNCH_VIEW_TEAM") ? [{ label: "Punches", href: "/supervisor/punch-history", icon: History }] : []),
     ];
   }
-  return [
-    home,
-    { label: "Punch", href: "/time/punch", icon: Clock },
-    { label: "Timesheet", href: "/time/timesheet", icon: ClipboardList },
-    { label: "Time Off", href: "/leave", icon: CalendarDays },
+  // Everyone else: their own time, each tab only where the role has it, as
+  // the sidebar lists it. A role without them (a visitor) was given all three
+  // and every one sent it back to Home; its badge and guides fill the bar.
+  const own: PhoneTab[] = [
+    ...(can("PUNCH_OWN") ? [{ label: "Punch", href: "/time/punch", icon: Clock }] : []),
+    ...(can(["PUNCH_OWN", "TIMESHEET_SUBMIT_OWN"]) ? [{ label: "Timesheet", href: "/time/timesheet", icon: ClipboardList }] : []),
+    ...(can("LEAVE_REQUEST_OWN") ? [{ label: "Time Off", href: "/leave", icon: CalendarDays }] : []),
   ];
+  const fill: PhoneTab[] = [
+    { label: "Badge", href: "/badge", icon: QrCode },
+    { label: "Guides", href: "/knowledge-base", icon: LibraryBig },
+  ];
+  return [home, ...own, ...fill].slice(0, 4);
 }
 
 /**
