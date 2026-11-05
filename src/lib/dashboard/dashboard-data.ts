@@ -198,7 +198,14 @@ export interface Presence {
   byDept: PresenceDept[];
 }
 
-type StateRow = { employeeId: string; state: string; dept: string | null };
+type StateRow = { employeeId: string; state: string };
+
+/**
+ * How far back a punch can still have someone on the clock: the window Live
+ * Attendance uses (on-site.service LOOKBACK_MS), so both say the same about
+ * who is in. Long enough for a night shift clocked in yesterday evening.
+ */
+export const PRESENCE_WINDOW_MS = 36 * 60 * 60 * 1000;
 
 /**
  * Who is on the clock right now, by department.
@@ -207,25 +214,31 @@ type StateRow = { employeeId: string; state: string; dept: string | null };
  * has a few hundred active people, and the per-employee helper would be that
  * many round trips on every dashboard load.
  *
- * <p>Employees who have never punched do not appear in the state query at all,
- * which is why the department totals come from a separate count — without it
- * "not in" would silently exclude everyone who has not badged this year.
+ * <p>Only punches inside PRESENCE_WINDOW_MS are read. The query read every
+ * punch the company ever had (73,000 on 2026-11-05) on each Dashboard and
+ * Team Overview load, and took 22 seconds a time the morning the database
+ * ran out of CPU. Someone whose last punch is older is not in: the nightly
+ * auto clock out has closed it, and one it missed is a stuck record, not a
+ * person on the floor.
+ *
+ * <p>Employees with no punch in the window do not appear in the state query
+ * at all, which is why the department totals come from a separate count:
+ * without it "not in" would silently leave them out.
  */
-export async function getPresence(tenantId: string, supervisorId: string | null): Promise<Presence> {
+export async function getPresence(tenantId: string, supervisorId: string | null, now = new Date()): Promise<Presence> {
   const scoped = supervisorId
     ? { tenantId, isActive: true, ...directReportsOf(supervisorId) }
     : { tenantId, isActive: true };
+  const since = new Date(now.getTime() - PRESENCE_WINDOW_MS);
 
   const [states, headcount] = await Promise.all([
     supervisorId
       ? db.$queryRaw<StateRow[]>`
           SELECT DISTINCT ON (p."employeeId")
-                 p."employeeId"      AS "employeeId",
-                 p."stateAfter"::text AS state,
-                 d.name              AS dept
+                 p."employeeId"       AS "employeeId",
+                 p."stateAfter"::text AS state
           FROM "punches" p
-          JOIN "employees" e   ON e.id = p."employeeId"
-          LEFT JOIN "departments" d ON d.id = e."departmentId"
+          JOIN "employees" e ON e.id = p."employeeId"
           WHERE e."tenantId" = ${tenantId}
             AND e."isActive" = true
             AND (e."supervisorId" = ${supervisorId}
@@ -233,20 +246,20 @@ export async function getPresence(tenantId: string, supervisorId: string | null)
                             WHERE es."employeeId" = e.id AND es."supervisorId" = ${supervisorId}))
             AND p."isRejected" = false
             AND p."correctedById" IS NULL
+            AND p."roundedTime" >= ${since}
           ORDER BY p."employeeId", p."roundedTime" DESC
         `
       : db.$queryRaw<StateRow[]>`
           SELECT DISTINCT ON (p."employeeId")
-                 p."employeeId"      AS "employeeId",
-                 p."stateAfter"::text AS state,
-                 d.name              AS dept
+                 p."employeeId"       AS "employeeId",
+                 p."stateAfter"::text AS state
           FROM "punches" p
-          JOIN "employees" e   ON e.id = p."employeeId"
-          LEFT JOIN "departments" d ON d.id = e."departmentId"
+          JOIN "employees" e ON e.id = p."employeeId"
           WHERE e."tenantId" = ${tenantId}
             AND e."isActive" = true
             AND p."isRejected" = false
             AND p."correctedById" IS NULL
+            AND p."roundedTime" >= ${since}
           ORDER BY p."employeeId", p."roundedTime" DESC
         `,
     db.employee.findMany({
