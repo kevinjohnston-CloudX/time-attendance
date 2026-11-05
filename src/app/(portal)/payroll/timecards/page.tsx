@@ -52,20 +52,25 @@ export default async function TimecardsPage({
   const session = await auth();
   if (!session?.user) redirect("/login");
 
-  const [canViewTeam, canViewAll, canEditTeam, canEditAll, canRunPayroll] = await Promise.all([
+  const [canViewTeam, canViewAll, canEditTeam, canEditAll, canRunPayroll, canFixMissed] = await Promise.all([
     userHasPermission(session.user, "TIMECARD_VIEW_TEAM"),
     userHasPermission(session.user, "TIMECARD_VIEW_ANY"),
     userHasPermission(session.user, "TIMECARD_EDIT_TEAM"),
     userHasPermission(session.user, "TIMECARD_EDIT_ANY"),
     userHasPermission(session.user, "PAYROLL_RUN"),
+    userHasPermission(session.user, "PUNCH_FIX_MISSED_TEAM"),
   ]);
   if (!canViewTeam && !canViewAll && !canEditTeam && !canEditAll) redirect("/dashboard");
 
   const isAllScope = canViewAll || canEditAll;
   const canEdit = canEditTeam || canEditAll;
+  // A supervisor allowed only to fix missed punches: the grid offers the
+  // missing clock in or out and nothing else (lib/timecards/missed-punch-fix).
+  const missedPunchesOnly = !canEdit && canFixMissed;
   // Pay rates and pay are for people who edit timecards or run payroll; a
-  // read-only team viewer (an agency) sees hours only.
-  const canSeePay = canEdit || canRunPayroll || isAllScope;
+  // read-only team viewer (an agency) sees hours only. A supervisor fixing
+  // missed punches saw them as an editor and still does.
+  const canSeePay = canEdit || missedPunchesOnly || canRunPayroll || isAllScope;
 
   const t = ownCompany(session.user.tenantId);
 
@@ -319,7 +324,7 @@ export default async function TimecardsPage({
   const activeCount = employees.filter((e) => e.isActive).length;
   const subtitle = [
     `${activeCount.toLocaleString()} active ${activeCount === 1 ? "employee" : "employees"}`,
-    canEdit ? null : "Read only",
+    canEdit ? null : missedPunchesOnly ? "Missed punches only" : "Read only",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -345,7 +350,8 @@ export default async function TimecardsPage({
         siteTimezone={siteOfEmployee ? personTimeZone(siteOfEmployee) : null}
         payFrequency={payFrequency}
         userRole={session.user.role ?? "EMPLOYEE"}
-        readOnly={!canEdit}
+        readOnly={!canEdit && !missedPunchesOnly}
+        missedPunchesOnly={missedPunchesOnly}
         canLockTimecards={canRunPayroll}
         customStart={sp.customStart ?? null}
         customEnd={sp.customEnd ?? null}

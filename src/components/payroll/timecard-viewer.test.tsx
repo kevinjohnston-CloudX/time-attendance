@@ -160,6 +160,71 @@ describe("the summary of a period with unpaid leave", () => {
   });
 });
 
+// Bergen's supervisors, 11/05: HR wanted them to correct missed punches and
+// make no other change to a timecard.
+describe("a supervisor allowed only to fix missed punches", () => {
+  it("adds the missing clock out, and changes nothing else", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-15T16:00:00Z"));
+    addManualPunches.mockClear();
+    const punch = (id: string, punchType: string, roundedTime: string) => ({ id, punchType, roundedTime, source: "TABLET" });
+    render(
+      <TimecardViewer
+        payPeriods={[{ id: "p1", startDate: "2026-10-11T00:00:00.000Z", endDate: "2026-10-25T00:00:00.000Z", status: "OPEN" }]}
+        selectedPeriodId="p1"
+        employees={[{ employeeId: "e1", name: "Test Person", employeeCode: "T1", wmsId: "605247", department: "Vas", siteId: "s1", siteName: "Site", isActive: true, payType: "HOURLY" }]}
+        selectedEmployeeId="e1"
+        timecard={{
+          timesheetId: "t1", status: "OPEN", otAuthorized: false, exceptionCount: 1,
+          // Clocked in Monday at 8:00 AM and never out; Tuesday is a whole shift.
+          exceptions: [{ id: "x1", exceptionType: "MISSING_PUNCH", occurredAt: "2026-10-12T12:00:00.000Z" }],
+          payPeriod: { startDate: "2026-10-11T00:00:00.000Z", endDate: "2026-10-25T00:00:00.000Z", status: "OPEN" },
+          employee: {
+            user: { name: "Test Person" }, department: { name: "Vas" }, employeeCode: "T1", wmsId: "605247", payRate: 15, payType: "HOURLY", startedOn: "2020-01-01", shift: null,
+            ruleSet: { overtimeRequiresAuth: false, allowTimesheetOtAuth: false, defaultPayCodeId: null },
+          },
+          punches: [
+            punch("i1", "CLOCK_IN", "2026-10-12T12:00:00.000Z"),
+            punch("i2", "CLOCK_IN", "2026-10-13T12:00:00.000Z"),
+            punch("o2", "CLOCK_OUT", "2026-10-13T20:30:00.000Z"),
+          ],
+          segments: [], overtimeBuckets: [], mealWaivers: [], mealPremiumWaivers: [], notes: [], dayReasons: [],
+        }}
+        payFrequency="BIWEEKLY"
+        payCodes={[{ id: "pc0", code: 0, label: "Regular hours" }]}
+        reasonCodes={[{ id: "rc1", code: "1", label: "Forgot to punch" }] as never}
+        sites={[]}
+        selectedSiteId={null}
+        departments={[]}
+        selectedDepartmentId={null}
+        userRole="SUPERVISOR"
+        missedPunchesOnly
+        siteTimezone="America/New_York"
+      />,
+    );
+    const row = (label: RegExp) => screen.getAllByRole("row").find((r) => label.test(r.textContent ?? ""))!;
+    expect(screen.getByText("Missed punches only")).not.toBeNull();
+    expect(screen.queryByText("Add time")).toBeNull();
+    // Tuesday's punches are there to read, not to change.
+    const tuesday = [...row(/Tue, Oct 13/).querySelectorAll("button")].filter((b) => /AM|PM/.test(b.textContent ?? ""));
+    expect(tuesday.length).toBe(2);
+    for (const b of tuesday) expect(b.hasAttribute("disabled")).toBe(true);
+    // No reason code, pay code or empty-day entry offered anywhere.
+    expect([...document.querySelectorAll("tr select:not([disabled])")].length).toBe(0);
+    expect([...row(/Wed, Oct 14/).querySelectorAll("button")].some((b) => b.textContent === "—")).toBe(false);
+
+    fireEvent.click([...row(/Mon, Oct 12/).querySelectorAll("button")].find((b) => b.textContent === "Missing")!);
+    const input = row(/Mon, Oct 12/).querySelector("input")!;
+    fireEvent.change(input, { target: { value: "4:30" } });
+    fireEvent.blur(input);
+    fireEvent.click(screen.getByText("Save changes"));
+    await vi.waitFor(() => expect(addManualPunches).toHaveBeenCalledTimes(1));
+    const [{ punches }] = addManualPunches.mock.calls[0] as unknown as [{ punches: { punchType: string }[] }];
+    expect(punches.map((p) => p.punchType)).toEqual(["CLOCK_OUT"]);
+    vi.useRealTimers();
+  });
+});
+
 // Hired 10/19, in a period that began 10/11: the weekdays before were marked
 // Absent on the timecard though no absence was ever recorded for them.
 describe("someone who started partway through the period", () => {

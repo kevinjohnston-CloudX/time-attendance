@@ -24,6 +24,7 @@ import { dayRange, readOpenExceptions } from "@/lib/exceptions/read-open-excepti
 import type { PunchState, PunchType } from "@prisma/client";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { ownCompany } from "@/lib/rbac/company";
+import { assertMissedPunchFix, fixesMissedPunchesOnly, MISSED_PUNCH_ONLY_ERROR } from "@/lib/timecards/missed-punch-fix";
 
 // Payroll, HR and the admins see the whole company, as does a custom role
 // with the company-wide permission (reachesCompany): Payroll Admin NL, made
@@ -214,9 +215,15 @@ const STATE_AFTER: Record<string, PunchState> = {
   CLOCK_OUT: "OUT", BREAK_START: "BREAK", BREAK_END: "WORK",
 };
 
-/** Supervisor adds a missing punch directly, auto-resolving the exception. */
+/**
+ * Supervisor adds a missing punch directly, auto-resolving the exception. A
+ * supervisor allowed only to fix missed punches (PUNCH_FIX_MISSED_TEAM) adds
+ * the clock in or clock out a missed punch is short of, under the regular
+ * hours pay code; correcting an existing punch (correctPunchAndResolve) stays
+ * with Punches Write.
+ */
 export const addMissingPunchForEmployee = withRBAC(
-  "PUNCH_EDIT_TEAM",
+  ["PUNCH_EDIT_TEAM", "PUNCH_FIX_MISSED_TEAM"],
   async (ctx, input: AddMissingPunchInput) => {
     const { employeeId: supervisorId, tenantId } = ctx;
     const { timesheetId, exceptionId, punchType, punchTime: punchTimeStr, reason } =
@@ -242,6 +249,15 @@ export const addMissingPunchForEmployee = withRBAC(
     });
 
     const { ruleSet, shift } = timesheet.employee;
+    const fixOnly = await fixesMissedPunchesOnly();
+    if (fixOnly) {
+      const exception = await db.exception.findFirst({
+        where: { id: exceptionId, timesheetId, exceptionType: "MISSING_PUNCH", resolvedAt: null },
+        select: { id: true },
+      });
+      if (!exception || (punchType !== "CLOCK_IN" && punchType !== "CLOCK_OUT")) throw new Error(MISSED_PUNCH_ONLY_ERROR);
+      await assertMissedPunchFix(timesheetId, personTimeZone(timesheet.employee, "UTC"), [{ punchType, at: punchTime }]);
+    }
     const roundedTime = computeRoundedTime(punchTime, punchType, ruleSet, shift, personTimeZone(timesheet.employee, "UTC"));
 
     await db.$transaction(async (tx) => {
@@ -259,6 +275,8 @@ export const addMissingPunchForEmployee = withRBAC(
           approvedById: supervisorId,
           approvedAt: new Date(),
           note: reason,
+          // A fixed clock in is regular hours (the rule set's default code).
+          ...(fixOnly && punchType === "CLOCK_IN" ? { payCodeId: ruleSet.defaultPayCodeId ?? null } : {}),
         },
       });
       // The exception must be this timesheet's.

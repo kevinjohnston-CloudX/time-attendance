@@ -6,6 +6,10 @@ export const PERMISSIONS = [
   "PUNCH_VIEW_TEAM",
   "PUNCH_EDIT_TEAM",
   "PUNCH_EDIT_ANY",
+  // Fix a missed punch on your team's timecards and nothing else: add the
+  // missing clock in or clock out on a day marked Missed punch, under the
+  // person's regular hours pay code (lib/timecards/missed-punch-fix).
+  "PUNCH_FIX_MISSED_TEAM",
   // Timesheet
   "TIMESHEET_SUBMIT_OWN",
   "TIMESHEET_APPROVE_TEAM",
@@ -73,6 +77,13 @@ export type Permission = (typeof PERMISSIONS)[number];
 export const TIMECARD_EDITORS: Permission[] = ["PAY_PERIOD_MANAGE", "PUNCH_EDIT_TEAM", "TIMECARD_EDIT_TEAM"];
 /** Of those, who reaches the whole company rather than their own team. */
 export const TIMECARD_EDITORS_COMPANY: Permission[] = ["PAY_PERIOD_MANAGE", "PUNCH_EDIT_ANY", "TIMECARD_EDIT_ANY"];
+/**
+ * Who may fix a missed punch on a timecard: every editor, and a role allowed
+ * that alone (Bergen's supervisors, 11/05: HR keeps every other change). The
+ * actions that take it hold a fixer to the missed punch itself
+ * (lib/timecards/missed-punch-fix).
+ */
+export const MISSED_PUNCH_FIXERS: Permission[] = [...TIMECARD_EDITORS, "PUNCH_FIX_MISSED_TEAM"];
 /** Who may open Rules Setup and its Company Setup areas: to change them, or only to look. */
 export const RULES_READERS: Permission[] = ["RULES_MANAGE", "RULES_VIEW"];
 /** Who may open sites and departments: to change them, or only to look. */
@@ -80,10 +91,12 @@ export const SITE_READERS: Permission[] = ["SITE_MANAGE", "SITE_VIEW"];
 
 const rolePermissions: Record<Role, Permission[]> = {
   EMPLOYEE: ["PUNCH_OWN", "TIMESHEET_SUBMIT_OWN", "LEAVE_REQUEST_OWN", "DOCUMENT_VIEW_OWN", "ACCRUAL_VIEW_OWN"],
+  // A supervisor fixes their team's missed punches; every other timecard
+  // change is HR's or payroll's (11/05).
   SUPERVISOR: [
     "PUNCH_OWN",
     "PUNCH_VIEW_TEAM",
-    "PUNCH_EDIT_TEAM",
+    "PUNCH_FIX_MISSED_TEAM",
     "TIMESHEET_SUBMIT_OWN",
     "TIMESHEET_APPROVE_TEAM",
     "LEAVE_REQUEST_OWN",
@@ -91,7 +104,6 @@ const rolePermissions: Record<Role, Permission[]> = {
     "LEAVE_APPROVE_TEAM",
     "DOCUMENT_VIEW_OWN",
     "TIMECARD_VIEW_TEAM",
-    "TIMECARD_EDIT_TEAM",
     "ACCRUAL_VIEW_OWN",
     "ACCRUAL_VIEW_TEAM",
   ],
