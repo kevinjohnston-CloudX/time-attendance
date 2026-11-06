@@ -163,10 +163,7 @@ describe("the summary of a period with unpaid leave", () => {
 // Bergen's supervisors, 11/05: HR wanted them to correct missed punches and
 // make no other change to a timecard.
 describe("a supervisor allowed only to fix missed punches", () => {
-  it("adds the missing clock out, and changes nothing else", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-10-15T16:00:00Z"));
-    addManualPunches.mockClear();
+  function renderFixer() {
     const punch = (id: string, punchType: string, roundedTime: string) => ({ id, punchType, roundedTime, source: "TABLET" });
     render(
       <TimecardViewer
@@ -202,6 +199,13 @@ describe("a supervisor allowed only to fix missed punches", () => {
         siteTimezone="America/New_York"
       />,
     );
+  }
+
+  it("adds the missing clock out, and changes nothing else", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-15T16:00:00Z"));
+    addManualPunches.mockClear();
+    renderFixer();
     const row = (label: RegExp) => screen.getAllByRole("row").find((r) => label.test(r.textContent ?? ""))!;
     expect(screen.getByText("Missed punches only")).not.toBeNull();
     expect(screen.queryByText("Add time")).toBeNull();
@@ -221,6 +225,19 @@ describe("a supervisor allowed only to fix missed punches", () => {
     await vi.waitFor(() => expect(addManualPunches).toHaveBeenCalledTimes(1));
     const [{ punches }] = addManualPunches.mock.calls[0] as unknown as [{ punches: { punchType: string }[] }];
     expect(punches.map((p) => p.punchType)).toEqual(["CLOCK_OUT"]);
+    vi.useRealTimers();
+  });
+
+  it("adds a note of their own to a day", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-15T16:00:00Z"));
+    renderFixer();
+    const monday = screen.getAllByRole("row").find((r) => /Mon, Oct 12/.test(r.textContent ?? ""))!;
+    fireEvent.click(monday.querySelector("button[title=\"Add note\"]")!);
+    fireEvent.change(screen.getByPlaceholderText("Add a note…"), { target: { value: "Forgot to clock out, confirmed with lead" } });
+    fireEvent.click(screen.getByText("Add note"));
+    const { saveTimesheetNote } = await import("@/actions/timecard-entry.actions");
+    await vi.waitFor(() => expect(saveTimesheetNote).toHaveBeenCalledWith({ timesheetId: "t1", noteDate: "2026-10-12", note: "Forgot to clock out, confirmed with lead" }));
     vi.useRealTimers();
   });
 });

@@ -4411,8 +4411,9 @@ export function TimecardViewer({
               })()}
             </div>
 
-            {/* Add note form — only when timesheet is editable */}
-            {canEdit && (
+            {/* Add note form — for anyone who may change this timecard, a
+                supervisor who only fixes missed punches included */}
+            {(canEdit || canFixMissed) && (
               <div
                 className="shrink-0 px-5 py-4"
                 style={{
