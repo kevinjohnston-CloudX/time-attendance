@@ -59,6 +59,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   role: "Roles",
   presence: "Live Attendance",
   photo: "Time Clock Photos",
+  visitor: "Visitors",
   company: "Company Data",
 };
 
@@ -185,6 +186,12 @@ const RESOURCE_INFO: Record<string, PermInfo> = {
     summary: "Controls who can remove an employee's time clock photo. Updating a photo is Live Attendance Write.",
     cells: {
       "write:all": "Remove an employee's photo from Live Attendance, so their next scan at a time clock takes a new one. A copy of the removed photo is kept.",
+    },
+  },
+  visitor: {
+    summary: "Controls who can add visitors on Live Attendance and look after their badges.",
+    cells: {
+      "write:all": "Add a frequent visitor or a day pass, print the badge, renew it when it runs out, and end a visitor's access. A visitor's badge opens only the building it was made in.",
     },
   },
   company: {

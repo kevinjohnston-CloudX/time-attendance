@@ -21,7 +21,17 @@ import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
  */
 
 /** Why the gate check said no, as it answers the tablet. */
-export type GateRefusalReason = "NO_SCHEDULE" | "NOT_A_WORKDAY";
+/**
+ * Why the gate turned somebody away: no shift (NO_SCHEDULE, NOT_A_WORKDAY), or
+ * a visitor whose pass does not open this gate today (visitor-pass.ts).
+ */
+export type GateRefusalReason =
+  | "NO_SCHEDULE"
+  | "NOT_A_WORKDAY"
+  | "VISITOR_NOT_YET"
+  | "VISITOR_EXPIRED"
+  | "VISITOR_ENDED"
+  | "VISITOR_OTHER_BUILDING";
 
 /** More than a screen of cards is an outage, not a queue; the count still says how many. */
 const MAX_OPEN = 50;
@@ -78,6 +88,20 @@ async function siteDay(tenantId: string, siteId: string): Promise<{ today: strin
  */
 const RECENT_SCAN_MS = 10 * 60 * 1000;
 
+/**
+ * The building a warehouse number belongs to, in one company: the number a
+ * tablet sends and every scan carries. Null for no number, one that is not a
+ * number, or one no building has.
+ */
+export async function siteByWarehouse(
+  tenantId: string,
+  code: string | null | undefined,
+): Promise<{ id: string; timezone: string } | null> {
+  return code && /^\d{1,9}$/.test(code)
+    ? db.site.findFirst({ where: { tenantId, wmsWarehouseId: Number(code) }, select: { id: true, timezone: true } })
+    : null;
+}
+
 type Placement = { site: { id: string; timezone: string }; placedBy: "tablet" | "last scan" | "home site" };
 
 /**
@@ -97,10 +121,7 @@ export async function placeGateRefusal(input: {
   warehouse: string | null;
   at: Date;
 }): Promise<Placement | null> {
-  const bySite = async (code: string | null | undefined) =>
-    code && /^\d{1,9}$/.test(code)
-      ? db.site.findFirst({ where: { tenantId: input.tenantId, wmsWarehouseId: Number(code) }, select: { id: true, timezone: true } })
-      : null;
+  const bySite = (code: string | null | undefined) => siteByWarehouse(input.tenantId, code);
 
   const fromTablet = await bySite(input.warehouse);
   if (fromTablet) return { site: fromTablet, placedBy: "tablet" };

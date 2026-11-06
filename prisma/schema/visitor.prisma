@@ -1,0 +1,50 @@
+/// A visitor's pass: how long their badge opens the gate, and where.
+///
+/// The visitor themself is an Employee with a client badge (CL00001...,
+/// src/lib/utils/client-badge.ts), so the gate, On Site, photos and the
+/// nightly close treat them like anybody else. This row adds what a visitor
+/// has and an employee does not: the company they come from, who they are
+/// visiting, the one building the badge works at, and its last day.
+///
+/// A client badge with no pass (the ones issued from New Employee before
+/// passes existed) keeps working as it always did: no end date, any building.
+/// See src/lib/visitors/visitor-pass.ts for the rules.
+model VisitorPass {
+  id         String   @id @default(cuid())
+  tenantId   String
+  /// The visitor. One pass each; renewing changes this row.
+  employeeId String   @unique
+  /// The only building whose gate the badge opens: where it was created.
+  siteId     String
+  /// FREQUENT or DAY_PASS.
+  kind       String
+  /// The length last chosen: SIX_MONTHS, ONE_YEAR, TWO_YEARS (frequent) or
+  /// DAY, WEEK, MONTH (day pass).
+  term       String
+  /// The company the visitor comes from, as typed.
+  company    String?
+  /// Who they are visiting, when that person is in CloudTime.
+  hostEmployeeId String?
+  /// Who they are visiting, as typed, when not.
+  hostName   String?
+  /// The building's calendar day the pass starts, keyed like schedule_days.
+  validFrom  DateTime @db.Date
+  /// The last day the badge opens the gate, in the building's calendar.
+  validUntil DateTime @db.Date
+  createdById String?
+  /// Set by End access now: refused from that moment, whatever validUntil says.
+  endedAt    DateTime?
+  endedById  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employee Employee  @relation("VisitorPassPerson", fields: [employeeId], references: [id], onDelete: Cascade)
+  host     Employee? @relation("VisitorPassHost", fields: [hostEmployeeId], references: [id], onDelete: SetNull)
+  site     Site      @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  /// The Visitors list on Live Attendance: a building's passes by end date.
+  @@index([tenantId, siteId, validUntil])
+  @@index([hostEmployeeId])
+  @@map("visitor_passes")
+}

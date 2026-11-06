@@ -112,6 +112,7 @@ model Site {
   ptoPolicies SitePtoPolicy[]
   hrAccess    HrSiteAccess[]
   gateRefusals GateRefusal[]
+  visitorPasses VisitorPass[]
   devices     Device[]
 
   @@unique([tenantId, name])
@@ -266,6 +267,8 @@ model Employee {
   scanEvents   ScanEvent[]
   scheduleDays ScheduleDay[]
   gateRefusals GateRefusal[]
+  visitorPass  VisitorPass? @relation("VisitorPassPerson")
+  visiting     VisitorPass[] @relation("VisitorPassHost")
   timesheets   Timesheet[]
   leaveBalances    LeaveBalance[]
   leaveRequests    LeaveRequest[]

@@ -3,7 +3,8 @@ import { timeclockKeyValid } from "@/lib/api/timeclock-auth";
 import { db } from "@/lib/db";
 import { deviceBadgeWhere } from "@/lib/utils/badge-lookup";
 import { shownNameOrNull } from "@/lib/utils/shown-name";
-import { recordGateRefusal } from "@/lib/presence/gate-refusals.service";
+import { type GateRefusalReason, recordGateRefusal, siteByWarehouse } from "@/lib/presence/gate-refusals.service";
+import { VISITOR_REFUSAL_REASON, passStanding } from "@/lib/visitors/visitor-pass";
 import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { WMS_TERMINATION_ENDS_EMPLOYMENT, employmentEnded, madeActiveAt } from "@/lib/presence/employment";
@@ -189,12 +190,41 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // decided for them as for anybody.
   const client = isClientBadge(employee.wmsId);
 
+  // A visitor with a pass (visitor-pass.ts) gets in only at its building and
+  // only through its last day. No pass is a badge issued before passes
+  // existed, which keeps working as it always did. A refused visitor is
+  // answered like anybody with no shift, an answer every tablet already
+  // handles, and is still let out while inside, as everybody is.
+  const pass = client
+    ? await db.visitorPass.findUnique({
+        where: { employeeId: employee.id },
+        select: { siteId: true, validFrom: true, validUntil: true, endedAt: true },
+      })
+    : null;
+  const standing = pass
+    ? passStanding(
+        {
+          siteId: pass.siteId,
+          validFrom: pass.validFrom.toISOString().slice(0, 10),
+          validUntil: pass.validUntil.toISOString().slice(0, 10),
+          endedAt: pass.endedAt,
+        },
+        today,
+        (await siteByWarehouse(employee.tenantId, from.warehouse))?.id ?? null,
+      )
+    : null;
+  const visitorRefusal = standing && standing !== "VALID" ? VISITOR_REFUSAL_REASON[standing] : null;
+
   // The legacy rule, restated: a shift today, or already inside. Order matters
   // only for the reason string — a scheduled person who is also inside is
   // scheduled, not an exception.
-  const scheduled = client || scheduleDay?.isWorkday === true || present;
+  const scheduled = client ? !visitorRefusal || present : scheduleDay?.isWorkday === true || present;
   const reason = client
-    ? "CLIENT"
+    ? visitorRefusal
+      ? present
+        ? "PRESENT"
+        : visitorRefusal
+      : "CLIENT"
     : scheduleDay?.isWorkday
       ? "WORKDAY"
       : present
@@ -230,7 +260,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       warehouse: from.warehouse,
       device: from.device,
       params: from.params ?? null,
-      reason: reason as "NO_SCHEDULE" | "NOT_A_WORKDAY",
+      reason: reason as GateRefusalReason,
       at: new Date(),
     };
     after(async () => {
@@ -263,9 +293,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     department: client ? CLIENT_DEPARTMENT_SHOWN : employee.department?.name ?? null,
     terminated,
     scheduled,
-    /// WORKDAY | PRESENT | NOT_A_WORKDAY | NO_SCHEDULE | CLIENT — why
-    /// `scheduled` is what it is, so a kiosk can say something more useful
-    /// than "no". Builds up to 166 only log it.
+    /// WORKDAY | PRESENT | NOT_A_WORKDAY | NO_SCHEDULE | CLIENT, or for a
+    /// visitor turned away VISITOR_EXPIRED | VISITOR_ENDED | VISITOR_NOT_YET |
+    /// VISITOR_OTHER_BUILDING — why `scheduled` is what it is, so a kiosk can
+    /// say something more useful than "no". Builds up to 166 only log it.
     reason,
     shift: scheduleDay?.startTime
       ? { startTime: scheduleDay.startTime, endTime: scheduleDay.endTime }

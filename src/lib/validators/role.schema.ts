@@ -16,6 +16,7 @@ export const RESOURCES = [
   "role",
   "presence",
   "photo",
+  "visitor",
   "company",
 ] as const;
 

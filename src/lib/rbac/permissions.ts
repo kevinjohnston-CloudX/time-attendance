@@ -69,6 +69,9 @@ export const PERMISSIONS = [
   // Live Attendance: hear when the gate turns away somebody with no shift
   // today, and add them to today's schedule
   "PRESENCE_SCHEDULE_ADD",
+  // Live Attendance: add visitors, print their badges, renew them and end
+  // their access (src/lib/visitors)
+  "VISITOR_MANAGE",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -168,6 +171,7 @@ const rolePermissions: Record<Role, Permission[]> = {
     "PRESENCE_VIEW_ANY",
     "PRESENCE_PHOTO_EDIT",
     "PRESENCE_PHOTO_REMOVE",
+    "VISITOR_MANAGE",
   ],
   SYSTEM_ADMIN: [...PERMISSIONS],
   SUPER_ADMIN: [...PERMISSIONS],

@@ -64,4 +64,6 @@ export const LEGACY_MAP: Record<string, PermissionTuple> = {
   PRESENCE_SCHEDULE_ADD:  { resource: "presence",  action: "execute", scope: "all" },
   // Time clock photos: Write is removing one (the next time clock scan takes a new one)
   PRESENCE_PHOTO_REMOVE:  { resource: "photo",     action: "write",   scope: "all" },
+  // Visitors: add one, print the badge, renew it, end access (Live Attendance)
+  VISITOR_MANAGE:         { resource: "visitor",   action: "write",   scope: "all" },
 };
