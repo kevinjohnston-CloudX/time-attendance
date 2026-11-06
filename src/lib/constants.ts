@@ -19,10 +19,11 @@ export const KNOWLEDGE_BASE_HREF = "/knowledge-base";
 /**
  * Every page a role limited to Live Attendance (Loss Prevention) can open:
  * Live Attendance, the Knowledge Base so their own guides reach them, and
- * their own badge, which shows nobody's data but theirs. The portal layout
+ * their own badge, which shows nobody's data but theirs, and Change
+ * Password for their own login. The portal layout
  * redirects anything else to Live Attendance.
  */
-export const LIVE_ATTENDANCE_ONLY_HREFS = [LIVE_ATTENDANCE_HREF, KNOWLEDGE_BASE_HREF, "/badge"];
+export const LIVE_ATTENDANCE_ONLY_HREFS = [LIVE_ATTENDANCE_HREF, KNOWLEDGE_BASE_HREF, "/badge", "/account/password"];
 
 /**
  * The address being opened, set by the route guard on every portal request so

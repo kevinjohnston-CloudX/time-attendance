@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { Banner, Button, Checkbox, Input } from "@/components/ui";
@@ -9,6 +9,9 @@ import { rememberedEmailStore, useRememberedEmail } from "@/lib/remembered-email
 import { inPhoneApp, onAppSigninReturn, startAppSignin } from "@/lib/native-app";
 
 /** Where a sign in started from the phone app goes back to (lib/app-signin.ts). */
+/** The address never changes while the page is open, so nothing to listen to. */
+const noSubscribe = () => () => {};
+
 function appReturn(challenge: string) {
   return `/api/app-signin?challenge=${encodeURIComponent(challenge)}`;
 }
@@ -45,6 +48,15 @@ export default function LoginPage() {
     const challenge = new URLSearchParams(window.location.search).get("app");
     return challenge && /^[A-Za-z0-9_-]{43}$/.test(challenge) ? challenge : null;
   });
+
+  // After Change Password, which signs every device out: says why this page
+  // opened, so the jump to sign in does not read as the change failing. Read
+  // after mount, since the server draws the page without the address.
+  const passwordChanged = useSyncExternalStore(
+    noSubscribe,
+    () => new URLSearchParams(window.location.search).get("changed") === "1",
+    () => false,
+  );
 
   // Inside the app: the browser hands the sign in back here.
   useEffect(
@@ -213,6 +225,9 @@ export default function LoginPage() {
               </Link>
             </div>
 
+            {passwordChanged && !error && (
+              <Banner tone="success" body="Your password was changed. Sign in with the new one." />
+            )}
             {error && <Banner tone="error" body={error} />}
 
             <Button pending={loading} type="submit" disabled={loading} fullWidth>

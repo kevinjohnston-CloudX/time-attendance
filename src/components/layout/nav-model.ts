@@ -93,7 +93,7 @@ export const SECTIONS: NavSection[] = [
     icon: CircleUser,
     railLabel: "Me",
     label: "Me",
-    prefixes: ["/dashboard", "/time", "/badge", "/leave", "/documents", "/accruals", "/knowledge-base"],
+    prefixes: ["/dashboard", "/time", "/badge", "/leave", "/documents", "/accruals", "/knowledge-base", "/account"],
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { label: "Punch Clock", href: "/time/punch", icon: Clock, permission: "PUNCH_OWN" },
@@ -113,6 +113,8 @@ export const SECTIONS: NavSection[] = [
       // Everyone's: which guides each person sees is decided per article by
       // their role, in the ticketing system where the guides are written.
       { label: "Knowledge Base", href: "/knowledge-base", icon: LibraryBig },
+      // Everyone's; a Google only login is told where its password lives.
+      { label: "Change Password", href: "/account/password", icon: KeyRound },
     ],
   },
   {

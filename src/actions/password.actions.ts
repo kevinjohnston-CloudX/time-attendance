@@ -14,6 +14,8 @@ import { forgetIdentity } from "@/lib/rbac/identity";
 import { revokeAllUserTokens } from "@/lib/mobile-auth";
 import { zodMessage } from "@/lib/zod-message";
 import { ROLE_RANK, editsPeers } from "@/lib/rbac/roles";
+import { headers } from "next/headers";
+import { clientAddress, isLockedOut, loginKey, recordFailedLogin } from "@/lib/login-limit";
 
 const LOGIN_MANAGERS = ["SYSTEM_ADMIN", "HR_ADMIN", "PAYROLL_ADMIN", "SUPER_ADMIN"];
 
@@ -57,7 +59,7 @@ async function manageableLogin(employeeId: string) {
     if (target.id === caller.employeeId) {
       // There is no "change your own password" page: ask a colleague with
       // the right to reset it. The message used to point to one that does not exist.
-      return { error: "You can't reset your own password. Ask another administrator to reset it for you." } as const;
+      return { error: "You can't reset your own password here. Change it from Change Password in the Me menu." } as const;
     }
     const rank = await employeeRank(target.id, target.tenantId);
     if (rank === null || rank > caller.rank || (rank === caller.rank && !editsPeers(caller.rank))) {
@@ -276,4 +278,67 @@ export async function changePassword(
   await endSignIns(session.user.id);
 
   return { success: true, message: "Password changed successfully" };
+}
+
+// ── Change your own password ───────────────────────────────────────────────
+
+const ownChangeSchema = z.object({
+  currentPassword: z.string().min(1, "Enter your current password"),
+  newPassword: z.string().min(8, "Password must be at least 8 characters"),
+  confirmPassword: z.string().min(1),
+}).refine((d) => d.newPassword === d.confirmPassword, {
+  message: "The new passwords do not match",
+  path: ["confirmPassword"],
+});
+
+/**
+ * Anyone signed in with a password changes it themselves, by giving the
+ * current one first. Without that, a screen left signed in would let whoever
+ * sits down at it take the account. A wrong current password counts towards
+ * the same lock as a wrong one at sign in (login-limit), so this is no easier
+ * a place to guess it. Every sign in ends afterwards, this one included, as it
+ * does after an administrator's reset.
+ */
+export async function changeOwnPassword(
+  currentPassword: string,
+  newPassword: string,
+  confirmPassword: string,
+): Promise<{ success: boolean; message: string }> {
+  const session = await auth();
+  if (!session?.user?.id) return { success: false, message: "Your session has ended. Sign in again, then try once more." };
+
+  const parsed = ownChangeSchema.safeParse({ currentPassword, newPassword, confirmPassword });
+  if (!parsed.success) return { success: false, message: zodMessage(parsed.error) };
+
+  const user = await db.user.findUnique({
+    where: { id: session.user.id },
+    select: { id: true, passwordHash: true, employee: { select: { tenantId: true } } },
+  });
+  if (!user?.passwordHash) {
+    return { success: false, message: "You sign in with Google, so there is no CloudTime password to change." };
+  }
+
+  const key = loginKey(user.id, "");
+  const address = clientAddress(await headers());
+  if (await isLockedOut(key, address)) {
+    return { success: false, message: "Too many attempts. Wait 15 minutes, then try again." };
+  }
+  if (!(await bcrypt.compare(currentPassword, user.passwordHash))) {
+    await recordFailedLogin(key, user.employee?.tenantId, address, "web");
+    return { success: false, message: "Your current password is not correct." };
+  }
+  if (newPassword === currentPassword) {
+    return { success: false, message: "Choose a new password that is different from your current one." };
+  }
+
+  const strengthError = validatePasswordStrength(newPassword);
+  if (strengthError) return { success: false, message: strengthError };
+
+  await db.user.update({
+    where: { id: user.id },
+    data: { passwordHash: await bcrypt.hash(newPassword, 12), mustChangePassword: false },
+  });
+  await endSignIns(user.id);
+
+  return { success: true, message: "Password changed" };
 }
