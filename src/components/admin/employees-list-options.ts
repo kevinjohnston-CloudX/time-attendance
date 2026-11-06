@@ -35,12 +35,16 @@ export const PUNCH_OPTIONS = [
   { id: "clock", name: "Time clock only" },
 ] as const;
 
-/** Records missing something they need: a badge to punch, a shift, a supervisor, a pay method. */
+/**
+ * Records missing something they need: a badge to punch, a shift, a
+ * supervisor, a pay method, or a language for the tablets to show them in.
+ */
 export const MISSING_OPTIONS = [
   { id: "badge", name: "Badge" },
   { id: "shift", name: "Shift" },
   { id: "supervisor", name: "Supervisor" },
   { id: "pay", name: "Pay method" },
+  { id: "language", name: "Language" },
 ] as const;
 
 /** "" is the default: active people first, then by name. */

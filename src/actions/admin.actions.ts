@@ -37,6 +37,7 @@ import { cleanLanguages, languageName } from "@/lib/languages";
 import { hoursToSeconds, secondsToMinutes } from "@/lib/leave-time";
 import { NotFoundError, assertBalanceChangeAllowed, assertNotSenior, assertRecordInReach, assertSiteInReach, siteInReach, siteLimit } from "@/lib/rbac/scope";
 import { assertOwn, ownCompany } from "@/lib/rbac/company";
+import { forgetTabletLanguages } from "@/lib/timeclock/tablet-languages";
 
 // Maps system custom role names to their legacy enum values
 /**
@@ -343,6 +344,7 @@ export const getEmployees = withRBAC(
     if (missing === "shift" && !shift) where.shiftId = null;
     if (missing === "supervisor") where.supervisorId = null;
     if (missing === "pay" && !pay) where.payType = null;
+    if (missing === "language") where.preferredLanguage = null;
 
     // Name, then id, behind every order, so a page boundary never splits or
     // repeats a run of equal values.
@@ -1495,6 +1497,8 @@ export const updateSite = withRBAC(
       entityId: siteId,
       action: "SITE_UPDATED",
     });
+    // Its tablets offer the new languages straight away on this server.
+    forgetTabletLanguages(tenantId);
     revalidatePath("/admin/sites");
     return updated;
   }
@@ -2392,6 +2396,7 @@ export const bulkCreateEmployees = withRBAC(
               departmentId: r.departmentId,
               ruleSetId: r.ruleSetId,
               hireDate: calendarDay(r.hireDate),
+              preferredLanguage: r.language ?? null,
               supervisorId: null,
               // "CL" asks for the next client badge (client-badge.ts).
               wmsId: asksForClientBadge(r.wmsId) ? await issueClientBadge(tx) : r.wmsId ?? null,

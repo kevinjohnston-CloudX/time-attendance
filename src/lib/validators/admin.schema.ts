@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { PayFrequency } from "@prisma/client";
 import { asksForClientBadge, isClientBadge } from "@/lib/utils/client-badge";
-import { isLanguageCode, LANGUAGES } from "@/lib/languages";
+import { isLanguageCode, LANGUAGES, languageFromText } from "@/lib/languages";
 
 export const ROLES = [
   "EMPLOYEE",
@@ -383,6 +383,17 @@ export const csvEmployeeRowSchema = z.object({
     }),
   supervisorCode: z.string().optional().or(z.literal("")).transform((v) => v || undefined),
   wmsId: z.string().optional().or(z.literal("")).transform((v) => v || undefined),
+  // Optional: the language the tablets show this person in, by code, English
+  // name or its own name ("es", "Spanish", "Español").
+  language: z
+    .string()
+    .optional()
+    .transform((v, ctx) => {
+      if (!v || !v.trim()) return undefined;
+      const code = languageFromText(v);
+      if (!code) ctx.addIssue({ code: "custom", message: `"${v.trim()}" is not a language CloudTime knows` });
+      return code ?? undefined;
+    }),
   payType: z.preprocess(
     (v) => (v === "" || v == null ? null : String(v).toUpperCase()),
     z.enum(["HOURLY", "SALARY"]).nullable().optional()

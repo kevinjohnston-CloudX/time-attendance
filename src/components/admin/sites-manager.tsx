@@ -22,7 +22,7 @@ import {
 } from "./setup/setup-ui";
 import { useViewOnly } from "./setup/view-only";
 import { timeZoneLabel, timeZoneOptions } from "./setup/time-zones";
-import { LANGUAGES, languageName } from "@/lib/languages";
+import { LANGUAGES, languageName, TABLETS_USE_LANGUAGES, tabletLanguagesOutcome } from "@/lib/languages";
 
 /**
  * Sites: the buildings people clock in at, each with the time zone its
@@ -274,8 +274,8 @@ export function SiteDialog({
           </optgroup>
         )}
       </SelectField>
-      {/* Informational for now: kept for the tablets, messages and documents
-          to use later (lib/languages.ts). */}
+      {/* What the time clocks and gate tablets here show and offer
+          (TABLET-LANGUAGES-PLAN.md), said as one sentence below the list. */}
       <div className="flex w-full min-w-0 flex-col gap-1.5">
         <label htmlFor="site-primary-language" className="wms-label">
           Primary language
@@ -290,7 +290,7 @@ export function SiteDialog({
           }}
         />
         <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
-          The language this building mostly works in. Type to find one.
+          The language this building mostly works in, and the one its tablets show first. Type to find one.
         </span>
       </div>
       <PickList
@@ -300,8 +300,12 @@ export function SiteDialog({
         selected={others.filter((c) => c !== primary)}
         onChange={setOthers}
         searchPlaceholder="Find a language"
-        hint="Any others spoken here."
+        hint="Any others spoken here, offered on the tablets in this order."
       />
+      <p className="m-0" role="status" style={{ font: "var(--type-body2)", color: "var(--text-secondary)", textWrap: "pretty" }}>
+        {tabletLanguagesOutcome(primary || null, others)}
+        {!TABLETS_USE_LANGUAGES && " Tablets start doing this with their next app update."}
+      </p>
       {site && (
         <StatusField defaultActive={site.isActive} hint="An inactive site stays on the records that already use it." />
       )}
