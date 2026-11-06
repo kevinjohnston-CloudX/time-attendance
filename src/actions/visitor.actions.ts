@@ -6,7 +6,9 @@ import { getViewableSites } from "@/lib/presence/on-site.service";
 import { isVisitorKind, termFitsKind } from "@/lib/visitors/visitor-pass";
 import {
   addVisitor,
+  endVisitorAccess,
   findHosts,
+  listSiteVisitors,
   findVisitors,
   nextVisitorBadge,
   recentCompanies,
@@ -112,3 +114,19 @@ export const renewVisitorPass = withRBAC(
     return renewVisitor(tenantId, employeeId, { employeeId: v.employeeId, siteId: v.siteId, kind: v.kind, term: v.term });
   },
 );
+
+/** The building's visitors for the Visitors tab on Live Attendance. */
+export const getSiteVisitors = withRBAC("VISITOR_MANAGE", async ({ tenantId, employeeId, role }, input: { siteId: string }) => {
+  if (!tenantId) throw new Error("NOT_FOUND");
+  const { siteId } = siteInput.parse(input);
+  await assertSite(tenantId, { employeeId, role }, siteId);
+  return listSiteVisitors(tenantId, siteId);
+});
+
+/** End access now: the badge stops opening this building's gate at once. */
+export const endVisitor = withRBAC("VISITOR_MANAGE", async ({ tenantId, employeeId, role }, input: { siteId: string; employeeId: string }) => {
+  if (!tenantId) throw new Error("NOT_FOUND");
+  const v = z.object({ siteId: z.string().min(1).max(64), employeeId: z.string().min(1).max(64) }).parse(input);
+  await assertSite(tenantId, { employeeId, role }, v.siteId);
+  return endVisitorAccess(tenantId, employeeId, { siteId: v.siteId, employeeId: v.employeeId });
+});

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, CalendarPlus } from "lucide-react";
+import { AlertTriangle, CalendarPlus, RefreshCw } from "lucide-react";
 import { Button, ConfirmDialog } from "@/components/ui";
 import { dismissOnSiteGateRefusals } from "@/actions/gate-refusals.actions";
 import { getOnSiteGateRefusals } from "@/lib/presence/reads";
@@ -12,6 +12,8 @@ import { gateLog } from "@/lib/presence/gate-alert-log";
 import { Face } from "./face";
 import { fmtTime, initialsOf } from "./presence-meta";
 import { ScheduleDayDialog } from "./schedule-day-dialog";
+import { NewVisitorWindow, dayWords } from "./new-visitor-window";
+import { VISITOR_KIND_LABEL, VISITOR_TERM_LABEL, type VisitorKind, type VisitorTerm } from "@/lib/visitors/visitor-pass";
 import { useOnPulseChange } from "./use-site-pulse";
 import { newWatchId, noteAlertCheck, screenId, sendWatch } from "./screen-watch";
 import styles from "./on-site.module.css";
@@ -46,6 +48,11 @@ import { codeOf } from "@/lib/action-errors";
  * the page header): the server answers an empty list, and a card already on
  * screen goes at the next check.
  *
+ * <p>A visitor turned away by their pass (expired, ended, not started, or
+ * another building's) gets the same card, without the switch, for whoever may
+ * manage visitors: Keep ended, or Renew, which opens the visitor window on
+ * them and lets them in on their next try.
+ *
  * <p>Drawn at the top of the page rather than inside the board, so nothing in
  * the header or the full screen board can end up on top of it.
  *
@@ -66,6 +73,8 @@ export function GateRefusalAlert({
   live,
   pulse,
   onScheduled,
+  visitorSite,
+  onRenewed,
 }: {
   siteId: string;
   /** The building's timezone, for the times on the card. */
@@ -75,6 +84,9 @@ export function GateRefusalAlert({
   /** When today's refusals here last changed (see use-site-pulse.ts): a change loads them straight away. */
   pulse?: string | null;
   onScheduled: (name: string) => void;
+  /** The building as the visitor window needs it, for viewers who may renew visitors; absent hides Renew. */
+  visitorSite?: { id: string; name: string; timezone: string } | null;
+  onRenewed?: (name: string) => void;
 }) {
   const [queue, setQueue] = useState<{ siteId: string; cards: GateRefusalCard[]; total: number } | null>(null);
   // Settled here and hidden at once, before the next check agrees.
@@ -83,6 +95,9 @@ export function GateRefusalAlert({
   const [timedOut, setTimedOut] = useState<ReadonlyMap<string, string>>(new Map());
   const [reload, setReload] = useState(0);
   const [adding, setAdding] = useState(false);
+  // The visitor being renewed, kept apart from the queue: their card leaves it
+  // the moment the renewal saves, while the window still shows the result.
+  const [renewing, setRenewing] = useState<GateRefusalCard | null>(null);
   const [confirmingAll, setConfirmingAll] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -143,12 +158,12 @@ export function GateRefusalAlert({
   const open = mine ? Math.max(cards.length, mine.total - (mine.cards.length - cards.length)) : 0;
   const cardId = card?.id ?? null;
   const clockKey = card ? `${card.id}|${card.lastAt}` : null;
-  const paused = adding || confirmingAll || busy;
+  const paused = adding || confirmingAll || busy || !!renewing;
 
   // A new card takes focus, so a keyboard lands on it rather than the page behind.
   useEffect(() => {
-    if (cardId && !adding && !confirmingAll) cardRef.current?.focus();
-  }, [cardId, adding, confirmingAll]);
+    if (cardId && !adding && !confirmingAll && !renewing) cardRef.current?.focus();
+  }, [cardId, adding, confirmingAll, renewing]);
 
   useEffect(() => {
     if (clockKey) gateLog("showing", { refusal: clockKey.split("|")[0], lastTry: clockKey.split("|")[1], waiting: open });
@@ -222,6 +237,34 @@ export function GateRefusalAlert({
       setTimedOut((m) => new Map(m).set(card.id, card.lastAt));
     }
   }, [card, paused, running, now]);
+
+  if (renewing?.visitor && visitorSite) {
+    const v = renewing.visitor;
+    return (
+      <NewVisitorWindow
+        site={visitorSite}
+        renew={{
+          id: renewing.employeeId,
+          name: renewing.name,
+          badge: v.badge,
+          company: v.company,
+          siteId: v.passSite?.id ?? visitorSite.id,
+          siteName: v.passSite?.name ?? visitorSite.name,
+          standing: "EXPIRED",
+          kind: (v.kind as VisitorKind | null) ?? null,
+          validUntil: v.validUntil,
+          isActive: true,
+        }}
+        onDone={() => {
+          // Renewed is let in, as added to the schedule is (watch.service CLOSED_HOW).
+          closing.current.set(renewing.id, "ADDED");
+          settle([renewing.id]);
+          onRenewed?.(renewing.name);
+        }}
+        onClose={() => setRenewing(null)}
+      />
+    );
+  }
 
   if (!card) return null;
 
@@ -299,13 +342,14 @@ export function GateRefusalAlert({
           setError(null);
         }}
       >
-        None of these people will show here again today, however many times they try the gate. They can still be
-        added to the schedule from their details on Live Attendance.
+        None of these people will show here again today, however many times they try the gate.
+        {cards.some((c) => !c.visitor) && " They can still be added to the schedule from their details on Live Attendance."}
       </ConfirmDialog>,
     );
   }
 
-  const role = [card.jobTitle, card.department].filter(Boolean).join(" · ");
+  const visitor = card.visitor;
+  const role = visitor ? visitor.company ?? "" : [card.jobTitle, card.department].filter(Boolean).join(" · ");
   // The hours first, since shift names run long; the name sits under them.
   const hours =
     card.usualStart && card.usualEnd ? `${formatTimeOfDay(card.usualStart)} to ${formatTimeOfDay(card.usualEnd)}` : null;
@@ -370,25 +414,61 @@ export function GateRefusalAlert({
               </span>
             )}
             <span className={styles.gaMeta}>
-              Employee ID {card.employeeCode}
-              {card.homeSite ? ` · Based at ${card.homeSite}` : ""}
+              {visitor ? (
+                `Visitor badge ${visitor.badge}`
+              ) : (
+                <>
+                  Employee ID {card.employeeCode}
+                  {card.homeSite ? ` · Based at ${card.homeSite}` : ""}
+                </>
+              )}
             </span>
             <span id="ga-reason" className={styles.gaStatus}>
               <AlertTriangle className="h-[18px] w-[18px]" aria-hidden="true" />
-              {card.reason === "NOT_A_WORKDAY" ? "Scheduled off today" : "Not on today's schedule"}
+              {visitor ? visitorReason(card) : card.reason === "NOT_A_WORKDAY" ? "Scheduled off today" : "Not on today's schedule"}
             </span>
           </span>
         </div>
 
-        <div className={styles.gaGlance}>
-          <Cell label="Supervisor" value={card.supervisor} empty="None on record" />
-          <Cell label="Usual shift" value={hours ?? card.shift} sub={hours ? card.shift : null} empty="No shift on record" />
-          <Cell label="Tries today" value={String(card.attempts)} sub={firstTry} />
-        </div>
+        {visitor ? (
+          <div className={styles.gaGlance}>
+            <Cell label="Visiting" value={visitor.visiting} empty="Nobody on record" />
+            <Cell
+              label="Pass"
+              value={visitor.kind ? VISITOR_KIND_LABEL[visitor.kind as VisitorKind] : null}
+              sub={visitor.term ? VISITOR_TERM_LABEL[visitor.term as VisitorTerm] : null}
+              empty="No pass on record"
+            />
+            <Cell label="Tries today" value={String(card.attempts)} sub={firstTry} />
+          </div>
+        ) : (
+          <div className={styles.gaGlance}>
+            <Cell label="Supervisor" value={card.supervisor} empty="None on record" />
+            <Cell label="Usual shift" value={hours ?? card.shift} sub={hours ? card.shift : null} empty="No shift on record" />
+            <Cell label="Tries today" value={String(card.attempts)} sub={firstTry} />
+          </div>
+        )}
 
-        {!live && <p className={styles.gaNote}>Adding to the schedule turns on once the gates check CloudTime&apos;s schedule.</p>}
+        {!visitor && !live && <p className={styles.gaNote}>Adding to the schedule turns on once the gates check CloudTime&apos;s schedule.</p>}
+        {visitor && !visitorSite && <p className={styles.gaNote}>Renewing a visitor needs the Visitors permission.</p>}
         {error && <p className={styles.peError}>{error}</p>}
 
+        {visitor ? (
+          <div className={styles.gaActions}>
+            <Button pending={busy} hierarchy="secondary" fullWidth style={BIG} onClick={() => void dismiss([card.id])} disabled={busy}>
+              {busy ? "Saving…" : card.reason === "VISITOR_OTHER_BUILDING" || card.reason === "VISITOR_NOT_YET" ? "Dismiss" : "Keep ended"}
+            </Button>
+            <Button
+              fullWidth
+              style={BIG}
+              leadingIcon={<RefreshCw className="h-5 w-5" aria-hidden="true" />}
+              onClick={() => setRenewing(card)}
+              disabled={busy || !visitorSite}
+            >
+              {card.reason === "VISITOR_OTHER_BUILDING" ? "Renew here" : "Renew"}
+            </Button>
+          </div>
+        ) : (
         <div className={styles.gaActions}>
           <Button pending={busy} hierarchy="secondary" fullWidth style={BIG} onClick={() => void dismiss([card.id])} disabled={busy}>
             {busy ? "Dismissing…" : "Dismiss"}
@@ -403,6 +483,7 @@ export function GateRefusalAlert({
             Add to schedule
           </Button>
         </div>
+        )}
         <p className={styles.gaCountdown}>
           Closes on its own in <span className="tabular">{left}</span> {left === 1 ? "second" : "seconds"}
         </p>
@@ -436,4 +517,21 @@ function Cell({ label, value, sub, empty = "" }: { label: string; value: string 
       </span>
     </div>
   );
+}
+
+/** Why the gate turned a visitor away, in the words the card leads with. */
+function visitorReason(card: GateRefusalCard): string {
+  const v = card.visitor!;
+  switch (card.reason) {
+    case "VISITOR_EXPIRED":
+      return v.validUntil ? `Badge expired ${dayWords(v.validUntil)}` : "Badge expired";
+    case "VISITOR_ENDED":
+      return "Access ended";
+    case "VISITOR_NOT_YET":
+      return v.validFrom ? `Pass starts ${dayWords(v.validFrom)}` : "Pass not started";
+    case "VISITOR_OTHER_BUILDING":
+      return v.passSite ? `Badge is for ${v.passSite.name}` : "Badge is for another building";
+    default:
+      return "Visitor badge refused";
+  }
 }

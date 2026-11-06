@@ -59,6 +59,29 @@ export interface GateRefusalCard {
   firstAt: string;
   lastAt: string;
   device: string | null;
+  /** A visitor turned away by their pass (visitor-pass.ts), with what the card shows; null for staff. */
+  visitor: {
+    badge: string;
+    company: string | null;
+    visiting: string | null;
+    kind: string | null;
+    term: string | null;
+    /** YYYY-MM-DD. */
+    validFrom: string | null;
+    validUntil: string | null;
+    /** The building the pass is for, when it is another one. */
+    passSite: { id: string; name: string } | null;
+  } | null;
+}
+
+/** The reasons a visitor's pass gives (visitor-pass.ts VISITOR_REFUSAL_REASON). */
+const VISITOR_REASONS = ["VISITOR_EXPIRED", "VISITOR_ENDED", "VISITOR_NOT_YET", "VISITOR_OTHER_BUILDING"];
+const SCHEDULE_REASONS = ["NO_SCHEDULE", "NOT_A_WORKDAY"];
+
+/** Which cards a viewer gets: no shift (PRESENCE_SCHEDULE_ADD), visitors (VISITOR_MANAGE), or both. */
+export interface AlertsFor {
+  schedule: boolean;
+  visitors: boolean;
 }
 
 export interface GateRefusalQueue {
@@ -255,29 +278,43 @@ export async function gateAlertsOnSince(tenantId: string, siteId: string): Promi
  * Today's refusals at one building that nobody has settled, oldest first, so
  * the card on screen stays put while others arrive. A person who has since
  * been scheduled (by WMS or anybody here) or has left the company drops out on
- * their own. The caller checks the viewer may see this building.
+ * their own, as does a visitor renewed since. The caller checks the viewer may
+ * see this building, and says which cards they answer.
+ *
+ * <p>No shift cards follow the building's switch. Visitor cards do not: loss
+ * prevention made the pass, and the visitor is at the door whether or not a
+ * System Admin turned the schedule alert on here.
  */
-export async function getOpenGateRefusals(tenantId: string, siteId: string): Promise<GateRefusalQueue | null> {
+export async function getOpenGateRefusals(
+  tenantId: string,
+  siteId: string,
+  show: AlertsFor = { schedule: true, visitors: false },
+): Promise<GateRefusalQueue | null> {
   const [day, onSince] = await Promise.all([siteDay(tenantId, siteId), gateAlertsOnSince(tenantId, siteId)]);
   if (!day) return null;
-  // Switched off: still recorded, shown to nobody.
-  if (!onSince) return { today: day.today, cards: [], total: 0 };
+  const kinds: Prisma.GateRefusalWhereInput[] = [];
+  if (show.schedule && onSince) {
+    kinds.push({
+      reason: { in: SCHEDULE_REASONS },
+      // Only tries since the alert was last turned on.
+      lastAt: { gte: onSince },
+      // Not `terminatedAt: null`: a refusal is only ever noted for someone the
+      // gate did not judge to have left (employment.ts), and somebody made
+      // Active again can still carry their old date. Status still hides a card
+      // for anyone set Inactive since.
+      employee: { isActive: true, scheduleDays: { none: { workDate: day.workDate, isWorkday: true } } },
+    });
+  }
+  if (show.visitors) kinds.push({ reason: { in: VISITOR_REASONS }, employee: { isActive: true } });
+  // Switched off, or nothing this viewer answers: still recorded, shown to nobody.
+  if (!kinds.length) return { today: day.today, cards: [], total: 0 };
   const where: Prisma.GateRefusalWhereInput = {
     tenantId,
     siteId,
     workDate: day.workDate,
-    // Only tries since the alert was last turned on.
-    lastAt: { gte: onSince },
     dismissedAt: null,
     scheduledAt: null,
-    // Not `terminatedAt: null`: a refusal is only ever noted for someone the
-    // gate did not judge to have left (employment.ts), and somebody made
-    // Active again can still carry their old date. Status still hides a card
-    // for anyone set Inactive since.
-    employee: {
-      isActive: true,
-      scheduleDays: { none: { workDate: day.workDate, isWorkday: true } },
-    },
+    OR: kinds,
   };
   const [rows, total] = await Promise.all([
     db.gateRefusal.findMany({
@@ -305,6 +342,18 @@ export async function getOpenGateRefusals(tenantId: string, siteId: string): Pro
             supervisor: { select: { user: { select: { name: true } } } },
             site: { select: { name: true } },
             shift: { select: { name: true, ...SHIFT_HOURS_SELECT } },
+            visitorPass: {
+              select: {
+                siteId: true,
+                kind: true,
+                term: true,
+                company: true,
+                hostName: true,
+                validFrom: true,
+                validUntil: true,
+                site: { select: { name: true } },
+              },
+            },
           },
         },
       },
@@ -336,11 +385,28 @@ export async function getOpenGateRefusals(tenantId: string, siteId: string): Pro
       usualStart: usual?.start ?? null,
       usualEnd: usual?.end ?? null,
       photoUrl: photos.get(e.id) ?? null,
-      reason: r.reason === "NOT_A_WORKDAY" ? "NOT_A_WORKDAY" : "NO_SCHEDULE",
+      reason: VISITOR_REASONS.includes(r.reason)
+        ? (r.reason as GateRefusalReason)
+        : r.reason === "NOT_A_WORKDAY"
+          ? "NOT_A_WORKDAY"
+          : "NO_SCHEDULE",
       attempts: r.attempts,
       firstAt: r.firstAt.toISOString(),
       lastAt: r.lastAt.toISOString(),
       device: r.deviceName,
+      visitor: VISITOR_REASONS.includes(r.reason)
+        ? {
+            badge: e.wmsId ?? e.employeeCode,
+            company: e.visitorPass?.company ?? null,
+            visiting: e.visitorPass?.hostName ?? null,
+            kind: e.visitorPass?.kind ?? null,
+            term: e.visitorPass?.term ?? null,
+            validFrom: e.visitorPass ? e.visitorPass.validFrom.toISOString().slice(0, 10) : null,
+            validUntil: e.visitorPass ? e.visitorPass.validUntil.toISOString().slice(0, 10) : null,
+            passSite:
+              e.visitorPass && e.visitorPass.siteId !== siteId ? { id: e.visitorPass.siteId, name: e.visitorPass.site.name } : null,
+          }
+        : null,
     };
   });
   return { today: day.today, cards, total };
@@ -348,18 +414,20 @@ export async function getOpenGateRefusals(tenantId: string, siteId: string): Pro
 
 /**
  * Settles refusals at one building as dismissed for the day, and says whose
- * they were. Only today's open ones at this building are touched, whatever ids
- * come in.
+ * they were. Only today's open ones at this building, of the kinds this viewer
+ * answers, are touched, whatever ids come in.
  */
 export async function dismissGateRefusals(
   tenantId: string,
   siteId: string,
   ids: string[],
   actorId: string | null,
+  show: AlertsFor = { schedule: true, visitors: false },
 ): Promise<{ id: string; employeeId: string }[]> {
   const day = await siteDay(tenantId, siteId);
   if (!day || !ids.length) return [];
-  const where = { id: { in: ids }, tenantId, siteId, workDate: day.workDate, dismissedAt: null, scheduledAt: null };
+  const reasons = [...(show.schedule ? SCHEDULE_REASONS : []), ...(show.visitors ? VISITOR_REASONS : [])];
+  const where = { id: { in: ids }, tenantId, siteId, workDate: day.workDate, dismissedAt: null, scheduledAt: null, reason: { in: reasons } };
   const open = await db.gateRefusal.findMany({ where, select: { id: true, employeeId: true } });
   if (!open.length) return [];
   await db.gateRefusal.updateMany({

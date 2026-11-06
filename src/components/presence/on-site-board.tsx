@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpDown, ArrowDown, ArrowUp, Building2, Check, ChevronDown, Clock, DoorOpen, Download, Maximize2, Minimize2, SearchX, SlidersHorizontal, UserPlus, UserRoundX } from "lucide-react";
+import { ArrowUpDown, ArrowDown, ArrowUp, Building2, Check, ChevronDown, Clock, DoorOpen, Download, Maximize2, Minimize2, SearchX, SlidersHorizontal, UserRoundX, UsersRound } from "lucide-react";
 import {
   Badge,
   Button,
@@ -98,7 +98,7 @@ import {
 } from "./scan-log";
 import { UnknownBadgesView, unknownBadgesLines, useUnknownBadges } from "./unknown-badges";
 import { ExportWindow } from "./export-window";
-import { NewVisitorWindow } from "./new-visitor-window";
+import { VisitorsWindow } from "./visitors-window";
 import { dayWords, fileStamp, linesTable, movementsLines, stampLine, type ExportTable } from "./export-table";
 import styles from "./on-site.module.css";
 import { usePhoneLayout } from "@/lib/phone";
@@ -411,7 +411,8 @@ export function OnSiteBoard({
   // ── A new scan, straight away ───────────────────────────────────────────
   // The pulse says when the newest scan here was recorded; each new one
   // reloads the board, the log or the movements on screen within seconds.
-  const pulse = useSitePulse(siteId, gateAlerts);
+  // The pulse carries the gate alert's refusals for whoever gets its cards: no shift or visitors.
+  const pulse = useSitePulse(siteId, gateAlerts || canAddVisitors);
   // Which building this page is on, and whether it is in front, for the gate alert diagnostics.
   useScreenWatch(siteId);
   useOnPulseChange(
@@ -823,17 +824,17 @@ export function OnSiteBoard({
           onOpenGate={() => setGateOpen(true)}
         />
       )}
-      {/* Loss prevention add visitors at the building on screen. */}
+      {/* Loss prevention look after the building's visitors: add, renew, end. */}
       {canAddVisitors && board && (
         <>
           <span className="ta-desktop-only">
             <Button
               hierarchy="secondary"
-              leadingIcon={<UserPlus className="h-4 w-4" aria-hidden="true" />}
+              leadingIcon={<UsersRound className="h-4 w-4" aria-hidden="true" />}
               onClick={() => setVisitorOpen(true)}
               aria-haspopup="dialog"
             >
-              New Visitor
+              Visitors
             </Button>
           </span>
           <span className="ta-phone-only">
@@ -843,9 +844,9 @@ export function OnSiteBoard({
               className={styles.exportPhone}
               onClick={() => setVisitorOpen(true)}
               aria-haspopup="dialog"
-              aria-label="New Visitor"
+              aria-label="Visitors"
             >
-              <UserPlus className="h-5 w-5" aria-hidden="true" />
+              <UsersRound className="h-5 w-5" aria-hidden="true" />
             </Button>
           </span>
         </>
@@ -1569,7 +1570,15 @@ export function OnSiteBoard({
       )}
 
       {visitorOpen && board && (
-        <NewVisitorWindow key={`visitor|${board.site.id}`} site={board.site} onClose={() => setVisitorOpen(false)} />
+        <VisitorsWindow
+          key={`visitors|${board.site.id}`}
+          site={board.site}
+          onChanged={(message) => {
+            void refresh(board.site.id);
+            toast.flash(message);
+          }}
+          onClose={() => setVisitorOpen(false)}
+        />
       )}
 
       {tabletsOpen && siteId && (
@@ -1598,7 +1607,7 @@ export function OnSiteBoard({
         />
       )}
 
-      {gateAlerts && siteId && (
+      {(gateAlerts || canAddVisitors) && siteId && (
         <GateRefusalAlert
           key={siteId}
           siteId={siteId}
@@ -1608,6 +1617,11 @@ export function OnSiteBoard({
           onScheduled={(name) => {
             void refresh(siteId);
             toast.flash(`${name} added to today's schedule`);
+          }}
+          visitorSite={canAddVisitors && board?.site.id === siteId ? board.site : null}
+          onRenewed={(name) => {
+            void refresh(siteId);
+            toast.flash(`${name} can come in`);
           }}
         />
       )}

@@ -90,13 +90,16 @@ async function checkSitePulse(tenantId: string, siteId: string, withRefusals: bo
   // Today's refusals by work date, and a building's today is never more than
   // a day behind the server's, so yesterday's date is a safe lower bound.
   const fromDay = new Date(`${since.toISOString().slice(0, 10)}T00:00:00.000Z`);
-  // Null while the alert is switched off at this building, so switching it
-  // off on one screen clears the card on every other within seconds.
+  // No shift refusals only while the alert is switched on at this building, so
+  // switching it off on one screen clears the card on every other within
+  // seconds. A visitor turned away by their pass counts either way, as their
+  // card shows either way (gate-refusals.service.ts).
   const refusals = withRefusals
     ? Prisma.sql`(SELECT max(g."updatedAt") FROM "gate_refusals" g
                   JOIN "sites" st ON st.id = g."siteId"
                   WHERE g."tenantId" = ${tenantId} AND g."siteId" = ${siteId} AND g."workDate" >= ${fromDay}
-                    AND st."gateAlertsOnSince" IS NOT NULL AND g."lastAt" >= st."gateAlertsOnSince")`
+                    AND ((st."gateAlertsOnSince" IS NOT NULL AND g."lastAt" >= st."gateAlertsOnSince")
+                         OR g."reason" LIKE 'VISITOR\_%'))`
     : Prisma.sql`NULL::timestamp`;
   // Taken just before the query, so nothing the query sees was saved after it.
   const checkedAt = new Date().toISOString();

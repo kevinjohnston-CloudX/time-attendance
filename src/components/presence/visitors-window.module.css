@@ -1,0 +1,138 @@
+/* Visitors on Live Attendance. The frame and card are the Export window's
+   (export-window.module.css); this is the list inside the card: the filters
+   and search on one line, then one row per visitor. */
+
+.card {
+  min-height: 320px;
+}
+
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+}
+.filters {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.search {
+  flex: 1 1 200px;
+  min-width: 180px;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.4fr) minmax(100px, 1fr) minmax(140px, 1fr) minmax(110px, 0.9fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  padding: 8px 4px;
+}
+.row + .row {
+  border-top: 1px solid var(--stroke-divider);
+}
+.skeleton {
+  min-height: 52px;
+  margin: 4px 0;
+  border-radius: 10px;
+  background: var(--ta-well);
+}
+
+.who,
+.col {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.name {
+  overflow: hidden;
+  font: var(--weight-semibold) 14px/20px var(--font-sans);
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meta,
+.colValue {
+  overflow: hidden;
+  font: var(--type-body2);
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.colLabel {
+  font: var(--weight-semibold) 11px/14px var(--font-sans);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.colValue[data-inside] {
+  color: var(--text-success);
+}
+
+.pill {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font: var(--weight-semibold) 12px/18px var(--font-sans);
+  white-space: nowrap;
+  background: var(--surface-success);
+  color: var(--text-success);
+}
+.pill[data-tone="warn"] {
+  background: var(--surface-warning);
+  color: var(--text-warning);
+}
+.pill[data-tone="off"] {
+  background: var(--fill-disabled);
+  color: var(--text-secondary);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.empty {
+  margin: 0;
+  padding: 40px 12px;
+  text-align: center;
+  font: var(--type-body2);
+  color: var(--text-secondary);
+}
+
+/* A phone: each visitor as a short block, the actions under it. */
+@media (max-width: 760px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px;
+    padding-block: 12px;
+  }
+  .who {
+    grid-column: 1 / -1;
+  }
+  .col {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+  }
+  .col .pill {
+    margin-top: 0;
+  }
+  .actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}

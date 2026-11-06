@@ -82,21 +82,27 @@ const standingWords = (m: VisitorMatch): { text: string; tone: "ok" | "warn" | "
 
 export function NewVisitorWindow({
   site,
+  renew,
+  onDone,
   onClose,
 }: {
   site: { id: string; name: string; timezone: string };
+  /** Opens on this visitor, ready to renew (from the gate alert or the Visitors tab). */
+  renew?: VisitorMatch;
+  /** Told when a visitor is added or renewed, before the window shows its result. */
+  onDone?: (result: AddedVisitor & { renewed: boolean }) => void;
   onClose: () => void;
 }) {
   const [setup, setSetup] = useState<{ missing: string | null; nextBadge: string; companies: string[] } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [renewing, setRenewing] = useState<VisitorMatch | null>(null);
+  const [renewing, setRenewing] = useState<VisitorMatch | null>(renew ?? null);
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
   const [hostText, setHostText] = useState("");
   const [host, setHost] = useState<HostMatch | null>(null);
   const [hostFocus, setHostFocus] = useState(false);
-  const [kind, setKind] = useState<VisitorKind>("DAY_PASS");
-  const [term, setTerm] = useState<VisitorTerm>(DEFAULT_VISITOR_TERM.DAY_PASS);
+  const [kind, setKind] = useState<VisitorKind>(renew?.kind ?? "DAY_PASS");
+  const [term, setTerm] = useState<VisitorTerm>(DEFAULT_VISITOR_TERM[renew?.kind ?? "DAY_PASS"]);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [done, setDone] = useState<(AddedVisitor & { renewed: boolean }) | null>(null);
@@ -181,8 +187,11 @@ export function NewVisitorWindow({
           term,
         });
     setBusy(false);
-    if (r.success) setDone({ ...r.data, renewed: !!renewing });
-    else setFailure(r.error);
+    if (r.success) {
+      const result = { ...r.data, renewed: !!renewing };
+      setDone(result);
+      onDone?.(result);
+    } else setFailure(r.error);
   };
 
   const another = () => {

@@ -3,7 +3,9 @@
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { getViewableSites } from "@/lib/presence/on-site.service";
-import { dismissGateRefusals, getOpenGateRefusals } from "@/lib/presence/gate-refusals.service";
+import { type AlertsFor, dismissGateRefusals, getOpenGateRefusals } from "@/lib/presence/gate-refusals.service";
+import { auth } from "@/lib/auth";
+import { userHasPermission } from "@/lib/rbac/check-permission";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { getGateReadiness } from "@/lib/presence/tablets.service";
 import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
@@ -13,10 +15,12 @@ import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
  * having no shift, and dismissing them.
  *
  * <p>Gated on PRESENCE_SCHEDULE_ADD ("Live Attendance, Execute" on a role),
- * which is for the people who act on the alert, such as loss prevention. Being
- * able to see a building is not enough: the alert interrupts the page, so it
- * goes only to whoever is meant to answer it. Without the permission both
- * calls answer FORBIDDEN, whatever the browser shows.
+ * which is for the people who act on the alert, such as loss prevention, or on
+ * VISITOR_MANAGE for the visitors turned away by their pass. Each viewer gets,
+ * and may dismiss, only the cards of the permissions they hold. Being able to
+ * see a building is not enough: the alert interrupts the page, so it goes only
+ * to whoever is meant to answer it. Without either permission both calls
+ * answer FORBIDDEN, whatever the browser shows.
  *
  * <p>The site is checked against the viewer's own list on every call, because
  * the page polls with whatever id the browser sends, and one outside that list
@@ -29,6 +33,17 @@ import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
  * successful check is not logged: the page asks every 15 seconds.
  */
 
+/** Which cards this viewer answers. */
+async function alertsFor(): Promise<AlertsFor> {
+  const session = await auth();
+  if (!session?.user) return { schedule: false, visitors: false };
+  const [schedule, visitors] = await Promise.all([
+    userHasPermission(session.user, "PRESENCE_SCHEDULE_ADD"),
+    userHasPermission(session.user, "VISITOR_MANAGE"),
+  ]);
+  return { schedule, visitors };
+}
+
 async function assertSite(tenantId: string, viewer: { employeeId: string; role: string }, siteId: unknown): Promise<string> {
   const id = typeof siteId === "string" ? siteId : "";
   const sites = await getViewableSites(tenantId, viewer);
@@ -37,12 +52,12 @@ async function assertSite(tenantId: string, viewer: { employeeId: string; role: 
 }
 
 export const getOnSiteGateRefusals = withRBAC(
-  "PRESENCE_SCHEDULE_ADD",
+  ["PRESENCE_SCHEDULE_ADD", "VISITOR_MANAGE"],
   async ({ tenantId, employeeId, role }, input: { siteId: string }) => {
     try {
       if (!tenantId) throw new Error("NOT_FOUND");
       const siteId = await assertSite(tenantId, { employeeId, role }, input?.siteId);
-      const queue = await getOpenGateRefusals(tenantId, siteId);
+      const queue = await getOpenGateRefusals(tenantId, siteId, await alertsFor());
       if (!queue) throw new Error("NOT_FOUND");
       return queue;
     } catch (err) {
@@ -53,7 +68,7 @@ export const getOnSiteGateRefusals = withRBAC(
 );
 
 export const dismissOnSiteGateRefusals = withRBAC(
-  "PRESENCE_SCHEDULE_ADD",
+  ["PRESENCE_SCHEDULE_ADD", "VISITOR_MANAGE"],
   async ({ tenantId, employeeId, role }, input: { siteId: string; refusalIds: string[] }) => {
     try {
       if (!tenantId) throw new Error("NOT_FOUND");
@@ -62,7 +77,7 @@ export const dismissOnSiteGateRefusals = withRBAC(
         ? input.refusalIds.filter((x): x is string => typeof x === "string" && /^[A-Za-z0-9_-]{1,40}$/.test(x)).slice(0, 100)
         : [];
       if (!ids.length) throw new Error("NOT_FOUND");
-      const dismissed = await dismissGateRefusals(tenantId, siteId, ids, employeeId || null);
+      const dismissed = await dismissGateRefusals(tenantId, siteId, ids, employeeId || null, await alertsFor());
       if (!dismissed.length) throw new Error("NOT_FOUND");
       await Promise.all(
         dismissed.map((r) =>

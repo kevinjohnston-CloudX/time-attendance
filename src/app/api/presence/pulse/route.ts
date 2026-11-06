@@ -29,7 +29,10 @@ const pulse = withRBAC(
     let alerts = false;
     if (input.alerts) {
       const session = await auth();
-      alerts = !!session?.user && (await userHasPermission(session.user, "PRESENCE_SCHEDULE_ADD"));
+      // The gate alert's viewers: no shift cards, or visitor cards (gate-refusals.service.ts).
+      alerts =
+        !!session?.user &&
+        ((await userHasPermission(session.user, "PRESENCE_SCHEDULE_ADD")) || (await userHasPermission(session.user, "VISITOR_MANAGE")));
     }
     return getSitePulse(tenantId, input.siteId, alerts);
   },

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { localDateString } from "@/lib/presence/on-site.service";
+import { markGateRefusalScheduled } from "@/lib/presence/gate-refusals.service";
 import { SIGN_IN_ONLY_RULE_SET, VISITOR_DEPARTMENT } from "@/lib/sign-in-only";
 import { CLIENT_BADGE_PREFIX, NOT_VISITOR, issueClientBadge, previewClientBadge } from "@/lib/utils/client-badge";
 import {
@@ -326,6 +327,9 @@ export async function renewVisitor(
     }),
   ]);
 
+  // Their card on the gate alert has its answer, here and on every screen.
+  await markGateRefusalScheduled(tenantId, input.siteId, visitor.id, actorId || null);
+
   await writeAuditLog({
     tenantId,
     actorId,
@@ -350,4 +354,114 @@ export async function renewVisitor(
     validFrom,
     validUntil,
   };
+}
+
+/**
+ * End access now: the badge stops opening the gate at once, whatever its last
+ * day (passStanding ENDED). The person and their history stay; Renew undoes it.
+ */
+export async function endVisitorAccess(tenantId: string, actorId: string, input: { siteId: string; employeeId: string }): Promise<{ name: string }> {
+  const pass = await db.visitorPass.findFirst({
+    where: { tenantId, employeeId: input.employeeId, siteId: input.siteId },
+    select: { id: true, endedAt: true, validUntil: true, employee: { select: { wmsId: true, user: { select: { name: true } } } } },
+  });
+  if (!pass) throw new Error("NOT_FOUND");
+  const name = pass.employee.user.name ?? pass.employee.wmsId ?? "";
+  if (pass.endedAt) return { name };
+  await db.visitorPass.updateMany({ where: { id: pass.id, tenantId, endedAt: null }, data: { endedAt: new Date(), endedById: actorId || null } });
+  await writeAuditLog({
+    tenantId,
+    actorId,
+    entityType: "EMPLOYEE",
+    entityId: input.employeeId,
+    action: "VISITOR_ENDED",
+    changes: { before: { validUntil: day(pass.validUntil) }, after: { ended: true } },
+  });
+  return { name };
+}
+
+export interface VisitorRow {
+  employeeId: string;
+  name: string;
+  badge: string;
+  company: string | null;
+  visiting: string | null;
+  kind: VisitorKind;
+  term: VisitorTerm;
+  validFrom: string;
+  validUntil: string;
+  standing: PassStanding;
+  endedAt: string | null;
+  /** The last gate scan, if any: IN means inside now. */
+  lastScan: { direction: "IN" | "OUT"; at: string } | null;
+  addedAt: string;
+  addedBy: string | null;
+}
+
+/** How far back the Visitors tab shows passes that ran out or were ended. */
+export const VISITORS_PAST_DAYS = 30;
+
+/**
+ * The building's visitors for the Visitors tab: every pass still running, and
+ * those that ran out or were ended in the last 30 days, with their last gate
+ * scan. At most 500; a building with more is a list to search, not to read.
+ */
+export async function listSiteVisitors(tenantId: string, siteId: string): Promise<{ today: string; rows: VisitorRow[]; capped: boolean }> {
+  const here = await siteToday(tenantId, siteId);
+  if (!here) throw new Error("NOT_FOUND");
+  const cutoff = asDate(lastDayOf("DAY", here.today));
+  cutoff.setUTCDate(cutoff.getUTCDate() - VISITORS_PAST_DAYS);
+  const passes = await db.visitorPass.findMany({
+    where: { tenantId, siteId, validUntil: { gte: cutoff }, employee: { isActive: true } },
+    orderBy: [{ validUntil: "asc" }, { createdAt: "asc" }],
+    take: 501,
+    select: {
+      employeeId: true,
+      kind: true,
+      term: true,
+      company: true,
+      hostName: true,
+      validFrom: true,
+      validUntil: true,
+      endedAt: true,
+      createdAt: true,
+      createdById: true,
+      siteId: true,
+      employee: { select: { wmsId: true, user: { select: { name: true } } } },
+    },
+  });
+  const capped = passes.length > 500;
+  const list = passes.slice(0, 500);
+  const ids = list.map((p) => p.employeeId);
+  const creators = [...new Set(list.map((p) => p.createdById).filter((x): x is string => !!x))];
+  // Each visitor's newest gate scan, in one query rather than one per row.
+  const [scans, people] = await Promise.all([
+    ids.length
+      ? db.$queryRaw<{ employeeId: string; direction: "IN" | "OUT"; scanTime: Date }[]>`
+          SELECT DISTINCT ON ("employeeId") "employeeId", direction::text AS direction, "scanTime"
+          FROM scan_events
+          WHERE "tenantId" = ${tenantId} AND "employeeId" = ANY(${ids}::text[]) AND stream = 'SECURITY' AND direction IN ('IN', 'OUT')
+          ORDER BY "employeeId", "scanTime" DESC`
+      : [],
+    creators.length ? db.employee.findMany({ where: { tenantId, id: { in: creators } }, select: { id: true, user: { select: { name: true } } } }) : [],
+  ]);
+  const lastScan = new Map(scans.map((s) => [s.employeeId, { direction: s.direction, at: new Date(s.scanTime).toISOString() }]));
+  const byId = new Map(people.map((p) => [p.id, p.user.name ?? null]));
+  const rows = list.map((p): VisitorRow => ({
+    employeeId: p.employeeId,
+    name: p.employee.user.name ?? p.employee.wmsId ?? "",
+    badge: p.employee.wmsId ?? "",
+    company: p.company,
+    visiting: p.hostName,
+    kind: p.kind as VisitorKind,
+    term: p.term as VisitorTerm,
+    validFrom: day(p.validFrom),
+    validUntil: day(p.validUntil),
+    standing: passStanding({ siteId: p.siteId, validFrom: day(p.validFrom), validUntil: day(p.validUntil), endedAt: p.endedAt }, here.today, null),
+    endedAt: p.endedAt?.toISOString() ?? null,
+    lastScan: lastScan.get(p.employeeId) ?? null,
+    addedAt: p.createdAt.toISOString(),
+    addedBy: p.createdById ? (byId.get(p.createdById) ?? null) : null,
+  }));
+  return { today: here.today, rows, capped };
 }
