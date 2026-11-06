@@ -10,6 +10,7 @@ import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { WMS_TERMINATION_ENDS_EMPLOYMENT, employmentEnded, madeActiveAt } from "@/lib/presence/employment";
 import { CLIENT_DEPARTMENT_SHOWN, isClientBadge } from "@/lib/utils/client-badge";
 import { cachedDataProtection, photoOffAt } from "@/lib/privacy/data-protection";
+import { buildingLanguageCodes, tabletBuilding, tabletLanguages } from "@/lib/timeclock/tablet-languages";
 
 /**
  * May this badge scan right now, and who is it?
@@ -109,6 +110,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       user: { select: { name: true } },
       department: { select: { name: true } },
       timeZone: true,
+      preferredLanguage: true,
       site: { select: { timezone: true, gateScanMode: true } },
     },
   });
@@ -276,6 +278,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // Read from memory (a minute per server), so the check costs no query.
   const takePhoto = !photoOffAt(await cachedDataProtection(employee.tenantId), employee.siteId);
 
+  // The language the tablet shows this person in, and the building's choice
+  // for someone with none (tablet-languages.ts). From memory, no query.
+  const languages = tabletLanguages(
+    employee.preferredLanguage,
+    buildingLanguageCodes(await tabletBuilding(employee.tenantId, from, employee.siteId)),
+  );
+
   // The tablet greets people by the name the floor knows them by: the WMS name
   // when the roster sync has one, else the legal name (see shown-name.ts).
   const name = shownNameOrNull(employee) ?? "";
@@ -313,6 +322,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     /// company turned time clock photos off for their site (Data Protection).
     /// The kiosk has to honour it; a build that does not read it still takes one.
     takePhoto,
+    /// The person's saved language code ("es"), or null. A build that shows
+    /// one language ignores it.
+    language: languages.language,
+    /// The building's languages, main one first, each named in itself:
+    /// [{ code: "en", name: "English" }, { code: "es", name: "Español" }].
+    languages: languages.languages,
+    /// Offer the languages above after the scan: true only when nothing is
+    /// saved and there is more than one. The pick is saved through
+    /// POST /api/timeclock/language.
+    askLanguage: languages.askLanguage,
     timezone,
     asOf: today,
   });

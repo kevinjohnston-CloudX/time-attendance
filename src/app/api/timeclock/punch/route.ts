@@ -18,7 +18,7 @@ import { CLIENT_TIME_CLOCK_REJECTION, isClientBadge } from "@/lib/utils/client-b
 import { WMS_TERMINATION_ENDS_EMPLOYMENT, employmentEnded, madeActiveAt } from "@/lib/presence/employment";
 
 function unauthorized() {
-  return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  return NextResponse.json({ success: false, code: "UNAUTHORIZED", error: "Unauthorized" }, { status: 401 });
 }
 
 /**
@@ -87,6 +87,14 @@ function detectPunchType(currentState: PunchState): PunchType {
  */
 const PUNCH_MIN_GAP_MS = 5 * 60 * 1000;
 
+/**
+ * Every refusal also carries a fixed `code`, so a tablet shows its own text
+ * in the person's language instead of the English `error`, which stays for
+ * builds that show it (TABLET-LANGUAGES-PLAN.md): UNAUTHORIZED, BAD_REQUEST,
+ * NOT_FOUND, INACTIVE, VISITOR_AT_TIME_CLOCK, TOO_SOON, NO_PAY_PERIOD,
+ * TIMESHEET_LOCKED, MEAL_LOCKOUT (with minutesLeft), INVALID_STATE,
+ * SERVER_ERROR.
+ */
 export async function POST(req: NextRequest) {
   // 1. Authenticate via shared secret
   if (!timeclockKeyValid(req)) {
@@ -99,7 +107,7 @@ export async function POST(req: NextRequest) {
     body = await req.json();
   } catch {
     return NextResponse.json(
-      { success: false, error: "Invalid JSON body" },
+      { success: false, code: "BAD_REQUEST", error: "Invalid JSON body" },
       { status: 400 }
     );
   }
@@ -108,7 +116,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     const msgs = parsed.error.issues.map((i) => i.message).join("; ");
     return NextResponse.json(
-      { success: false, error: msgs },
+      { success: false, code: "BAD_REQUEST", error: msgs },
       { status: 400 }
     );
   }
@@ -134,7 +142,7 @@ export async function POST(req: NextRequest) {
     punchTime = parseLocalDateTime(ScanDateTime, scanZone);
   } catch {
     return NextResponse.json(
-      { success: false, error: `Invalid ScanDateTime: ${ScanDateTime}` },
+      { success: false, code: "BAD_REQUEST", error: `Invalid ScanDateTime: ${ScanDateTime}` },
       { status: 400 }
     );
   }
@@ -195,13 +203,13 @@ export async function POST(req: NextRequest) {
   if (!employee) {
     const error = `Badge ID "${EmployeeCode}" not found`;
     await settle("NO_EMPLOYEE", { rejectionReason: error });
-    return NextResponse.json({ success: false, error }, { status: 404 });
+    return NextResponse.json({ success: false, code: "NOT_FOUND", error }, { status: 404 });
   }
 
   if (!employee.isActive) {
     await settle("PUNCH_REJECTED", { rejectionReason: "Employee is inactive" });
     return NextResponse.json(
-      { success: false, error: "Employee is inactive" },
+      { success: false, code: "INACTIVE", error: "Employee is inactive" },
       { status: 400 }
     );
   }
@@ -224,7 +232,7 @@ export async function POST(req: NextRequest) {
         : "Employee is inactive (terminated in WMS)",
     });
     return NextResponse.json(
-      { success: false, error: "Employee is inactive" },
+      { success: false, code: "INACTIVE", error: "Employee is inactive" },
       { status: 400 }
     );
   }
@@ -236,7 +244,7 @@ export async function POST(req: NextRequest) {
   // drop the held Oracle write.
   if (isClientBadge(employee.wmsId)) {
     await settle("PUNCH_REJECTED", { rejectionReason: CLIENT_TIME_CLOCK_REJECTION });
-    return NextResponse.json({ success: false, punchId: null, error: CLIENT_TIME_CLOCK_REJECTION });
+    return NextResponse.json({ success: false, punchId: null, code: "VISITOR_AT_TIME_CLOCK", error: CLIENT_TIME_CLOCK_REJECTION });
   }
 
   // 5a'. The same scan, already a punch. 5a only knows a retry by its scan
@@ -321,6 +329,7 @@ export async function POST(req: NextRequest) {
       /// yet; it is what the screen would show once the kiosk stops waiting on
       /// Oracle for this verdict.
       tooSoon: true,
+      code: "TOO_SOON",
       error,
       lastPunchAt: tooSoon.punchTime.toISOString(),
     });
@@ -336,7 +345,7 @@ export async function POST(req: NextRequest) {
     await saveRejectedPunch({ employeeId: employee.id, timesheetId: null, punchType: "CLOCK_IN", source: "KIOSK", stateBefore: "OUT", rejectionReason: "No active pay period" });
     await settle("PUNCH_REJECTED", { rejectionReason: "No active pay period" });
     return NextResponse.json(
-      { success: false, error: "No active pay period" },
+      { success: false, code: "NO_PAY_PERIOD", error: "No active pay period" },
       { status: 400 }
     );
   }
@@ -427,7 +436,7 @@ export async function POST(req: NextRequest) {
     await settle("PUNCH_REJECTED", { rejectionReason: "Timesheet is locked for this pay period" });
     return NextResponse.json(
       // As the tablets have always had it: they match on refusal text (see punch-state.ts).
-      { success: false, error: "Timesheet is locked for this pay period" },
+      { success: false, code: "TIMESHEET_LOCKED", error: "Timesheet is locked for this pay period" },
       { status: 409 }
     );
   }
@@ -461,7 +470,7 @@ export async function POST(req: NextRequest) {
       const error = mealLockoutRejection(wait);
       await settle("PUNCH_REJECTED", { punchType, rejectionReason: error });
       if (scanEventId) await setScanAsideFromAlternation(scanEventId, "Refused by the meal lockout: not counted as a clock in or out");
-      return NextResponse.json({ success: false, punchId: null, error, minutesLeft: wait });
+      return NextResponse.json({ success: false, punchId: null, code: "MEAL_LOCKOUT", error, minutesLeft: wait });
     }
   }
 
@@ -474,7 +483,7 @@ export async function POST(req: NextRequest) {
       rejectionReason: transition.error ?? "Invalid state transition",
     });
     return NextResponse.json(
-      { success: false, error: transition.error },
+      { success: false, code: "INVALID_STATE", error: transition.error },
       { status: 409 }
     );
   }
@@ -530,7 +539,7 @@ export async function POST(req: NextRequest) {
     const message = err instanceof Error ? err.message : "Internal server error";
     await settle("ERROR", { rejectionReason: message });
     return NextResponse.json(
-      { success: false, error: message },
+      { success: false, code: "SERVER_ERROR", error: message },
       { status: 500 }
     );
   }

@@ -72,6 +72,7 @@ const NAMED: Record<string, string> = {
   EMPLOYEE_UPDATED: "Employee updated",
   EMPLOYEE_PHOTO_UPDATED: "Employee photo updated",
   EMPLOYEE_PHOTO_REMOVED: "Employee photo removed",
+  PREFERRED_LANGUAGE_SET: "Language set at a time clock",
   LEAVE_BALANCE_ADJUSTED: "Leave balance adjusted",
   LEAVE_BALANCE_RESET_TO_ACCRUAL: "Leave balance reset to accrual",
   BALANCE_RESET: "Leave balance reset",
