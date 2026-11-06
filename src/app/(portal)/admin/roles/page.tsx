@@ -7,6 +7,8 @@ import { getPermissions } from "@/lib/rbac/permissions";
 import { ROLES, ROLE_RANK } from "@/lib/rbac/roles";
 import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
 import { db } from "@/lib/db";
+import { ownCompany } from "@/lib/rbac/company";
+import { withoutVisitors } from "@/lib/utils/client-badge";
 import { RolesClient } from "@/components/admin/roles-client";
 
 /**
@@ -58,7 +60,13 @@ export default async function RolesPage() {
 
   const [rolesResult, roleCounts] = await Promise.all([
     getRoles(),
-    db.employee.groupBy({ by: ["role"], _count: { _all: true } }),
+    // Held to the viewer's company: unscoped, it summed every company on the
+    // shared database. Visitors are not staff, so they are not counted.
+    db.employee.groupBy({
+      by: ["role"],
+      where: withoutVisitors({ tenantId: ownCompany(session.user.tenantId) }),
+      _count: { _all: true },
+    }),
   ]);
 
   const countByRole = Object.fromEntries(
