@@ -247,7 +247,7 @@ export function NewVisitorWindow({
                 siteName={done.siteName}
               />
               <p className={styles.doneText}>
-                {done.renewed ? "The badge works again" : "The badge works"} at {done.siteName} through {dayWords(done.validUntil)}.
+                {done.renewed ? "The badge now works" : "The badge works"} at {done.siteName} through {dayWords(done.validUntil)}.
               </p>
             </section>
           ) : (
