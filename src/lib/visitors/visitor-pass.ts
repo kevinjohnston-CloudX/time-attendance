@@ -24,11 +24,14 @@
 export type VisitorKind = "FREQUENT" | "DAY_PASS";
 export type VisitorTerm = "SIX_MONTHS" | "ONE_YEAR" | "TWO_YEARS" | "DAY" | "WEEK" | "MONTH";
 
-/** Each kind's lengths, in the order they are offered; the first is the default. */
+/** Each kind's lengths, shortest first, as they are offered. */
 export const VISITOR_TERMS: Record<VisitorKind, readonly VisitorTerm[]> = {
-  FREQUENT: ["ONE_YEAR", "SIX_MONTHS", "TWO_YEARS"],
+  FREQUENT: ["SIX_MONTHS", "ONE_YEAR", "TWO_YEARS"],
   DAY_PASS: ["DAY", "WEEK", "MONTH"],
 };
+
+/** The length each kind starts on. */
+export const DEFAULT_VISITOR_TERM: Record<VisitorKind, VisitorTerm> = { FREQUENT: "ONE_YEAR", DAY_PASS: "DAY" };
 
 export const VISITOR_TERM_LABEL: Record<VisitorTerm, string> = {
   SIX_MONTHS: "6 months",

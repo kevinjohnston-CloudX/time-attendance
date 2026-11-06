@@ -1,0 +1,247 @@
+/* New Visitor on Live Attendance. The frame, cards, rail and choice rows are
+   the Export window's own (export-window.module.css); this adds what a form
+   needs: the earlier visitors under the name, the staff list under Visiting,
+   the renewal summary, and the badge in miniature. */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cardLabel {
+  margin: 0;
+  padding: 0 2px;
+  font: var(--weight-semibold) 12px/16px var(--font-sans);
+  color: var(--text-tertiary);
+}
+
+.note {
+  margin: 0;
+  font: var(--type-body2);
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+/* ---- The hint in the footer: a check when ready ---- */
+.hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hint svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.hint[data-ready="true"] {
+  color: var(--text-success);
+}
+
+/* ---- Earlier visitors with this name ---- */
+.matches {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: -2px;
+  padding: 10px 8px 8px;
+  border-radius: 10px;
+  background: var(--ta-well);
+  box-shadow: inset 0 0 0 1px var(--ta-well-ring);
+}
+.match {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 6px 4px 6px 6px;
+  border-radius: 8px;
+}
+.match + .match {
+  border-top: 1px solid var(--stroke-divider);
+}
+.matchText {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.matchName {
+  overflow: hidden;
+  font: var(--weight-semibold) 14px/20px var(--font-sans);
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.matchMeta {
+  overflow: hidden;
+  font: var(--type-body2);
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pill {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font: var(--weight-semibold) 12px/18px var(--font-sans);
+  white-space: nowrap;
+  background: var(--surface-success);
+  color: var(--text-success);
+}
+.pill[data-tone="warn"] {
+  background: var(--surface-warning);
+  color: var(--text-warning);
+}
+.pill[data-tone="off"] {
+  background: var(--fill-disabled);
+  color: var(--text-secondary);
+}
+
+/* ---- Who they are visiting: staff under the field ---- */
+.hostField {
+  position: relative;
+}
+.suggest {
+  position: absolute;
+  z-index: 2;
+  top: calc(100% - 18px);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--surface-card);
+  box-shadow: var(--shadow-menu);
+}
+.suggestRow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.suggestRow:hover,
+.suggestRow:focus-visible {
+  background: var(--ta-row-hover);
+  outline: none;
+}
+.suggestName {
+  font: var(--weight-semibold) 14px/20px var(--font-sans);
+  color: var(--text-primary);
+}
+.suggestMeta {
+  font: var(--type-body2);
+  color: var(--text-secondary);
+}
+
+/* ---- Renewing somebody already on file ---- */
+.renewing {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+.renewRow {
+  display: flex;
+  flex-direction: column;
+}
+.renewName {
+  font: var(--weight-semibold) 16px/22px var(--font-sans);
+  color: var(--text-primary);
+}
+.renewMeta {
+  font: var(--type-body2);
+  color: var(--text-secondary);
+}
+
+/* ---- The badge in miniature ---- */
+.badge {
+  --band: var(--ta-brand-orange);
+  --band-ink: var(--wms-color-gray-950);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--surface-card);
+  box-shadow: inset 0 0 0 1px var(--stroke-divider);
+}
+.badgeBand {
+  padding: 8px 12px;
+  background: var(--band);
+  color: var(--band-ink);
+  font: var(--weight-bold) 13px/16px var(--font-sans);
+}
+.badgeBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 12px 10px;
+}
+.badgeName {
+  overflow: hidden;
+  font: var(--weight-bold) 17px/22px var(--font-sans);
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.badgeCompany {
+  overflow: hidden;
+  font: var(--type-body2);
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.badgeNumber {
+  margin-top: 6px;
+  font: var(--weight-semibold) 13px/18px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--text-tertiary);
+}
+.badgeFoot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--stroke-divider);
+}
+.badgeSite {
+  font: var(--type-body2);
+  color: var(--text-secondary);
+}
+.badgeUntil {
+  display: flex;
+  flex-direction: column;
+}
+.badgeUntilLabel {
+  font: var(--weight-semibold) 11px/14px var(--font-sans);
+  color: var(--text-tertiary);
+}
+.badgeUntilDate {
+  font: var(--weight-bold) 18px/24px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+/* A frequent visitor's date matters less at the door than a day pass's. */
+.badge[data-kind="FREQUENT"] .badgeUntilDate {
+  font: var(--weight-semibold) 14px/20px var(--font-sans);
+}
+
+/* ---- Done ---- */
+.doneCard {
+  max-width: 420px;
+  margin: 0 auto;
+}
+.doneText {
+  margin: 0;
+  font: var(--type-body1);
+  color: var(--text-primary);
+  text-wrap: pretty;
+}

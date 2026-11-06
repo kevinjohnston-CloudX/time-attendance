@@ -73,7 +73,7 @@ export default async function OnSitePage({
   const siteId = sites.some((s) => s.id === params.site) ? params.site! : defaultSiteId;
 
   const boardResult = siteId ? await getOnSiteBoard({ siteId }) : null;
-  const [canEditPhotos, canRemovePhotos, canManageEmployees, gateAlerts, gateSwitch, canOpenReports] = await Promise.all([
+  const [canEditPhotos, canRemovePhotos, canManageEmployees, gateAlerts, gateSwitch, canOpenReports, canAddVisitors] = await Promise.all([
     userHasPermission(session.user, "PRESENCE_PHOTO_EDIT"),
     userHasPermission(session.user, "PRESENCE_PHOTO_REMOVE"),
     userHasPermission(session.user, "EMPLOYEE_MANAGE"),
@@ -82,6 +82,8 @@ export default async function OnSitePage({
     getGateAlertsSetting(),
     // Export points at the scan reports for more than a week, for those who can open them.
     userHasPermission(session.user, "REPORT_MANAGE"),
+    // New Visitor: loss prevention and HR (the Visitors permission).
+    userHasPermission(session.user, "VISITOR_MANAGE"),
   ]);
   const canSchedule = canManageEmployees || gateAlerts;
   // A failure here is a real fault, not an empty building: the error boundary
@@ -101,6 +103,7 @@ export default async function OnSitePage({
       gateSwitch={gateSwitch.success ? gateSwitch.data : null}
       // Loss prevention (who answer the gate alert) and System Admins.
       canSeeTablets={gateAlerts || gateSwitch.success}
+      canAddVisitors={canAddVisitors}
       initialFilters={{
         status: params.status ?? null,
         dept: params.dept ?? null,

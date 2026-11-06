@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpDown, ArrowDown, ArrowUp, Building2, Check, ChevronDown, Clock, DoorOpen, Download, Maximize2, Minimize2, SearchX, SlidersHorizontal, UserRoundX } from "lucide-react";
+import { ArrowUpDown, ArrowDown, ArrowUp, Building2, Check, ChevronDown, Clock, DoorOpen, Download, Maximize2, Minimize2, SearchX, SlidersHorizontal, UserPlus, UserRoundX } from "lucide-react";
 import {
   Badge,
   Button,
@@ -98,6 +98,7 @@ import {
 } from "./scan-log";
 import { UnknownBadgesView, unknownBadgesLines, useUnknownBadges } from "./unknown-badges";
 import { ExportWindow } from "./export-window";
+import { NewVisitorWindow } from "./new-visitor-window";
 import { dayWords, fileStamp, linesTable, movementsLines, stampLine, type ExportTable } from "./export-table";
 import styles from "./on-site.module.css";
 import { usePhoneLayout } from "@/lib/phone";
@@ -163,6 +164,7 @@ export function OnSiteBoard({
   gateAlerts = false,
   gateSwitch = null,
   canSeeTablets = false,
+  canAddVisitors = false,
 }: {
   sites: { id: string; name: string }[];
   initialSiteId: string | null;
@@ -205,6 +207,8 @@ export function OnSiteBoard({
   gateSwitch?: GateAlertsSetting | null;
   /** The Tablets button, for loss prevention and System Admins; the action checks again. */
   canSeeTablets?: boolean;
+  /** New Visitor, for viewers with the Visitors permission; every visitor action checks again. */
+  canAddVisitors?: boolean;
 }) {
   const [siteId, setSiteId] = useState(initialSiteId);
   // Each building's switch, kept here so moving between buildings shows the
@@ -212,6 +216,7 @@ export function OnSiteBoard({
   const [gateSites, setGateSites] = useState(gateSwitch?.sites ?? null);
   const gateSite = gateSites?.find((s) => s.id === siteId) ?? null;
   const [tabletsOpen, setTabletsOpen] = useState(false);
+  const [visitorOpen, setVisitorOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [gateOpen, setGateOpen] = useState(false);
   // The chip under the title and the Tablets window read the same answer.
@@ -817,6 +822,33 @@ export function OnSiteBoard({
           onOpenTablets={() => setTabletsOpen(true)}
           onOpenGate={() => setGateOpen(true)}
         />
+      )}
+      {/* Loss prevention add visitors at the building on screen. */}
+      {canAddVisitors && board && (
+        <>
+          <span className="ta-desktop-only">
+            <Button
+              hierarchy="secondary"
+              leadingIcon={<UserPlus className="h-4 w-4" aria-hidden="true" />}
+              onClick={() => setVisitorOpen(true)}
+              aria-haspopup="dialog"
+            >
+              New Visitor
+            </Button>
+          </span>
+          <span className="ta-phone-only">
+            <Button
+              hierarchy="secondary"
+              iconOnly
+              className={styles.exportPhone}
+              onClick={() => setVisitorOpen(true)}
+              aria-haspopup="dialog"
+              aria-label="New Visitor"
+            >
+              <UserPlus className="h-5 w-5" aria-hidden="true" />
+            </Button>
+          </span>
+        </>
       )}
       {/* Everyone who can open the page, Loss Prevention included: they print
           the In the building roll call at the door. */}
@@ -1534,6 +1566,10 @@ export function OnSiteBoard({
           canOpenReports={canOpenReports}
           onClose={() => setExportOpen(false)}
         />
+      )}
+
+      {visitorOpen && board && (
+        <NewVisitorWindow key={`visitor|${board.site.id}`} site={board.site} onClose={() => setVisitorOpen(false)} />
       )}
 
       {tabletsOpen && siteId && (
