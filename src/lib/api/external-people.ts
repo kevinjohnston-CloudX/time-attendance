@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { badgeWhere } from "@/lib/utils/badge-lookup";
+import { NOT_VISITOR } from "@/lib/utils/client-badge";
 import { decryptPii } from "@/lib/crypto/pii";
 
 /**
@@ -12,7 +13,8 @@ import { decryptPii } from "@/lib/crypto/pii";
  * supervisor of record, and when the record last changed.
  *
  * <p>What stays out, on purpose: pay and rates, date of birth, home address,
- * emergency contact, gender, marital status, leave and hours. The select below
+ * emergency contact, gender, marital status, leave and hours. Visitors (a
+ * client badge, CL00001...) are left out altogether: they are not staff. The select below
  * is the whole list of what leaves; add to it deliberately.
  *
  * <p>Every query is scoped to the key's company in the where, never checked
@@ -145,7 +147,8 @@ async function userIdsMatching(field: "email" | "username", value: string): Prom
 }
 
 export async function listPeople(tenantId: string, query: PeopleQuery) {
-  const and: Prisma.EmployeeWhereInput[] = [{ tenantId }];
+  // Visitors (client badges) are not staff, so an identity sync never sees them.
+  const and: Prisma.EmployeeWhereInput[] = [{ tenantId }, NOT_VISITOR];
   // "active" includes people on leave: they are still employed.
   if (query.status === "active") and.push({ isActive: true });
   if (query.status === "on_leave") and.push({ isActive: true, onLeave: true });
@@ -190,6 +193,6 @@ export async function listPeople(tenantId: string, query: PeopleQuery) {
 }
 
 export async function getPerson(tenantId: string, id: string) {
-  const row = await db.employee.findFirst({ where: { id, tenantId }, select: PERSON_SELECT });
+  const row = await db.employee.findFirst({ where: { AND: [{ id, tenantId }, NOT_VISITOR] }, select: PERSON_SELECT });
   return row ? toPerson(row) : null;
 }

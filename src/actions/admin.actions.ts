@@ -17,7 +17,7 @@ import { SITE_READERS, RULES_READERS } from "@/lib/rbac/permissions";
 import { zodMessage } from "@/lib/zod-message";
 import { photoUrls } from "@/lib/presence/photos";
 import { badgeWhere } from "@/lib/utils/badge-lookup";
-import { asksForClientBadge, isClientBadge, issueClientBadge, previewClientBadge } from "@/lib/utils/client-badge";
+import { asksForClientBadge, isClientBadge, issueClientBadge, previewClientBadge, withoutVisitors } from "@/lib/utils/client-badge";
 import { looksLikeBadge } from "@/lib/presence/people-search.service";
 import { MISSING_OPTIONS, PAY_OPTIONS, PERIOD_OPTIONS, PUNCH_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS, pick } from "@/components/admin/employees-list-options";
 import { writeAuditLog } from "@/lib/audit/logger";
@@ -168,8 +168,9 @@ function serializePayRate<T extends { payRate: unknown; chargeRate?: unknown; ho
 export const getSupervisorOptions = withRBAC(
   "EMPLOYEE_MANAGE",
   async ({ tenantId }, _input: void) => {
+    // A visitor can never be anybody's supervisor.
     return db.employee.findMany({
-      where: { isActive: true, tenantId: ownCompany(tenantId) },
+      where: withoutVisitors({ isActive: true, tenantId: ownCompany(tenantId) }),
       select: { id: true, user: { select: { name: true } } },
       orderBy: { user: { name: "asc" } },
     });
@@ -204,7 +205,7 @@ export const getAdminRefData = withRBAC(
       // every screen that asks for reference data.
       withEmployees
         ? db.employee.findMany({
-            where: { isActive: true, tenantId: t },
+            where: withoutVisitors({ isActive: true, tenantId: t }),
             select: { id: true, user: { select: { name: true } } },
             orderBy: { user: { name: "asc" } },
           })

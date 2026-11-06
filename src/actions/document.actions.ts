@@ -20,6 +20,7 @@ import {
   type DeleteDocumentInput,
 } from "@/lib/validators/document.schema";
 import { ownCompany } from "@/lib/rbac/company";
+import { withoutVisitors } from "@/lib/utils/client-badge";
 
 // ─── uploadDocument ───────────────────────────────────────────────────────────
 // Uses manual auth because withRBAC cannot handle File/FormData inputs.
@@ -152,7 +153,7 @@ export const getEmployeesForDocumentUpload = withRBAC(
   "DOCUMENT_UPLOAD",
   async ({ tenantId }, _input: void) => {
     return db.employee.findMany({
-      where: { isActive: true, tenantId: ownCompany(tenantId) },
+      where: withoutVisitors({ isActive: true, tenantId: ownCompany(tenantId) }),
       include: { user: { select: { name: true } } },
       orderBy: { user: { name: "asc" } },
     });

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import type { TxClient } from "@/types/prisma";
 import { parseUtcDate } from "@/lib/utils/date";
 import { hoursToSeconds } from "@/lib/leave-time";
+import { withoutVisitors } from "@/lib/utils/client-badge";
 
 /** Derive how many pay periods fit in a year from a single period's date range. */
 function periodsPerYear(startDate: Date, endDate: Date): number {
@@ -210,7 +211,8 @@ export async function postAccruals(payPeriodId: string, employeeIds?: string[]):
 
   const [employees, leaveTypes, rules, siteLinks, catPolicyLinks] = await Promise.all([
     db.employee.findMany({
-      where: { isActive: true, tenantId: payPeriod.tenantId, ...(employeeIds ? { id: { in: employeeIds } } : {}) },
+      // Visitors (client-badge.ts) earn no leave.
+      where: withoutVisitors({ isActive: true, tenantId: payPeriod.tenantId, ...(employeeIds ? { id: { in: employeeIds } } : {}) }),
       select: {
         id: true, siteId: true, payCategoryId: true, hireDate: true,
         adjustedHireDate: true, titleChangeDate: true,
@@ -604,7 +606,7 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
 
   const [employees, leaveTypes, rules, siteLinks, catPolicyLinks] = await Promise.all([
     db.employee.findMany({
-      where: { isActive: true },
+      where: withoutVisitors({ isActive: true }),
       select: {
         id: true, siteId: true, tenantId: true, payCategoryId: true, hireDate: true,
         adjustedHireDate: true, titleChangeDate: true,

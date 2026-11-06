@@ -61,6 +61,26 @@ export const CLIENT_DEPARTMENT_SHOWN = "Visitor";
  */
 export const VISITOR_DEPARTMENT_ID = "visitors";
 
+/**
+ * Everyone but visitors, for a `where`: a person whose Badge ID is not a
+ * client badge, including the many with no Badge ID at all. Spelled out
+ * because Prisma's NOT over a nullable column also drops the nulls: measured
+ * 2026-11-06, a bare `NOT startsWith "CL"` kept 1,834 of the 7,751 people who
+ * are not visitors.
+ */
+export const NOT_VISITOR = {
+  OR: [{ wmsId: null }, { NOT: { wmsId: { startsWith: CLIENT_BADGE_PREFIX } } }],
+} satisfies Prisma.EmployeeWhereInput;
+
+/**
+ * A person query with visitors left out, whatever it already holds (its own
+ * OR or AND included). For anything that treats people as staff: headcounts,
+ * accruals, timecards, supervisors, the people API.
+ */
+export function withoutVisitors(where: Prisma.EmployeeWhereInput): Prisma.EmployeeWhereInput {
+  return { AND: [where, NOT_VISITOR] };
+}
+
 /** A badge CloudTime issued to a client. */
 export function isClientBadge(code: string | null | undefined): boolean {
   return code != null && CLIENT_BADGE.test(code.trim());

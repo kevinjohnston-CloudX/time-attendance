@@ -2,6 +2,7 @@ import type { PayFrequency } from "@prisma/client";
 import { db } from "@/lib/db";
 import { periodDayRange } from "@/lib/pay-period-days";
 import type { DateRange } from "@/lib/validators/report.schema";
+import { withoutVisitors } from "@/lib/utils/client-badge";
 
 /**
  * "The current pay period" and "the previous pay period", worked out each
@@ -80,7 +81,9 @@ export async function resolveMovingPayPeriod(range: PayPeriodRange, tenantId: st
 export async function tenantWeekStart(tenantId: string): Promise<number> {
   const rules = await db.ruleSet.findMany({
     where: { tenantId },
-    select: { weekStartDay: true, _count: { select: { employees: { where: { isActive: true } } } } },
+    // Staff only: visitors sit on a rule set too, and enough of them would
+    // tip the company's week.
+    select: { weekStartDay: true, _count: { select: { employees: { where: withoutVisitors({ isActive: true }) } } } },
   });
   const people = new Map<number, number>();
   for (const r of rules) people.set(r.weekStartDay, (people.get(r.weekStartDay) ?? 0) + r._count.employees);

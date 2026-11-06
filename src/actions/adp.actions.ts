@@ -16,6 +16,7 @@ import {
   generateUsername,
   generateTempPassword,
 } from "@/lib/integrations/adp/mapper";
+import { withoutVisitors } from "@/lib/utils/client-badge";
 
 // ─── Config Status ────────────────────────────────────────────────────────────
 
@@ -45,7 +46,7 @@ export const getAdpSyncStatus = withRBAC(
       db.employee.count({ where: { adpWorkerId: { not: null }, tenantId } }),
       // Active people with no ADP worker ID are the ones a sync cannot match,
       // and would add a second time.
-      db.employee.count({ where: { isActive: true, tenantId } }),
+      db.employee.count({ where: withoutVisitors({ isActive: true, tenantId }) }),
       db.employee.count({ where: { isActive: true, adpWorkerId: { not: null }, tenantId } }),
       db.payrollRun.findFirst({
         where: { exportedAt: { not: null }, payPeriod: { tenantId } },

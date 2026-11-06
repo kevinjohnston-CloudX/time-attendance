@@ -496,7 +496,7 @@ if (!valid) return respond(401);`;
             <p style={{ ...para, marginTop: 10 }}>
               Returns your company&apos;s employees a page at a time, sorted by name. Each one comes with what identifies them: names, username,
               work and personal email, company, phone numbers, employee code, badge IDs, site, department, job title, agency and supervisor. Pay,
-              rates, address, date of birth and emergency contacts are never included.
+              rates, address, date of birth and emergency contacts are never included. Visitors are not employees and are never listed.
             </p>
             <p style={{ ...para, marginTop: 8 }}>
               <Code>firstName</Code> and <Code>lastName</Code> split the full name at its first space, the same way the time clocks do.{" "}

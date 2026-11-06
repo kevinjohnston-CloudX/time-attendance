@@ -3,6 +3,7 @@ import { leaveDayKeys } from "@/lib/leave-days";
 import { parseUtcDate, startOfDayInTz, toSiteClock } from "@/lib/utils/date";
 import type { BadgeTone } from "@/components/ui";
 import { directReportsOf } from "@/lib/get-subordinate-ids";
+import { withoutVisitors } from "@/lib/utils/client-badge";
 
 /**
  * Everything the portal design's dashboard puts on screen, in one place.
@@ -227,9 +228,10 @@ export const PRESENCE_WINDOW_MS = 36 * 60 * 60 * 1000;
  * without it "not in" would silently leave them out.
  */
 export async function getPresence(tenantId: string, supervisorId: string | null, now = new Date()): Promise<Presence> {
-  const scoped = supervisorId
-    ? { tenantId, isActive: true, ...directReportsOf(supervisorId) }
-    : { tenantId, isActive: true };
+  // Staff only: visitors are counted on Live Attendance, not here.
+  const scoped = withoutVisitors(
+    supervisorId ? { tenantId, isActive: true, ...directReportsOf(supervisorId) } : { tenantId, isActive: true },
+  );
   const since = new Date(now.getTime() - PRESENCE_WINDOW_MS);
 
   const [states, headcount] = await Promise.all([

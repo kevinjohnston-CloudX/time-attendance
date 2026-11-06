@@ -23,7 +23,7 @@ type Include = "data" | "photos";
 /** What each group of files holds, in the order the ZIP has them. Mirrors EXPORT_TABLES. */
 export const COMPANY_EXPORT_GROUPS: { title: string; icon: LucideIcon; body: string; files: number }[] = [
   { title: "Company setup", icon: Building2, body: "Sites, departments, rule sets, shifts, pay codes and roles", files: 24 },
-  { title: "People", icon: Users, body: "Employees, badges, supervisors, pay rates and documents", files: 8 },
+  { title: "People", icon: Users, body: "Employees, visitors, badges, supervisors, pay rates and documents", files: 9 },
   { title: "Time", icon: Clock, body: "Timesheets, punches, scans, schedules and paid hours", files: 14 },
   { title: "Leave", icon: CalendarDays, body: "Leave requests, balances and their history", files: 3 },
   { title: "Reports", icon: LineChart, body: "Saved reports, folders, schedules and runs", files: 5 },

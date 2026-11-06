@@ -34,6 +34,7 @@ import {
 } from "@/lib/validators/leave.schema";
 import { ownCompany } from "@/lib/rbac/company";
 import { alertLeaveDecided, alertLeaveSubmitted, alertLeaveWaitingOnHr } from "@/lib/push/leave-alerts";
+import { withoutVisitors } from "@/lib/utils/client-badge";
 
 // ─── Employee actions ─────────────────────────────────────────────────────────
 
@@ -127,7 +128,7 @@ export const getTeamMembersForLeave = withRBAC(
     }
 
     const employees = await db.employee.findMany({
-      where: { isActive: true, tenantId: ownCompany(tenantId), ...idFilter },
+      where: withoutVisitors({ isActive: true, tenantId: ownCompany(tenantId), ...idFilter }),
       select: {
         id: true,
         wmsId: true,

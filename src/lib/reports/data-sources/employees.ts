@@ -7,6 +7,7 @@ import { daysOf } from "../period";
 import type { ReportConfig } from "@/lib/validators/report.schema";
 import { personTimeZone, timeZoneLabel } from "@/lib/utils/person-time-zone";
 import { rateInEffect, todayKey } from "@/lib/pay-rates";
+import { withoutVisitors } from "@/lib/utils/client-badge";
 
 /**
  * Employees: one row per person, with their setup. The source HR's lists are
@@ -171,7 +172,7 @@ export const employeesSource: DataSourceDefinition = {
     );
 
     const employees = await db.employee.findMany({
-      where: { tenantId, ...(statusFiltered ? {} : { isActive: true }), ...filterWhere },
+      where: withoutVisitors({ tenantId, ...(statusFiltered ? {} : { isActive: true }), ...filterWhere }),
       select: {
         id: true,
         wmsId: true,

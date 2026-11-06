@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asksForClientBadge, isClientBadge, nextClientBadge } from "./client-badge";
+import { NOT_VISITOR, asksForClientBadge, isClientBadge, nextClientBadge, withoutVisitors } from "./client-badge";
 
 describe("isClientBadge", () => {
   it("is a CL badge with digits", () => {
@@ -43,5 +43,17 @@ describe("nextClientBadge", () => {
 
   it("compares numbers, not text", () => {
     expect(nextClientBadge(["CL00009", "CL100000"])).toBe("CL100001");
+  });
+});
+
+describe("withoutVisitors", () => {
+  it("keeps the query whole and adds the visitor exclusion beside it", () => {
+    const where = { tenantId: "t1", OR: [{ isActive: true }, { id: "x" }] };
+    expect(withoutVisitors(where)).toEqual({ AND: [where, NOT_VISITOR] });
+  });
+
+  it("keeps people with no Badge ID (a bare NOT would drop them)", () => {
+    expect(NOT_VISITOR.OR).toContainEqual({ wmsId: null });
+    expect(NOT_VISITOR.OR).toContainEqual({ NOT: { wmsId: { startsWith: "CL" } } });
   });
 });

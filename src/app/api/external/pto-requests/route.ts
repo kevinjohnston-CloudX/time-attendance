@@ -5,6 +5,7 @@ import { authenticateApiKey, missingScope, unauthorized, badRequest, notFound } 
 import { daySelectionSchema } from "@/lib/validators/leave.schema";
 import { createLeaveRequestCore, submitLeaveRequestCore } from "@/lib/services/leave.service";
 import { writeAuditLog } from "@/lib/audit/logger";
+import { NOT_VISITOR } from "@/lib/utils/client-badge";
 
 const requestSchema = z.object({
   employeeCode: z.string().min(1).optional(),
@@ -36,8 +37,10 @@ export async function POST(req: NextRequest) {
   const { employeeCode, email, leaveTypeCode, selectedDays, note } = parsed.data;
 
   // Resolve employee
+  // Visitors (client-badge.ts) hold no leave, so one is never found here.
   const employee = await db.employee.findFirst({
     where: {
+      ...NOT_VISITOR,
       tenantId: auth.tenantId,
       isActive: true,
       // Either email: the personal one as spelled, the work one is saved

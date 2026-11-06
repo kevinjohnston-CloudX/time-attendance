@@ -5,6 +5,7 @@ import { endedOn, startedOn } from "@/lib/engines/segment-builder";
 
 const nextDayKey = (k: string, n = 1) => new Date(Date.parse(k + "T12:00:00Z") + n * 86_400_000).toISOString().slice(0, 10);
 import { ownCompany } from "@/lib/rbac/company";
+import { withoutVisitors } from "@/lib/utils/client-badge";
 
 /**
  * The people the timecard list offers, with each one's timecard status and
@@ -70,7 +71,8 @@ export async function timecardList(scope: Prisma.EmployeeWhereInput, tenantId: s
   // employee with it, so the picker was carrying pay rates, dates of birth
   // and home addresses for everybody to draw a name and a department.
   const employees = await db.employee.findMany({
-    where: { AND: [scope, { OR: [{ isActive: true }, { id: { in: inactiveWithTimecard } }] }] },
+    // Visitors keep no timecard (client-badge.ts), so they are never offered one.
+    where: withoutVisitors({ AND: [scope, { OR: [{ isActive: true }, { id: { in: inactiveWithTimecard } }] }] }),
     select: {
       id: true,
       employeeCode: true,

@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { reachesCompany } from "@/lib/rbac/scope";
 import { directReportsOf } from "@/lib/get-subordinate-ids";
+import { NOT_VISITOR } from "@/lib/utils/client-badge";
 
 /**
  * Team Members: the people a viewer may see, with the general details a
@@ -58,6 +59,7 @@ export async function loadTeamMembers(viewer: Viewer, params: TeamMembersParams)
   const where: Prisma.EmployeeWhereInput = {
     AND: [
       scope,
+      NOT_VISITOR,
       showInactive ? {} : { isActive: true },
       search
         ? {

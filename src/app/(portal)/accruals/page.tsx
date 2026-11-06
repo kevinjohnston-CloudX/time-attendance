@@ -10,6 +10,7 @@ import { parseUtcDate } from "@/lib/utils/date";
 import { AccrualsEmployeeList } from "@/components/admin/accruals-employee-list";
 import { LinkButton, PageHeader } from "@/components/ui";
 import { ownCompany } from "@/lib/rbac/company";
+import { withoutVisitors } from "@/lib/utils/client-badge";
 
 /**
  * Accruals, on the design's list template: toolbar, applied-filter chips, then
@@ -112,7 +113,8 @@ export default async function AccrualsPage({
 
   const [employees, sites, scopedDepartments, total] = await Promise.all([
     db.employee.findMany({
-      where: employeeWhere,
+      // Visitors hold no leave (client-badge.ts).
+      where: withoutVisitors(employeeWhere),
       select: {
         id: true,
         employeeCode: true,
@@ -136,14 +138,14 @@ export default async function AccrualsPage({
     // query, and deliberately scoped to the viewer rather than to the current
     // filters, so picking a department never empties the list it came from.
     db.department.findMany({
-      where: { employees: { some: employeeScope } },
+      where: { employees: { some: withoutVisitors(employeeScope) } },
       select: { name: true },
       orderBy: { name: "asc" },
     }),
     // Everything the viewer is scoped to, for "showing n of N" and for the
     // empty state, which says something different when there is genuinely
     // nobody than when a filter is hiding them.
-    db.employee.count({ where: employeeScope }),
+    db.employee.count({ where: withoutVisitors(employeeScope) }),
   ]);
 
   const visible = employees.map((emp) => ({

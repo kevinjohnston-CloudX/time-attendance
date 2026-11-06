@@ -6,6 +6,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { findLoginUserId } from "@/lib/login-lookup";
 import { signAccessToken, createRefreshToken } from "@/lib/mobile-auth";
+import { isClientBadge } from "@/lib/utils/client-badge";
 
 const loginSchema = z.object({
   username: z.string().min(1),
@@ -74,6 +75,15 @@ export async function POST(req: NextRequest) {
     if (!user.employee.isActive) {
       return NextResponse.json(
         { success: false, error: "Employee account is inactive" },
+        { status: 403 },
+      );
+    }
+
+    // A visitor holds a badge for the security gate and never signs in, here
+    // as on the web (auth.ts), even if an email and password were added.
+    if (isClientBadge(user.employee.wmsId)) {
+      return NextResponse.json(
+        { success: false, error: "Visitors cannot sign in" },
         { status: 403 },
       );
     }

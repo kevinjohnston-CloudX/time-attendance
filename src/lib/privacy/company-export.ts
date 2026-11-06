@@ -77,6 +77,7 @@ export const EXPORT_TABLES: ExportTable[] = [
   { file: "employee_pay_rates", table: "employee_pay_rates", group: "People", where: PERSON },
   { file: "employee_rule_set_history", table: "employee_ruleset_history", group: "People", where: PERSON },
   { file: "employee_site_access", table: "hr_site_access", group: "People", where: PERSON },
+  { file: "visitor_passes", table: "visitor_passes", group: "People", where: OWN },
   { file: "documents", table: "documents", group: "People", where: PERSON },
 
   { file: "pay_periods", table: "pay_periods", group: "Time", where: OWN },

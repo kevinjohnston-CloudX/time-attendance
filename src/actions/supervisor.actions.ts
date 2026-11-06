@@ -25,6 +25,7 @@ import type { PunchState, PunchType } from "@prisma/client";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { ownCompany } from "@/lib/rbac/company";
 import { assertMissedPunchFix, fixesMissedPunchesOnly, MISSED_PUNCH_ONLY_ERROR } from "@/lib/timecards/missed-punch-fix";
+import { withoutVisitors } from "@/lib/utils/client-badge";
 
 // Payroll, HR and the admins see the whole company, as does a custom role
 // with the company-wide permission (reachesCompany): Payroll Admin NL, made
@@ -425,7 +426,7 @@ export const getTeamHeadcount = withRBAC(
 
     const grouped = await db.employee.groupBy({
       by: ["departmentId"],
-      where: { ...employeeFilter, isActive: true },
+      where: withoutVisitors({ ...employeeFilter, isActive: true }),
       _count: { _all: true },
     });
 

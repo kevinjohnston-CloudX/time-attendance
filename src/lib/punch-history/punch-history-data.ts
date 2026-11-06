@@ -6,6 +6,7 @@ import { photoUrls } from "@/lib/presence/photos";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { directReportsOf } from "@/lib/get-subordinate-ids";
 import { ownCompany } from "@/lib/rbac/company";
+import { withoutVisitors } from "@/lib/utils/client-badge";
 
 /**
  * Everything the Team Punch History screen and its export read, in one place,
@@ -245,9 +246,11 @@ async function resolveScope(viewer: Viewer, params: PunchHistoryParams) {
   // A supervisor with no employee record of their own reports to nobody and
   // has nobody reporting to them. Scoping by an undefined supervisorId would
   // drop the condition and hand them the whole company.
-  const scope: Prisma.EmployeeWhereInput = isPayroll
-    ? { isActive: true, tenantId }
-    : { isActive: true, ...directReportsOf(viewer.employeeId ?? "__none__"), tenantId };
+  const scope: Prisma.EmployeeWhereInput = withoutVisitors(
+    isPayroll
+      ? { isActive: true, tenantId }
+      : { isActive: true, ...directReportsOf(viewer.employeeId ?? "__none__"), tenantId },
+  );
 
   const selectedSiteId = isPayroll ? (params.siteId || null) : null;
   const selectedDepartmentId = isPayroll ? (params.departmentId || null) : null;
