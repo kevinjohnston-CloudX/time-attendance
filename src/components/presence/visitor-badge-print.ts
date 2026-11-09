@@ -1,4 +1,4 @@
-import { VISITOR_KIND_LABEL, VISITOR_TERM_LABEL, type VisitorTerm } from "@/lib/visitors/visitor-pass";
+import { VISITOR_KIND_LABEL, VISITOR_TERM_LABEL, type VisitorKind, type VisitorTerm } from "@/lib/visitors/visitor-pass";
 import type { VisitorBadge } from "@/lib/visitors/visitors.service";
 
 /**
@@ -34,7 +34,11 @@ export const PAPER_BODY: Record<BadgePaper, string> = {
   card: "A plastic card printer (CR80, 3.375 × 2.125 in)",
 };
 
-/** The band's colour: day passes by length, frequent visitors in the visitor orange of My Badge. */
+/**
+ * The band's colour: day passes by length, frequent visitors in the visitor
+ * orange of My Badge. The New Visitor preview uses the same, so it shows the
+ * badge as it prints.
+ */
 const BAND: Record<"FREQUENT" | VisitorTerm, { bg: string; ink: string }> = {
   FREQUENT: { bg: "#F7931E", ink: "#111111" },
   SIX_MONTHS: { bg: "#F7931E", ink: "#111111" },
@@ -44,6 +48,11 @@ const BAND: Record<"FREQUENT" | VisitorTerm, { bg: string; ink: string }> = {
   WEEK: { bg: "#2563EB", ink: "#FFFFFF" },
   MONTH: { bg: "#7C3AED", ink: "#FFFFFF" },
 };
+
+/** The printed band's colours for a pass. */
+export function badgeBand(kind: VisitorKind, term: VisitorTerm): { bg: string; ink: string } {
+  return kind === "FREQUENT" ? BAND.FREQUENT : BAND[term];
+}
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
@@ -57,7 +66,7 @@ function initials(name: string): string {
 
 /** One badge, sized by the page it sits on. */
 function badgeHtml(b: VisitorBadge): string {
-  const band = b.kind === "FREQUENT" ? BAND.FREQUENT : BAND[b.term];
+  const band = badgeBand(b.kind, b.term);
   const q = b.qr.size;
   // Two modules of white around the code: readers need a quiet edge.
   const qr = `<svg viewBox="-2 -2 ${q + 4} ${q + 4}" shape-rendering="crispEdges" aria-hidden="true"><rect x="-2" y="-2" width="${q + 4}" height="${q + 4}" fill="#fff"/><path d="${b.qr.path}" fill="#000"/></svg>`;

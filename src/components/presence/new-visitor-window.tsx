@@ -9,6 +9,7 @@ import { DEFAULT_VISITOR_TERM, VISITOR_KIND_LABEL, VISITOR_TERMS, VISITOR_TERM_L
 import type { AddedVisitor, HostMatch, VisitorMatch } from "@/lib/visitors/visitors.service";
 import frame from "./export-window.module.css";
 import styles from "./new-visitor-window.module.css";
+import { badgeBand } from "./visitor-badge-print";
 import { PrintBadgeWindow } from "./print-badge-window";
 
 /**
@@ -259,6 +260,7 @@ export function NewVisitorWindow({
                 company={renewing?.company ?? company.trim()}
                 badge={done.badge}
                 kind={done.kind}
+                term={done.term}
                 lastDay={done.validUntil}
                 siteName={done.siteName}
               />
@@ -410,6 +412,7 @@ export function NewVisitorWindow({
                     company={(renewing ? renewing.company : company.trim()) || null}
                     badge={renewing?.badge ?? setup?.nextBadge ?? "CL"}
                     kind={kind}
+                    term={term}
                     lastDay={renewing ? null : lastDay}
                     siteName={site.name}
                   />
@@ -462,7 +465,7 @@ export function NewVisitorWindow({
 }
 
 /**
- * The badge in miniature, as it will print: the Visitor band, who, from
+ * The badge in miniature, as it will print: the band, who, from
  * where, the number, and when it stops working (large on a day pass, where
  * a guard checks it at a glance).
  */
@@ -471,6 +474,7 @@ function BadgePreview({
   company,
   badge,
   kind,
+  term,
   lastDay,
   siteName,
 }: {
@@ -478,12 +482,17 @@ function BadgePreview({
   company: string | null;
   badge: string;
   kind: VisitorKind;
+  term: VisitorTerm;
   lastDay: string | null;
   siteName: string;
 }) {
+  // The printed band's own colours (visitor-badge-print.ts), so this shows the badge as it prints.
+  const band = badgeBand(kind, term);
   return (
     <div className={styles.badge} data-kind={kind} aria-label="Badge preview">
-      <span className={styles.badgeBand}>{VISITOR_KIND_LABEL[kind]}</span>
+      <span className={styles.badgeBand} style={{ background: band.bg, color: band.ink }}>
+        {VISITOR_KIND_LABEL[kind]} · {VISITOR_TERM_LABEL[term]}
+      </span>
       <span className={styles.badgeBody}>
         <span className={styles.badgeName}>{name}</span>
         {company && <span className={styles.badgeCompany}>{company}</span>}
