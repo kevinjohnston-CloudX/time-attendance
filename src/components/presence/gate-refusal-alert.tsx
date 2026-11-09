@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, CalendarPlus, RefreshCw } from "lucide-react";
+import { AlertTriangle, CalendarPlus, RefreshCw, UserX } from "lucide-react";
 import { Button, ConfirmDialog } from "@/components/ui";
 import { dismissOnSiteGateRefusals } from "@/actions/gate-refusals.actions";
 import { getOnSiteGateRefusals } from "@/lib/presence/reads";
@@ -52,6 +52,11 @@ import { codeOf } from "@/lib/action-errors";
  * another building's) gets the same card, without the switch, for whoever may
  * manage visitors: Keep ended, or Renew, which opens the visitor window on
  * them and lets them in on their next try.
+ *
+ * <p>A former employee turned away at a gate gets the card in red, for
+ * information only (Cristian, 2026-11-09): who they are, when they were
+ * terminated, and Dismiss, nothing else. Same people, same switch and same
+ * 45 seconds as the no shift card.
  *
  * <p>Drawn at the top of the page rather than inside the board, so nothing in
  * the header or the full screen board can end up on top of it.
@@ -343,12 +348,13 @@ export function GateRefusalAlert({
         }}
       >
         None of these people will show here again today, however many times they try the gate.
-        {cards.some((c) => !c.visitor) && " They can still be added to the schedule from their details on Live Attendance."}
+        {cards.some((c) => !c.visitor && !c.ended) && " They can still be added to the schedule from their details on Live Attendance."}
       </ConfirmDialog>,
     );
   }
 
   const visitor = card.visitor;
+  const ended = card.ended;
   const role = visitor ? visitor.company ?? "" : [card.jobTitle, card.department].filter(Boolean).join(" · ");
   // The hours first, since shift names run long; the name sits under them.
   const hours =
@@ -363,6 +369,7 @@ export function GateRefusalAlert({
         ref={cardRef}
         tabIndex={-1}
         className={`${styles.gaCard} ta-sheet`}
+        data-tone={ended ? "ended" : undefined}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="ga-title ga-name"
@@ -424,8 +431,16 @@ export function GateRefusalAlert({
               )}
             </span>
             <span id="ga-reason" className={styles.gaStatus}>
-              <AlertTriangle className="h-[18px] w-[18px]" aria-hidden="true" />
-              {visitor ? visitorReason(card) : card.reason === "NOT_A_WORKDAY" ? "Scheduled off today" : "Not on today's schedule"}
+              {ended ? <UserX className="h-[18px] w-[18px]" aria-hidden="true" /> : <AlertTriangle className="h-[18px] w-[18px]" aria-hidden="true" />}
+              {visitor
+                ? visitorReason(card)
+                : ended
+                  ? ended.on
+                    ? `Terminated ${dayWords(ended.on)}`
+                    : "Terminated"
+                  : card.reason === "NOT_A_WORKDAY"
+                    ? "Scheduled off today"
+                    : "Not on today's schedule"}
             </span>
           </span>
         </div>
@@ -441,6 +456,12 @@ export function GateRefusalAlert({
             />
             <Cell label="Tries today" value={String(card.attempts)} sub={firstTry} />
           </div>
+        ) : ended ? (
+          <div className={styles.gaGlance}>
+            <Cell label="Supervisor" value={card.supervisor} empty="None on record" />
+            <Cell label="Terminated" value={ended.on ? dayWords(ended.on) : null} sub={ended.by === "WMS" ? "Recorded in WMS" : "Recorded in CloudTime"} empty="Date not on record" />
+            <Cell label="Tries today" value={String(card.attempts)} sub={firstTry} />
+          </div>
         ) : (
           <div className={styles.gaGlance}>
             <Cell label="Supervisor" value={card.supervisor} empty="None on record" />
@@ -449,7 +470,7 @@ export function GateRefusalAlert({
           </div>
         )}
 
-        {!visitor && !live && <p className={styles.gaNote}>Adding to the schedule turns on once the gates check CloudTime&apos;s schedule.</p>}
+        {!visitor && !ended && !live && <p className={styles.gaNote}>Adding to the schedule turns on once the gates check CloudTime&apos;s schedule.</p>}
         {visitor && !visitorSite && <p className={styles.gaNote}>Renewing a visitor needs the Visitors permission.</p>}
         {error && <p className={styles.peError}>{error}</p>}
 
@@ -466,6 +487,12 @@ export function GateRefusalAlert({
               disabled={busy || !visitorSite}
             >
               {card.reason === "VISITOR_OTHER_BUILDING" ? "Renew here" : "Renew"}
+            </Button>
+          </div>
+        ) : ended ? (
+          <div className={styles.gaActions} data-single="true">
+            <Button pending={busy} fullWidth style={BIG} onClick={() => void dismiss([card.id])} disabled={busy}>
+              {busy ? "Dismissing…" : "Dismiss"}
             </Button>
           </div>
         ) : (

@@ -4455,6 +4455,54 @@
   transition: width 1s linear;
 }
 
+.gaActions[data-single="true"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* A former employee: the same card in the error red, so it is told apart
+   from an amber no shift card across the room. */
+.gaCard[data-tone="ended"] {
+  animation:
+    pop 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    gaGlowEnded 2s ease-out 260ms infinite;
+}
+@keyframes gaGlowEnded {
+  0% {
+    box-shadow:
+      0 0 0 0 color-mix(in srgb, var(--fill-error) 55%, transparent),
+      var(--shadow-modal);
+  }
+  70%,
+  100% {
+    box-shadow:
+      0 0 0 18px color-mix(in srgb, var(--fill-error) 0%, transparent),
+      var(--shadow-modal);
+  }
+}
+.gaCard[data-tone="ended"] .gaHead {
+  background: var(--surface-error);
+  border-bottom-color: var(--stroke-error);
+}
+.gaCard[data-tone="ended"] .gaHeadIcon,
+.gaCard[data-tone="ended"] .gaQueueCount {
+  background: var(--fill-error);
+}
+.gaCard[data-tone="ended"] .gaHeadIcon::after {
+  border-color: var(--fill-error);
+}
+.gaCard[data-tone="ended"] .gaHeadTitle {
+  color: var(--text-error);
+}
+.gaCard[data-tone="ended"] .gaStripe,
+.gaCard[data-tone="ended"] .gaTimer > span {
+  background: var(--fill-error);
+}
+.gaCard[data-tone="ended"] .gaStatus {
+  background: var(--surface-error);
+  color: var(--text-error);
+  box-shadow: 0 0 0 1px var(--stroke-error);
+}
+
 @media (max-width: 560px) {
   .gaHead {
     padding: 16px 20px;
@@ -4493,6 +4541,7 @@
 @media (prefers-reduced-motion: reduce) {
   .gaScrim,
   .gaCard,
+  .gaCard[data-tone="ended"],
   .gaHeadIcon::after {
     animation: none;
   }

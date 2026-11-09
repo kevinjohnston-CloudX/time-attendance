@@ -236,10 +236,12 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           : "NO_SCHEDULE";
 
   // Turned away at the door: noted for Live Attendance once the tablet has
-  // its answer. Only a person CloudTime knows and still employs, since an
-  // unknown badge has its own list and a former employee is not a scheduling
-  // question.
-  const noting = !scheduled && !terminated && from.stream !== "TIME_CLOCK";
+  // its answer. A person CloudTime knows: an unknown badge has its own list.
+  // Someone still employed is noted for having no shift; a former employee
+  // is noted as such, for loss prevention's information (gate-refusals.service).
+  // Never a visitor as a former employee: their pass says why, above.
+  const notingEnded = terminated && !client && from.stream !== "TIME_CLOCK";
+  const noting = notingEnded || (!scheduled && !terminated && from.stream !== "TIME_CLOCK");
   gateLog("check", {
     badge,
     employee: employee.id,
@@ -262,7 +264,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       warehouse: from.warehouse,
       device: from.device,
       params: from.params ?? null,
-      reason: reason as GateRefusalReason,
+      reason: (notingEnded ? "TERMINATED" : reason) as GateRefusalReason,
       at: new Date(),
     };
     after(async () => {

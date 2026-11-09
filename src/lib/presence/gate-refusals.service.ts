@@ -5,6 +5,7 @@ import { localDateString } from "@/lib/presence/on-site.service";
 import { SHIFT_HOURS_SELECT, shiftHoursOn } from "@/lib/presence/expected-hours";
 import { photoUrls } from "@/lib/presence/photos";
 import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
+import { WMS_TERMINATION_ENDS_EMPLOYMENT, employmentEnded, madeActiveAt } from "@/lib/presence/employment";
 
 /**
  * People CloudTime's gate check turned away for having no shift today, for
@@ -18,16 +19,21 @@ import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
  * <p>A System Admin can switch the alert off for the whole company from the
  * Live Attendance header. Refusals are still recorded while it is off; nobody
  * is shown them.
+ *
+ * <p>A former employee turned away at a gate (TERMINATED) is recorded the
+ * same way and shown to the same people, for information only: their card
+ * has nothing to do but Dismiss (Cristian, 2026-11-09).
  */
 
-/** Why the gate check said no, as it answers the tablet. */
 /**
- * Why the gate turned somebody away: no shift (NO_SCHEDULE, NOT_A_WORKDAY), or
- * a visitor whose pass does not open this gate today (visitor-pass.ts).
+ * Why the gate turned somebody away: no shift (NO_SCHEDULE, NOT_A_WORKDAY),
+ * employment ended (TERMINATED, employment.ts), or a visitor whose pass does
+ * not open this gate today (visitor-pass.ts).
  */
 export type GateRefusalReason =
   | "NO_SCHEDULE"
   | "NOT_A_WORKDAY"
+  | "TERMINATED"
   | "VISITOR_NOT_YET"
   | "VISITOR_EXPIRED"
   | "VISITOR_ENDED"
@@ -72,13 +78,24 @@ export interface GateRefusalCard {
     /** The building the pass is for, when it is another one. */
     passSite: { id: string; name: string } | null;
   } | null;
+  /** A former employee (TERMINATED): when, if a date is on record, and which system ended it; null otherwise. */
+  ended: {
+    /** YYYY-MM-DD, or null when only the status says so. */
+    on: string | null;
+    by: "CLOUDTIME" | "WMS";
+  } | null;
 }
 
 /** The reasons a visitor's pass gives (visitor-pass.ts VISITOR_REFUSAL_REASON). */
 const VISITOR_REASONS = ["VISITOR_EXPIRED", "VISITOR_ENDED", "VISITOR_NOT_YET", "VISITOR_OTHER_BUILDING"];
 const SCHEDULE_REASONS = ["NO_SCHEDULE", "NOT_A_WORKDAY"];
+const ENDED_REASONS = ["TERMINATED"];
 
-/** Which cards a viewer gets: no shift (PRESENCE_SCHEDULE_ADD), visitors (VISITOR_MANAGE), or both. */
+/**
+ * Which cards a viewer gets: no shift and former employees
+ * (PRESENCE_SCHEDULE_ADD, loss prevention's "Live Attendance, Execute"),
+ * visitors (VISITOR_MANAGE), or both.
+ */
 export interface AlertsFor {
   schedule: boolean;
   visitors: boolean;
@@ -304,6 +321,9 @@ export async function getOpenGateRefusals(
       // for anyone set Inactive since.
       employee: { isActive: true, scheduleDays: { none: { workDate: day.workDate, isWorkday: true } } },
     });
+    // Former employees: the same people and the same switch. Whether they are
+    // still gone is checked below, on the rules the gate used.
+    kinds.push({ reason: { in: ENDED_REASONS }, lastAt: { gte: onSince } });
   }
   if (show.visitors) kinds.push({ reason: { in: VISITOR_REASONS }, employee: { isActive: true } });
   // Switched off, or nothing this viewer answers: still recorded, shown to nobody.
@@ -337,6 +357,11 @@ export async function getOpenGateRefusals(
             wmsId: true,
             siteId: true,
             wmsName: true,
+            isActive: true,
+            terminatedAt: true,
+            hireDate: true,
+            adjustedHireDate: true,
+            wmsActive: true,
             user: { select: { name: true } },
             department: { select: { name: true } },
             supervisor: { select: { user: { select: { name: true } } } },
@@ -360,12 +385,26 @@ export async function getOpenGateRefusals(
     }),
     db.gateRefusal.count({ where }),
   ]);
+  // A former employee made Active or hired again since the gate turned them
+  // away is employed again: their card goes, as a scheduled person's does.
+  const endedRows = rows.filter((r) => r.reason === "TERMINATED");
+  const madeActive = endedRows.length ? await madeActiveAt(endedRows.map((r) => r.employee)) : new Map<string, Date>();
+  const endedNow = new Map<string, { on: string | null; by: "CLOUDTIME" | "WMS" }>();
+  for (const r of endedRows) {
+    const e = r.employee;
+    const back = madeActive.get(e.id) ?? null;
+    if (!employmentEnded(e, day.today, back, WMS_TERMINATION_ENDS_EMPLOYMENT)) continue;
+    const byCloudTime = employmentEnded(e, day.today, back, false);
+    endedNow.set(r.id, { on: byCloudTime && e.terminatedAt ? e.terminatedAt.toISOString().slice(0, 10) : null, by: byCloudTime ? "CLOUDTIME" : "WMS" });
+  }
+  const gone = endedRows.length - endedNow.size;
+  const shown = gone ? rows.filter((r) => r.reason !== "TERMINATED" || endedNow.has(r.id)) : rows;
   const photos = await photoUrls(
     tenantId,
-    rows.map((r) => ({ id: r.employee.id, barcode: r.employee.barcode, wmsId: r.employee.wmsId, employeeCode: r.employee.employeeCode })),
+    shown.map((r) => ({ id: r.employee.id, barcode: r.employee.barcode, wmsId: r.employee.wmsId, employeeCode: r.employee.employeeCode })),
   );
 
-  const cards = rows.map((r): GateRefusalCard => {
+  const cards = shown.map((r): GateRefusalCard => {
     const e = r.employee;
     const shift = e.shift;
     // Today's hours when the shift says, else its usual hours: somebody off
@@ -385,7 +424,7 @@ export async function getOpenGateRefusals(
       usualStart: usual?.start ?? null,
       usualEnd: usual?.end ?? null,
       photoUrl: photos.get(e.id) ?? null,
-      reason: VISITOR_REASONS.includes(r.reason)
+      reason: VISITOR_REASONS.includes(r.reason) || ENDED_REASONS.includes(r.reason)
         ? (r.reason as GateRefusalReason)
         : r.reason === "NOT_A_WORKDAY"
           ? "NOT_A_WORKDAY"
@@ -407,9 +446,10 @@ export async function getOpenGateRefusals(
               e.visitorPass && e.visitorPass.siteId !== siteId ? { id: e.visitorPass.siteId, name: e.visitorPass.site.name } : null,
           }
         : null,
+      ended: endedNow.get(r.id) ?? null,
     };
   });
-  return { today: day.today, cards, total };
+  return { today: day.today, cards, total: total - gone };
 }
 
 /**
@@ -426,7 +466,7 @@ export async function dismissGateRefusals(
 ): Promise<{ id: string; employeeId: string }[]> {
   const day = await siteDay(tenantId, siteId);
   if (!day || !ids.length) return [];
-  const reasons = [...(show.schedule ? SCHEDULE_REASONS : []), ...(show.visitors ? VISITOR_REASONS : [])];
+  const reasons = [...(show.schedule ? [...SCHEDULE_REASONS, ...ENDED_REASONS] : []), ...(show.visitors ? VISITOR_REASONS : [])];
   const where = { id: { in: ids }, tenantId, siteId, workDate: day.workDate, dismissedAt: null, scheduledAt: null, reason: { in: reasons } };
   const open = await db.gateRefusal.findMany({ where, select: { id: true, employeeId: true } });
   if (!open.length) return [];

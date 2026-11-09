@@ -17,6 +17,17 @@ import type { ReportConfig } from "@/lib/validators/report.schema";
  * is left out rather than shown to the wrong company.
  */
 
+
+/** Why the gate turned somebody away (gate-refusals.service.ts), in the report's words. */
+const REFUSAL_REASON: Record<string, string> = {
+  NO_SCHEDULE: "No schedule for the day",
+  NOT_A_WORKDAY: "Scheduled off that day",
+  TERMINATED: "Terminated",
+  VISITOR_EXPIRED: "Visitor badge expired",
+  VISITOR_ENDED: "Visitor access ended",
+  VISITOR_NOT_YET: "Visitor pass not started",
+  VISITOR_OTHER_BUILDING: "Visitor badge for another building",
+};
 const PROBLEM = {
   unknown: "Badge not found",
   rejected: "Not recorded",
@@ -139,7 +150,7 @@ export const scansNotRecordedSource: DataSourceDefinition = {
         date: r.workDate.toISOString().slice(0, 10),
         time: clock(r.firstAt, tz),
         problem: PROBLEM.refused,
-        reason: r.reason === "NOT_A_WORKDAY" ? "Scheduled off that day" : "No schedule for the day",
+        reason: REFUSAL_REASON[r.reason] ?? "No schedule for the day",
         employeeName: p.user?.name ?? null,
         employeeCode: p.wmsId ?? p.employeeCode,
         badge: p.wmsId ?? p.employeeCode,

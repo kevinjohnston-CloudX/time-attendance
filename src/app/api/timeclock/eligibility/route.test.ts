@@ -4,7 +4,8 @@ import { NextRequest } from "next/server";
 /**
  * The gate check for visitors with a pass (visitor-pass.ts): only their
  * building, only through their last day, always let out while inside, and a
- * badge from before passes existed unchanged.
+ * badge from before passes existed unchanged. And former employees turned
+ * away at a gate, noted for Live Attendance's information alert.
  */
 
 const state = vi.hoisted(() => ({
@@ -12,6 +13,8 @@ const state = vi.hoisted(() => ({
   lastScan: null as null | { direction: string; scanTime: Date },
   sites: { "5903": { id: "nj", timezone: "America/New_York" }, "7575": { id: "ga", timezone: "America/New_York" } } as Record<string, { id: string; timezone: string }>,
   noted: [] as { reason: string }[],
+  wmsId: "CL00007",
+  ended: false,
   later: [] as (() => Promise<void>)[],
 }));
 
@@ -23,7 +26,7 @@ vi.mock("@/lib/db", () => ({
       findFirst: async () => ({
         id: "v1",
         tenantId: "t1",
-        wmsId: "CL00007",
+        wmsId: state.wmsId,
         isActive: true,
         terminatedAt: null,
         hireDate: null,
@@ -49,7 +52,7 @@ vi.mock("@/lib/presence/gate-refusals.service", () => ({
 }));
 vi.mock("@/lib/presence/employment", () => ({
   WMS_TERMINATION_ENDS_EMPLOYMENT: false,
-  employmentEnded: () => false,
+  employmentEnded: () => state.ended,
   madeActiveAt: async () => new Map(),
 }));
 vi.mock("@/lib/presence/gate-alert-log", () => ({ gateLog: () => {}, errorCode: () => "E" }));
@@ -69,8 +72,8 @@ const day = (offset: number) => {
   return d;
 };
 
-async function check(warehouse?: string) {
-  const qs = new URLSearchParams({ badge: "CL00007", stream: "SECURITY", ...(warehouse ? { warehouse } : {}) });
+async function check(warehouse?: string, stream = "SECURITY") {
+  const qs = new URLSearchParams({ badge: state.wmsId, stream, ...(warehouse ? { warehouse } : {}) });
   const res = await GET(new NextRequest(`http://x/api/timeclock/eligibility?${qs}`));
   for (const fn of state.later.splice(0)) await fn();
   return (await res.json()) as { scheduled: boolean; reason: string; terminated: boolean; department: string };
@@ -80,6 +83,8 @@ beforeEach(() => {
   state.pass = null;
   state.lastScan = null;
   state.noted = [];
+  state.wmsId = "CL00007";
+  state.ended = false;
 });
 
 describe("visitor at the gate", () => {
@@ -120,6 +125,43 @@ describe("visitor at the gate", () => {
     state.pass = { siteId: "nj", validFrom: day(-10), validUntil: day(-1), endedAt: null };
     state.lastScan = { direction: "IN", scanTime: new Date() };
     expect(await check("5903")).toMatchObject({ scheduled: true, reason: "PRESENT" });
+    expect(state.noted).toEqual([]);
+  });
+});
+
+describe("former employee at the gate", () => {
+  beforeEach(() => {
+    state.wmsId = "123456";
+  });
+
+  it("is noted as terminated, and the tablet's answer is unchanged", async () => {
+    state.ended = true;
+    expect(await check("5903")).toMatchObject({ terminated: true, scheduled: false, reason: "NO_SCHEDULE" });
+    expect(state.noted.map((n) => n.reason)).toEqual(["TERMINATED"]);
+  });
+
+  it("is noted even while inside, since the gate still turned them away", async () => {
+    state.ended = true;
+    state.lastScan = { direction: "IN", scanTime: new Date() };
+    await check("5903");
+    expect(state.noted.map((n) => n.reason)).toEqual(["TERMINATED"]);
+  });
+
+  it("is not noted at a time clock", async () => {
+    state.ended = true;
+    await check("5903", "TIME_CLOCK");
+    expect(state.noted).toEqual([]);
+  });
+
+  it("someone still employed with no shift is noted as before", async () => {
+    expect(await check("5903")).toMatchObject({ terminated: false, scheduled: false, reason: "NO_SCHEDULE" });
+    expect(state.noted.map((n) => n.reason)).toEqual(["NO_SCHEDULE"]);
+  });
+
+  it("a visitor is never noted as a former employee", async () => {
+    state.wmsId = "CL00007";
+    state.ended = true;
+    await check("7575");
     expect(state.noted).toEqual([]);
   });
 });
