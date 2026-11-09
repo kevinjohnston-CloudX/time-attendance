@@ -31,11 +31,11 @@ import { codeOf } from "@/lib/action-errors";
  * with Escape or a click outside. A card nobody touches for 45 seconds steps
  * aside on its own, on this screen only, and comes back if they try again.
  *
- * <p>Drawn from the page's own pieces: a photo with the status band across
- * its foot like the tiles, the soft amber chip the rows use for a warning,
- * and the employee panel's day at a glance strip. Built to be noticed from
- * across the room: an amber header, a pulsing icon and a slow amber glow
- * around the card for as long as it waits.
+ * <p>Drawn from the page's own pieces: the photo, the soft amber chip the
+ * rows use for a warning, and the employee panel's day at a glance strip.
+ * Built to be noticed from across the room: an amber header, a pulsing icon
+ * and a slow amber glow around the card for as long as it waits. The time
+ * left is a small ring beside the countdown, not a bar along the edge.
  *
  * <p>Loads the moment the page's 2 second check sees today's refusals here
  * change (a new try, or a dismissal on another screen), every 15 seconds
@@ -409,7 +409,6 @@ export function GateRefusalAlert({
               {initialsOf(card.name)}
             </span>
             <Face src={card.photoUrl} personId={card.employeeId} alt={card.name} />
-            <span className={styles.gaStripe} aria-hidden="true" />
           </span>
           <span className={styles.gaWho}>
             <h2 id="ga-name" className={styles.gaName} title={card.name}>
@@ -510,12 +509,12 @@ export function GateRefusalAlert({
         </div>
         )}
         <p className={styles.gaCountdown}>
-          Closes on its own in <span className="tabular">{left}</span> {left === 1 ? "second" : "seconds"}
+          <Countdown share={left / (IDLE_MS / 1000)} />
+          <span>
+            Closes on its own in <span className="tabular">{left}</span> {left === 1 ? "second" : "seconds"}
+          </span>
         </p>
         </div>
-        <span className={styles.gaTimer} aria-hidden="true">
-          <span style={{ width: `${(left / (IDLE_MS / 1000)) * 100}%` }} />
-        </span>
       </div>
     </div>,
   );
@@ -527,6 +526,25 @@ export function GateRefusalAlert({
  */
 function onTop(node: ReactNode) {
   return createPortal(<div className={styles.board}>{node}</div>, document.body);
+}
+
+/** The time left before the card steps aside, as a small ring that empties beside the words. */
+function Countdown({ share }: { share: number }) {
+  const r = 6.5;
+  const around = 2 * Math.PI * r;
+  return (
+    <svg className={styles.gaRing} viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="8" cy="8" r={r} className={styles.gaRingTrack} />
+      <circle
+        cx="8"
+        cy="8"
+        r={r}
+        className={styles.gaRingLeft}
+        strokeDasharray={around}
+        strokeDashoffset={around * (1 - Math.max(0, Math.min(1, share)))}
+      />
+    </svg>
+  );
 }
 
 /** One cell of the strip, drawn like the employee panel's day at a glance. */

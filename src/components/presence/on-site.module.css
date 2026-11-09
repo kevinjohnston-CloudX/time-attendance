@@ -4154,9 +4154,8 @@
 
 /* ── Gate alert ─────────────────────────────────────────────────────────────
    Somebody the gate just turned away, made from the page's own pieces: the
-   photo carries the status band across its foot like the tiles, the reason
-   is the soft amber chip the rows use for a warning, and the details are the
-   employee panel's day at a glance strip. Big, calm and white, so it reads
+   photo, the reason as the soft amber chip the rows use for a warning, and
+   the details as the employee panel's day at a glance strip. Big, calm and white, so it reads
    from across the room without shouting. Above every layer on the page but
    the photo viewer. */
 
@@ -4322,15 +4321,6 @@
   object-fit: cover;
 }
 
-.gaStripe {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 8px;
-  background: var(--fill-warning);
-}
-
 .gaWho {
   display: flex;
   flex-direction: column;
@@ -4433,26 +4423,35 @@
 
 .gaCountdown {
   margin: -12px 0 0;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   font: var(--type-body2);
+  font-variant-numeric: tabular-nums;
   color: var(--text-tertiary);
 }
 
-/* How long is left before it steps aside, as a hairline along the foot. */
-.gaTimer {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 4px;
-  background: var(--fill-disabled);
+/* How long is left before it steps aside: a ring that empties, in the
+   card's colour, beside the words that say it. */
+.gaRing {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  transform: rotate(-90deg);
 }
-
-.gaTimer > span {
-  display: block;
-  height: 100%;
-  background: var(--fill-warning);
-  transition: width 1s linear;
+.gaRingTrack,
+.gaRingLeft {
+  fill: none;
+  stroke-width: 2;
+}
+.gaRingTrack {
+  stroke: var(--stroke-divider);
+}
+.gaRingLeft {
+  stroke: var(--fill-warning);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1s linear;
 }
 
 .gaActions[data-single="true"] {
@@ -4493,9 +4492,8 @@
 .gaCard[data-tone="ended"] .gaHeadTitle {
   color: var(--text-error);
 }
-.gaCard[data-tone="ended"] .gaStripe,
-.gaCard[data-tone="ended"] .gaTimer > span {
-  background: var(--fill-error);
+.gaCard[data-tone="ended"] .gaRingLeft {
+  stroke: var(--fill-error);
 }
 .gaCard[data-tone="ended"] .gaStatus {
   background: var(--surface-error);
@@ -4546,7 +4544,7 @@
     animation: none;
   }
 
-  .gaTimer > span {
+  .gaRingLeft {
     transition: none;
   }
 }
