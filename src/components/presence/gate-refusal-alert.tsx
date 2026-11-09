@@ -432,12 +432,12 @@ export function GateRefusalAlert({
 
         {visitor ? (
           <div className={styles.gaGlance}>
-            <Cell label="Visiting" value={visitor.visiting} empty="Nobody on record" />
+            <Cell label="Host" value={visitor.visiting} empty="Not recorded" />
             <Cell
               label="Pass"
               value={visitor.kind ? VISITOR_KIND_LABEL[visitor.kind as VisitorKind] : null}
               sub={visitor.term ? VISITOR_TERM_LABEL[visitor.term as VisitorTerm] : null}
-              empty="No pass on record"
+              empty="Not recorded"
             />
             <Cell label="Tries today" value={String(card.attempts)} sub={firstTry} />
           </div>

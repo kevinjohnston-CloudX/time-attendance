@@ -37,30 +37,31 @@ function filterOf(row: VisitorRow, today: string): Filter[] {
 
 const FILTER_LABEL: Record<Filter, string> = {
   active: "Active",
-  inside: "In the building",
-  ending: "Ending soon",
+  inside: "On site",
+  ending: "Expiring",
   expired: "Expired",
   ended: "Ended",
 };
 
 const EMPTY: Record<Filter, string> = {
-  active: "No active visitors at this building.",
-  inside: "No visitors in the building right now.",
-  ending: "No passes end in the next week.",
-  expired: "No passes ran out in the last 30 days.",
-  ended: "Nobody's access was ended in the last 30 days.",
+  active: "No active visitors.",
+  inside: "No visitors on site.",
+  ending: "No passes expire in the next 7 days.",
+  expired: "No passes expired in the last 30 days.",
+  ended: "No access was ended in the last 30 days.",
 };
 
-const dayShort = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
-/** A day this year without its year ("Fri, Nov 13"), any other with it. */
+const dayShort = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+const dayYear = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+/** A short date for a list: "Nov 13" this year, "Nov 8, 2027" any other. */
 function when(d: string, today: string): string {
-  return d.slice(0, 4) === today.slice(0, 4) ? dayShort.format(new Date(`${d}T00:00:00.000Z`)) : dayWords(d);
+  return (d.slice(0, 4) === today.slice(0, 4) ? dayShort : dayYear).format(new Date(`${d}T00:00:00.000Z`));
 }
 
 function status(row: VisitorRow, today: string): { text: string; tone: "ok" | "warn" | "off" } {
   switch (row.standing) {
     case "VALID":
-      return row.validUntil === today ? { text: "Ends today", tone: "warn" } : { text: `Through ${when(row.validUntil, today)}`, tone: "ok" };
+      return row.validUntil === today ? { text: "Expires today", tone: "warn" } : { text: `Until ${when(row.validUntil, today)}`, tone: "ok" };
     case "NOT_YET":
       return { text: `Starts ${when(row.validFrom, today)}`, tone: "ok" };
     case "EXPIRED":
@@ -68,7 +69,7 @@ function status(row: VisitorRow, today: string): { text: string; tone: "ok" | "w
     case "ENDED":
       return { text: "Access ended", tone: "off" };
     default:
-      return { text: "Another building", tone: "off" };
+      return { text: "Other building", tone: "off" };
   }
 }
 
@@ -204,7 +205,7 @@ export function VisitorsWindow({
             <h2 id="visitors-title" className={frame.title}>
               Visitors
             </h2>
-            <span className={`${frame.subtitle} truncate`}>{site.name} · badges that open this building&apos;s gate</span>
+            <span className={`${frame.subtitle} truncate`}>{site.name}</span>
           </span>
           <Button hierarchy="tertiary" size="sm" iconOnly onClick={onClose} aria-label="Close">
             <X className="h-4 w-4" />
@@ -255,24 +256,24 @@ export function VisitorsWindow({
                     <li key={r.employeeId} className={styles.row}>
                       <span className={styles.who}>
                         <span className={styles.name}>{r.name}</span>
-                        <span className={styles.meta}>{[r.company, r.badge].filter(Boolean).join(" · ")}</span>
+                        <span className={styles.meta}>{[r.company, r.badge].filter(Boolean).join(", ")}</span>
                       </span>
                       <span className={styles.col}>
-                        <span className={styles.colLabel}>Visiting</span>
-                        <span className={styles.colValue}>{r.visiting ?? "Nobody on record"}</span>
+                        <span className={styles.colLabel}>Host</span>
+                        <span className={styles.colValue}>{r.visiting ?? "Not recorded"}</span>
                       </span>
                       <span className={styles.col}>
                         <span className={styles.colLabel}>
-                          {VISITOR_KIND_LABEL[r.kind]} · {VISITOR_TERM_LABEL[r.term]}
+                          {VISITOR_KIND_LABEL[r.kind]}, {VISITOR_TERM_LABEL[r.term].toLowerCase()}
                         </span>
                         <span className={styles.pill} data-tone={s.tone}>
                           {s.text}
                         </span>
                       </span>
                       <span className={styles.col}>
-                        <span className={styles.colLabel}>Gate</span>
+                        <span className={styles.colLabel}>Last scan</span>
                         <span className={styles.colValue} data-inside={inside || undefined}>
-                          {r.lastScan ? `${inside ? "In since" : "Left"} ${fmtTime(r.lastScan.at, site.timezone)}` : "Not scanned yet"}
+                          {r.lastScan ? `${inside ? "In at" : "Out at"} ${fmtTime(r.lastScan.at, site.timezone)}` : "No scans yet"}
                         </span>
                       </span>
                       <span className={styles.actions}>
@@ -300,7 +301,7 @@ export function VisitorsWindow({
         </div>
 
         <footer className={frame.foot}>
-          <span className={frame.footHint}>Expired and ended passes stay here for 30 days.</span>
+          <span className={frame.footHint}>Expired and ended passes are kept for 30 days.</span>
           <span className="ta-sheet-actions contents">
             <Button hierarchy="tertiary" onClick={onClose}>
               Close
@@ -330,7 +331,7 @@ export function VisitorsWindow({
             setEndError(null);
           }}
         >
-          Their badge stops opening the gate at {site.name} right away. Someone already inside can still leave. Renew brings it back.
+          The badge stops working at {site.name} immediately. A visitor already inside can still leave. You can renew the pass later.
         </ConfirmDialog>
       )}
     </Overlay>

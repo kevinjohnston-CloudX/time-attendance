@@ -32,7 +32,7 @@
 }
 .row {
   display: grid;
-  grid-template-columns: minmax(150px, 1.4fr) minmax(100px, 1fr) minmax(140px, 1fr) minmax(110px, 0.9fr) auto;
+  grid-template-columns: minmax(150px, 1.3fr) minmax(100px, 0.9fr) minmax(176px, 1fr) minmax(110px, 0.8fr) auto;
   align-items: center;
   gap: 12px;
   min-height: 60px;
@@ -80,6 +80,9 @@
 
 .pill {
   align-self: flex-start;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   margin-top: 2px;
   padding: 1px 8px;
   border-radius: 999px;

@@ -1,4 +1,4 @@
-import QRCode from "qrcode";
+import { qrPath } from "./qr-path";
 import { db } from "@/lib/db";
 import { photoUrls } from "@/lib/presence/photos";
 import { isClientBadge } from "@/lib/utils/client-badge";
@@ -77,18 +77,4 @@ export async function getIdBadge(employeeId: string): Promise<IdBadge | null> {
   };
 }
 
-/**
- * The code as path data the page draws itself, so no generated markup is
- * ever injected. Level M survives a scuffed or glare-washed screen and keeps
- * the modules large: a six-digit number is version 1, 21 modules across.
- */
-export function qrPath(text: string): { size: number; path: string } {
-  const { modules } = QRCode.create(text, { errorCorrectionLevel: "M" });
-  let path = "";
-  for (let y = 0; y < modules.size; y++) {
-    for (let x = 0; x < modules.size; x++) {
-      if (modules.get(y, x)) path += `M${x} ${y}h1v1h-1z`;
-    }
-  }
-  return { size: modules.size, path };
-}
+export { qrPath };

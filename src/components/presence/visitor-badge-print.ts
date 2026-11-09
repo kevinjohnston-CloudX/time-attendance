@@ -24,14 +24,14 @@ export type BadgePaper = "letter" | "label" | "card";
 
 export const PAPER_LABEL: Record<BadgePaper, string> = {
   letter: "Letter paper",
-  label: "Label, 4 × 3 in",
-  card: "ID card printer",
+  label: "Label",
+  card: "ID card",
 };
 
 export const PAPER_BODY: Record<BadgePaper, string> = {
-  letter: "Any office printer. Cut out for a badge holder",
-  label: "A label printer loaded with 4 × 3 in labels",
-  card: "A plastic card printer (CR80, 3.375 × 2.125 in)",
+  letter: "Office printer, cut to fit a 4 × 3 in badge holder",
+  label: "Label printer, 4 × 3 in labels",
+  card: "Card printer, CR80 cards",
 };
 
 /**

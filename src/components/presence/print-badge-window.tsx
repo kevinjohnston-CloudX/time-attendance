@@ -7,6 +7,7 @@ import { Overlay } from "@/components/ui/overlay";
 import { getVisitorBadgeToPrint } from "@/actions/visitor.actions";
 import type { VisitorBadge } from "@/lib/visitors/visitors.service";
 import { PAPER_BODY, PAPER_LABEL, badgeSheet, printBadgeSheet, type BadgePaper } from "./visitor-badge-print";
+import { BadgeSample } from "./badge-sample";
 import frame from "./export-window.module.css";
 import styles from "./print-badge-window.module.css";
 
@@ -32,14 +33,6 @@ function savedPaper(): BadgePaper {
     return "letter";
   }
 }
-
-/** The preview's frame at the paper's own size in CSS pixels, before it is scaled to fit. */
-const PREVIEW: Record<BadgePaper, { w: number; h: number }> = {
-  letter: { w: 384, h: 288 },
-  label: { w: 384, h: 288 },
-  card: { w: 324, h: 204 },
-};
-const PREVIEW_WIDTH = 248;
 
 export function PrintBadgeWindow({
   siteId,
@@ -114,11 +107,6 @@ export function PrintBadgeWindow({
     printBadgeSheet(badgeSheet(r.data, paper));
   };
 
-  // The letter sheet is mostly white; the preview shows the badge on it, at the label's size.
-  const previewPaper: BadgePaper = paper === "letter" ? "label" : paper;
-  const size = PREVIEW[previewPaper];
-  const scale = PREVIEW_WIDTH / size.w;
-
   return (
     <Overlay className={`${frame.scrim} ta-sheet-scrim`} onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div ref={windowRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="print-badge-title" className={`${frame.window} ta-sheet ${styles.window}`}>
@@ -130,7 +118,7 @@ export function PrintBadgeWindow({
             <h2 id="print-badge-title" className={`${frame.title} truncate`}>
               Print badge
             </h2>
-            <span className={`${frame.subtitle} truncate`}>{badge ? `${badge.name} · ${badge.badge}` : name}</span>
+            <span className={`${frame.subtitle} truncate`}>{badge ? `${badge.name}, ${badge.badge}` : name}</span>
           </span>
           <Button hierarchy="tertiary" size="sm" iconOnly onClick={onClose} aria-label="Close">
             <X className="h-4 w-4" />
@@ -163,34 +151,15 @@ export function PrintBadgeWindow({
               </div>
             </section>
             <aside className={frame.rail} aria-label="Preview">
-              <div className={`${frame.railBlock} ${frame.previewBlock}`}>
-                <div className={styles.preview} style={{ width: PREVIEW_WIDTH, height: size.h * scale }}>
-                  {badge ? (
-                    <iframe
-                      title="Badge preview"
-                      tabIndex={-1}
-                      srcDoc={badgeSheet(badge, previewPaper)}
-                      style={{ width: size.w, height: size.h, transform: `scale(${scale})` }}
-                      className={styles.previewFrame}
-                    />
-                  ) : (
-                    !failure && <span className={styles.previewWait}>Loading the badge…</span>
-                  )}
-                </div>
-                <p className={frame.railNote}>
-                  {paper === "letter"
-                    ? "Prints on a letter sheet with a dashed line to cut along."
-                    : paper === "label"
-                      ? "Choose the 4 × 3 in label size in the print window."
-                      : "Choose the CR80 card in the print window."}
-                </p>
+              <div className={`${frame.railBlock} ${frame.previewBlock} ${styles.previewBlock}`}>
+                {badge ? <BadgeSample badge={badge} paper={paper} width={paper === "card" ? 232 : 248} /> : !failure && <span className={styles.previewWait} />}
               </div>
             </aside>
           </div>
         </div>
 
         <footer className={frame.foot}>
-          <span className={frame.footHint}>Print at Actual size (100%), not Fit to page.</span>
+          <span className={frame.footHint}>In the print dialog, set Scale to 100%.</span>
           <span className="ta-sheet-actions contents">
             <Button hierarchy="tertiary" onClick={onClose} disabled={busy}>
               Cancel

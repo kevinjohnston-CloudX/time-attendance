@@ -1,27 +1,40 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { BadgeCheck, CalendarDays, CircleCheck, Printer, RefreshCw, Repeat, UserPlus, X, type LucideIcon } from "lucide-react";
-import { Banner, Button, Input, SegmentedControl } from "@/components/ui";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { BadgeCheck, Printer, RefreshCw, UserPlus, X } from "lucide-react";
+import { Banner, Button, Input } from "@/components/ui";
 import { Overlay } from "@/components/ui/overlay";
 import { createVisitor, getNewVisitorData, renewVisitorPass, searchVisitorHosts, searchVisitors } from "@/actions/visitor.actions";
-import { DEFAULT_VISITOR_TERM, VISITOR_KIND_LABEL, VISITOR_TERMS, VISITOR_TERM_LABEL, lastDayOf, type VisitorKind, type VisitorTerm } from "@/lib/visitors/visitor-pass";
-import type { AddedVisitor, HostMatch, VisitorMatch } from "@/lib/visitors/visitors.service";
+import {
+  DEFAULT_VISITOR_TERM,
+  VISITOR_KIND_LABEL,
+  VISITOR_TERMS,
+  VISITOR_TERM_LABEL,
+  lastDayOf,
+  renewalStart,
+  type VisitorKind,
+  type VisitorTerm,
+} from "@/lib/visitors/visitor-pass";
+import type { AddedVisitor, HostMatch, VisitorBadge, VisitorMatch } from "@/lib/visitors/visitors.service";
+import { qrPath } from "@/lib/badge/qr-path";
 import frame from "./export-window.module.css";
 import styles from "./new-visitor-window.module.css";
-import { badgeBand } from "./visitor-badge-print";
+import { BadgeSample } from "./badge-sample";
 import { PrintBadgeWindow } from "./print-badge-window";
 
 /**
- * New Visitor on Live Attendance: loss prevention adds a visitor at the
- * building on screen, and the badge works at that building's gate until the
- * pass ends (src/lib/visitors). Built on the Export window's frame: the
- * visitor in a card on the left, the pass in a rail on the right with a
- * preview of the badge.
+ * New visitor on Live Attendance (src/lib/visitors), on the Export window's
+ * frame. One shape from start to finish: the form on the left (Visitor
+ * details, then Pass), the badge exactly as it prints on the right with what
+ * it will say about the building and dates. Choosing a pass, renewing and the
+ * result after saving all happen inside that shape, so nothing moves.
  *
- * <p>Somebody who has been before is renewed, not added twice: as the name is
- * typed, earlier visitors with that name are listed under it, each with
- * Renew.
+ * <p>The pass is one choice, not two: a grid of the six lengths in two rows,
+ * Day pass and Frequent visitor, so the kind follows from the length.
+ *
+ * <p>A visitor who has been here before is renewed, not added twice: as the
+ * name is typed, earlier visitors with that name drop down under it, each
+ * with Renew.
  */
 
 const dayLong = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
@@ -35,11 +48,7 @@ function todayAt(timezone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
 }
 
-const KIND_ICON: Record<VisitorKind, LucideIcon> = { FREQUENT: Repeat, DAY_PASS: CalendarDays };
-const KIND_BODY: Record<VisitorKind, string> = {
-  FREQUENT: "Renewable, up to 2 years",
-  DAY_PASS: "A day, a week or a month",
-};
+const KINDS: VisitorKind[] = ["DAY_PASS", "FREQUENT"];
 
 /** Waits until typing stops before asking the server. */
 function useSearch<T>(text: string, run: (q: string) => Promise<T[]>): T[] {
@@ -66,21 +75,31 @@ function useSearch<T>(text: string, run: (q: string) => Promise<T[]>): T[] {
   return found;
 }
 
-const standingWords = (m: VisitorMatch): { text: string; tone: "ok" | "warn" | "off" } => {
+/** A value held back until it stops changing, so the badge does not redraw on every key. */
+function useSettled<T>(value: T, ms: number): T {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setSettled(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return settled;
+}
+
+function standing(m: VisitorMatch): { text: string; tone: "ok" | "warn" | "off" } {
   switch (m.standing) {
     case "VALID":
     case "NOT_YET":
-      return { text: `Active through ${dayWords(m.validUntil!)}`, tone: "ok" };
+      return { text: `Active until ${dayWords(m.validUntil!)}`, tone: "ok" };
     case "EXPIRED":
       return { text: `Expired ${dayWords(m.validUntil!)}`, tone: "warn" };
     case "ENDED":
       return { text: "Access ended", tone: "off" };
     case "OTHER_BUILDING":
-      return { text: "Another building", tone: "off" };
+      return { text: "Other building", tone: "off" };
     case "NO_PASS":
-      return { text: "No end date", tone: "ok" };
+      return { text: "No expiry", tone: "ok" };
   }
-};
+}
 
 export function NewVisitorWindow({
   site,
@@ -89,7 +108,7 @@ export function NewVisitorWindow({
   onClose,
 }: {
   site: { id: string; name: string; timezone: string };
-  /** Opens on this visitor, ready to renew (from the gate alert or the Visitors tab). */
+  /** Opens on this visitor, ready to renew (from the gate alert or the Visitors list). */
   renew?: VisitorMatch;
   /** Told when a visitor is added or renewed, before the window shows its result. */
   onDone?: (result: AddedVisitor & { renewed: boolean }) => void;
@@ -99,6 +118,7 @@ export function NewVisitorWindow({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [renewing, setRenewing] = useState<VisitorMatch | null>(renew ?? null);
   const [name, setName] = useState("");
+  const [nameFocus, setNameFocus] = useState(false);
   const [company, setCompany] = useState("");
   const [hostText, setHostText] = useState("");
   const [host, setHost] = useState<HostMatch | null>(null);
@@ -158,25 +178,28 @@ export function NewVisitorWindow({
   });
 
   const today = todayAt(site.timezone);
-  const pickKind = (k: VisitorKind) => {
+  const pick = (k: VisitorKind, t: VisitorTerm) => {
     setKind(k);
-    setTerm(DEFAULT_VISITOR_TERM[k]);
+    setTerm(t);
   };
-  const lastDay = useMemo(() => lastDayOf(term, today), [term, today]);
+
+  // When the pass starts: today, or for a renewal that carries on, the day after it would have ended.
+  const carriesOn = !!renewing && (renewing.standing === "VALID" || renewing.standing === "NOT_YET") && renewing.siteId === site.id && !!renewing.validUntil;
+  const starts = done ? done.validFrom : carriesOn ? renewalStart(renewing!.validUntil!, today) : today;
+  const expires = done ? done.validUntil : lastDayOf(term, starts);
 
   const missing = renewing
     ? []
-    : [
-        name.trim().length < 2 && "name",
-        !company.trim() && "company",
-        !host && !hostText.trim() && "who they are visiting",
-      ].filter((m): m is string => !!m);
+    : [name.trim().length < 2 && "Full name", !company.trim() && "Company", !host && !hostText.trim() && "Host"].filter(
+        (m): m is string => !!m,
+      );
   const blocked = !setup || !!setup.missing || !!loadError;
 
   const startRenew = (m: VisitorMatch) => {
     setRenewing(m);
     setFailure(null);
-    if (m.kind) pickKind(m.kind);
+    setNameFocus(false);
+    if (m.kind) pick(m.kind, DEFAULT_VISITOR_TERM[m.kind]);
   };
 
   const submit = async () => {
@@ -209,29 +232,60 @@ export function NewVisitorWindow({
     setCompany("");
     setHostText("");
     setHost(null);
-    pickKind("DAY_PASS");
+    pick("DAY_PASS", DEFAULT_VISITOR_TERM.DAY_PASS);
     getNewVisitorData({ siteId: site.id }).then((r) => r.success && setSetup(r.data));
   };
 
+  // What the badge says: the saved one after saving, otherwise what it will say.
   const shownName = done?.name ?? renewing?.name ?? name.trim();
-  const title = done ? (done.renewed ? "Pass renewed" : "Visitor added") : renewing ? `Renew ${renewing.name}` : shownName || "New visitor";
-  const subtitle = done ? `${done.siteName} · badge ${done.badge}` : `${site.name} · the badge works here only`;
+  const shownCompany = renewing ? renewing.company : company.trim() || null;
+  const shownHost = renewing ? null : host?.name ?? (hostText.trim() || null);
+  const badgeNumber = done?.badge ?? renewing?.badge ?? setup?.nextBadge ?? "";
+  const live = useSettled(
+    { name: shownName, company: shownCompany, host: shownHost, badge: badgeNumber, kind: done?.kind ?? kind, term: done?.term ?? term, starts, expires },
+    250,
+  );
+  const sample = useMemo<VisitorBadge | null>(
+    () =>
+      live.badge
+        ? {
+            name: live.name || "Visitor name",
+            company: live.company,
+            visiting: live.host,
+            badge: live.badge,
+            kind: live.kind,
+            term: live.term,
+            validFrom: live.starts,
+            validUntil: live.expires,
+            siteName: site.name,
+            photo: null,
+            qr: qrPath(live.badge),
+          }
+        : null,
+    [live, site.name],
+  );
 
-  let hint: ReactNode = null;
-  if (done) hint = null;
-  else if (setup?.missing) hint = null;
-  else if (missing.length) hint = `Still needed: ${missing.join(", ")}.`;
-  else if (setup)
-    hint = (
-      <>
-        <CircleCheck aria-hidden="true" />
-        {renewing ? `Ready to renew through ${dayWords(lastDay)}.` : "Ready to add."}
-      </>
-    );
+  const title = done ? (done.renewed ? "Pass renewed" : "Visitor added") : renewing ? "Renew pass" : "New visitor";
+  const hint = done
+    ? done.renewed
+      ? `${done.name}'s badge now works until ${dayWords(done.validUntil)}.`
+      : `${done.name} can use badge ${done.badge} from now.`
+    : setup?.missing
+      ? null
+      : missing.length
+        ? `Required: ${missing.join(", ")}.`
+        : null;
 
   return (
     <Overlay className={`${frame.scrim} ta-sheet-scrim`} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={windowRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="new-visitor-title" className={`${frame.window} ta-sheet`}>
+      <div
+        ref={windowRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-visitor-title"
+        className={`${frame.window} ta-sheet ${styles.window}`}
+      >
         <header className={frame.head}>
           <span className={frame.glyph} aria-hidden="true">
             {done ? <BadgeCheck /> : renewing ? <RefreshCw /> : <UserPlus />}
@@ -240,105 +294,88 @@ export function NewVisitorWindow({
             <h2 id="new-visitor-title" className={`${frame.title} truncate`}>
               {title}
             </h2>
-            <span className={`${frame.subtitle} truncate`}>{subtitle}</span>
+            <span className={`${frame.subtitle} truncate`}>{site.name}</span>
           </span>
           <Button hierarchy="tertiary" size="sm" iconOnly onClick={onClose} aria-label="Close">
             <X className="h-4 w-4" />
           </Button>
         </header>
 
-        <div className={`${frame.body} ${styles.stack}`}>
+        <div className={`${frame.body} ${styles.body}`}>
           {loadError && <Banner tone="error" title="Visitors could not be opened" body={loadError} />}
           {setup?.missing && (
-            <Banner tone="warning" title="This company is not set up for visitors" body={`Visitors need ${setup.missing}. Ask a System Admin to add it, then try again.`} />
+            <Banner tone="warning" title="Visitors are not set up for this company" body={`Visitors need ${setup.missing}. A System Admin can add it.`} />
           )}
+          {failure && <Banner tone="error" title={renewing ? "The pass was not renewed" : "The visitor was not added"} body={failure} />}
 
-          {done ? (
-            <section className={`${frame.card} ${styles.doneCard}`} aria-live="polite">
-              <BadgePreview
-                name={done.name}
-                company={renewing?.company ?? company.trim()}
-                badge={done.badge}
-                kind={done.kind}
-                term={done.term}
-                lastDay={done.validUntil}
-                siteName={done.siteName}
-              />
-              <p className={styles.doneText}>
-                {done.renewed ? "The badge now works" : "The badge works"} at {done.siteName} through {dayWords(done.validUntil)}.
-              </p>
-            </section>
-          ) : (
-            <div className={frame.panes}>
-              {/* ── The visitor ── */}
-              <section className={frame.card} aria-labelledby="nv-visitor">
-                <h3 id="nv-visitor" className={styles.cardLabel}>
-                  Visitor
-                </h3>
-                {failure && <Banner tone="error" title={renewing ? "The pass was not renewed" : "The visitor was not added"} body={failure} />}
-
-                {renewing ? (
-                  <div className={styles.renewing}>
-                    <div className={styles.renewRow}>
-                      <span className={styles.renewName}>{renewing.name}</span>
-                      <span className={styles.renewMeta}>
-                        {[renewing.company, renewing.badge].filter(Boolean).join(" · ")}
-                      </span>
-                    </div>
-                    <p className={styles.note}>
-                      {renewing.siteId && renewing.siteId !== site.id
-                        ? `Their badge works at ${renewing.siteName ?? "another building"} today. Renewing moves it here.`
-                        : "Same person, same badge. Only the pass changes."}
-                    </p>
-                    <Button hierarchy="tertiary" size="sm" onClick={() => setRenewing(null)}>
-                      Add someone new instead
-                    </Button>
-                  </div>
-                ) : (
-                  <>
-                    <Input label="Full name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" maxLength={100} required />
-                    {matches.length > 0 && (
-                      <div className={styles.matches} role="group" aria-label="Visitors with this name">
-                        <span className={frame.groupLabel}>Has this person been here before?</span>
-                        {matches.map((m) => {
-                          const s = standingWords(m);
-                          return (
-                            <div key={m.id} className={styles.match}>
-                              <span className={styles.matchText}>
-                                <span className={styles.matchName}>{m.name}</span>
-                                <span className={styles.matchMeta}>
-                                  {[m.company, m.badge, m.siteName].filter(Boolean).join(" · ")}
-                                </span>
-                              </span>
-                              <span className={styles.pill} data-tone={s.tone}>
-                                {s.text}
-                              </span>
-                              <Button hierarchy="secondary" size="sm" onClick={() => startRenew(m)}>
-                                Renew
-                              </Button>
-                            </div>
-                          );
-                        })}
+          <div className={styles.panes}>
+            {/* ── The form ── */}
+            <section className={`${frame.card} ${styles.form}`} aria-label={done ? "Saved" : "Visitor and pass"}>
+              <div className={styles.section}>
+                <h3 className={styles.sectionLabel}>Visitor details</h3>
+                {done || renewing ? (
+                  <dl className={styles.facts}>
+                    <Fact label="Full name" value={shownName} />
+                    <Fact label="Company" value={(done ? company.trim() || renewing?.company : renewing?.company) || "Not recorded"} />
+                    {done && !done.renewed ? (
+                      <Fact label="Host" value={shownHost ?? "Not recorded"} />
+                    ) : (
+                      <Fact label="Current pass" value={renewing ? standing(renewing).text : "Not recorded"} />
+                    )}
+                    {renewing && !done && (
+                      <div className={styles.factAction}>
+                        <Button hierarchy="link" size="sm" onClick={() => setRenewing(null)}>
+                          Add a different visitor
+                        </Button>
                       </div>
                     )}
-                    <Input
-                      label="Company"
-                      value={company}
-                      onChange={(e) => setCompany(e.target.value)}
-                      list="nv-companies"
-                      autoComplete="off"
-                      maxLength={100}
-                      required
-                    />
+                  </dl>
+                ) : (
+                  <div className={styles.fields}>
+                    <div className={styles.anchor}>
+                      <Input
+                        label="Full name"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        onFocus={() => setNameFocus(true)}
+                        onBlur={() => setTimeout(() => setNameFocus(false), 150)}
+                        autoComplete="off"
+                        maxLength={100}
+                      />
+                      {nameFocus && matches.length > 0 && (
+                        <div className={styles.menu} role="listbox" aria-label="Previous visits">
+                          <span className={styles.menuLabel}>Previous visits</span>
+                          {matches.map((m) => {
+                            const s = standing(m);
+                            return (
+                              <div key={m.id} className={styles.match}>
+                                <span className={styles.matchText}>
+                                  <span className={styles.matchName}>{m.name}</span>
+                                  <span className={styles.matchMeta}>{[m.company, m.badge].filter(Boolean).join(", ")}</span>
+                                </span>
+                                <span className={styles.pill} data-tone={s.tone}>
+                                  {s.text}
+                                </span>
+                                <Button hierarchy="secondary" size="sm" onMouseDown={(e) => e.preventDefault()} onClick={() => startRenew(m)}>
+                                  Renew
+                                </Button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                    <Input label="Company" value={company} onChange={(e) => setCompany(e.target.value)} list="nv-companies" autoComplete="off" maxLength={100} />
                     <datalist id="nv-companies">
                       {setup?.companies.map((c) => (
                         <option key={c} value={c} />
                       ))}
                     </datalist>
-                    <div className={styles.hostField}>
+                    <div className={styles.anchor}>
                       <Input
-                        label="Visiting"
-                        hint={host ? `${host.department ?? "Staff"}${host.here ? "" : " · another building"}` : "Pick someone from the list, or type a name."}
+                        label="Host"
+                        placeholder="Search employees"
+                        hint={host ? (host.department ?? "Employee") : "If they are not listed, type the name."}
                         value={host ? host.name : hostText}
                         onChange={(e) => {
                           setHost(null);
@@ -348,17 +385,16 @@ export function NewVisitorWindow({
                         onBlur={() => setTimeout(() => setHostFocus(false), 150)}
                         autoComplete="off"
                         maxLength={100}
-                        required
                       />
                       {hostFocus && !host && hosts.length > 0 && (
-                        <div className={styles.suggest} role="listbox" aria-label="Staff">
+                        <div className={`${styles.menu} ${styles.menuHost}`} role="listbox" aria-label="Employees">
                           {hosts.map((h) => (
                             <button
                               key={h.id}
                               type="button"
                               role="option"
                               aria-selected={false}
-                              className={styles.suggestRow}
+                              className={styles.option}
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => {
                                 setHost(h);
@@ -366,76 +402,72 @@ export function NewVisitorWindow({
                                 setHostFocus(false);
                               }}
                             >
-                              <span className={styles.suggestName}>{h.name}</span>
-                              <span className={styles.suggestMeta}>{[h.department, h.here ? null : "Another building"].filter(Boolean).join(" · ")}</span>
+                              <span className={styles.matchName}>{h.name}</span>
+                              <span className={styles.matchMeta}>{[h.department, h.here ? null : "Other building"].filter(Boolean).join(", ")}</span>
                             </button>
                           ))}
                         </div>
                       )}
                     </div>
-                  </>
-                )}
-              </section>
-
-              {/* ── The pass ── */}
-              <aside className={frame.rail} aria-label="Pass">
-                <div className={frame.railBlock}>
-                  <div role="radiogroup" aria-label="Kind of visitor" className={frame.choices}>
-                    {(["DAY_PASS", "FREQUENT"] as VisitorKind[]).map((k) => {
-                      const Icon = KIND_ICON[k];
-                      const on = kind === k;
-                      return (
-                        <label key={k} className={frame.choice} data-on={on}>
-                          <input type="radio" name="nv-kind" value={k} checked={on} onChange={() => pickKind(k)} className="sr-only" />
-                          <span className={frame.choiceIcon} aria-hidden="true">
-                            <Icon />
-                          </span>
-                          <span className={frame.choiceText}>
-                            <span className={frame.choiceTitle}>{VISITOR_KIND_LABEL[k]}</span>
-                            <span className={frame.choiceBody}>{KIND_BODY[k]}</span>
-                          </span>
-                        </label>
-                      );
-                    })}
                   </div>
-                  <SegmentedControl
-                    ariaLabel="How long"
-                    fullWidth
-                    items={VISITOR_TERMS[kind].map((t) => ({ value: t, label: VISITOR_TERM_LABEL[t] }))}
-                    value={term}
-                    onChange={(v) => setTerm(v as VisitorTerm)}
-                  />
+                )}
+              </div>
+
+              <div className={styles.section}>
+                <h3 className={styles.sectionLabel} id="nv-pass">
+                  Pass
+                </h3>
+                <div role="radiogroup" aria-labelledby="nv-pass" className={styles.passGrid}>
+                  {KINDS.map((k) => (
+                    <div key={k} className={styles.passRow}>
+                      <span className={styles.passKind}>{VISITOR_KIND_LABEL[k]}</span>
+                      <span className={styles.passOptions}>
+                        {VISITOR_TERMS[k].map((t) => {
+                          const on = kind === k && term === t;
+                          return (
+                            <button
+                              key={t}
+                              type="button"
+                              role="radio"
+                              aria-checked={on}
+                              data-on={on}
+                              disabled={!!done || busy}
+                              className={styles.passOption}
+                              onClick={() => pick(k, t)}
+                            >
+                              {VISITOR_TERM_LABEL[t]}
+                            </button>
+                          );
+                        })}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-                <div className={`${frame.railBlock} ${frame.previewBlock}`}>
-                  <BadgePreview
-                    name={shownName || "Visitor name"}
-                    company={(renewing ? renewing.company : company.trim()) || null}
-                    badge={renewing?.badge ?? setup?.nextBadge ?? "CL"}
-                    kind={kind}
-                    term={term}
-                    lastDay={renewing ? null : lastDay}
-                    siteName={site.name}
-                  />
-                  <p className={frame.railNote}>
-                    {renewing
-                      ? `Renewed for ${VISITOR_TERM_LABEL[term]}. Works at ${site.name} only.`
-                      : `Works at ${site.name} only, through ${dayWords(lastDay)}.`}
-                  </p>
-                </div>
-              </aside>
-            </div>
-          )}
+              </div>
+            </section>
+
+            {/* ── The badge ── */}
+            <aside className={`${frame.rail} ${styles.rail}`} aria-label="Badge">
+              <div className={styles.badgeWrap}>{sample ? <BadgeSample badge={sample} width={268} /> : <span className={styles.badgeWait} />}</div>
+              <dl className={styles.summary}>
+                <Fact label="Building" value={site.name} />
+                <Fact label="Starts" value={dayWords(starts)} />
+                <Fact label="Expires" value={dayWords(expires)} strong />
+                <Fact label="Badge number" value={badgeNumber || "Assigned when added"} />
+              </dl>
+            </aside>
+          </div>
         </div>
 
         <footer className={frame.foot}>
-          <span className={`${frame.footHint} ${styles.hint}`} data-ready={!done && !missing.length && !blocked} aria-live="polite">
+          <span className={frame.footHint} aria-live="polite">
             {hint}
           </span>
           <span className="ta-sheet-actions contents">
             {done ? (
               <>
                 <Button hierarchy="tertiary" onClick={onClose}>
-                  Done
+                  Close
                 </Button>
                 <Button hierarchy="secondary" onClick={another}>
                   Add another visitor
@@ -457,56 +489,18 @@ export function NewVisitorWindow({
           </span>
         </footer>
       </div>
-      {printing && done && (
-        <PrintBadgeWindow siteId={site.id} employeeId={done.employeeId} name={done.name} onClose={() => setPrinting(false)} />
-      )}
+      {printing && done && <PrintBadgeWindow siteId={site.id} employeeId={done.employeeId} name={done.name} onClose={() => setPrinting(false)} />}
     </Overlay>
   );
 }
 
-/**
- * The badge in miniature, as it will print: the band, who, from
- * where, the number, and when it stops working (large on a day pass, where
- * a guard checks it at a glance).
- */
-function BadgePreview({
-  name,
-  company,
-  badge,
-  kind,
-  term,
-  lastDay,
-  siteName,
-}: {
-  name: string;
-  company: string | null;
-  badge: string;
-  kind: VisitorKind;
-  term: VisitorTerm;
-  lastDay: string | null;
-  siteName: string;
-}) {
-  // The printed band's own colours (visitor-badge-print.ts), so this shows the badge as it prints.
-  const band = badgeBand(kind, term);
+function Fact({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (
-    <div className={styles.badge} data-kind={kind} aria-label="Badge preview">
-      <span className={styles.badgeBand} style={{ background: band.bg, color: band.ink }}>
-        {VISITOR_KIND_LABEL[kind]} · {VISITOR_TERM_LABEL[term]}
-      </span>
-      <span className={styles.badgeBody}>
-        <span className={styles.badgeName}>{name}</span>
-        {company && <span className={styles.badgeCompany}>{company}</span>}
-        <span className={styles.badgeNumber}>{badge}</span>
-      </span>
-      <span className={styles.badgeFoot}>
-        <span className={styles.badgeSite}>{siteName}</span>
-        {lastDay && (
-          <span className={styles.badgeUntil}>
-            <span className={styles.badgeUntilLabel}>Valid through</span>
-            <span className={styles.badgeUntilDate}>{dayWords(lastDay)}</span>
-          </span>
-        )}
-      </span>
+    <div className={styles.fact}>
+      <dt className={styles.factLabel}>{label}</dt>
+      <dd className={styles.factValue} data-strong={strong || undefined}>
+        {value}
+      </dd>
     </div>
   );
 }
