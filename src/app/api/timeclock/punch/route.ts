@@ -7,7 +7,7 @@ import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
 import { computeRoundedTime, computeShiftExpiry } from "@/lib/utils/date";
 import { getCurrentPunchState, findOpenPayPeriod, saveRejectedPunch, mealLockoutRejection, mealLockoutWait, TOO_SOON_REJECTION } from "@/lib/utils/punch-helpers";
 import { validateTransition } from "@/lib/state-machines/punch-state";
-import { timeclockScanSchema } from "@/lib/validators/punch.schema";
+import { REQUESTABLE_PUNCH_TYPES, timeclockScanSchema } from "@/lib/validators/punch.schema";
 import { recordScanEvent, resolveScanOutcome } from "@/lib/services/scan-event.service";
 import { toTabletVerdict } from "@/lib/services/tablet-verdict";
 import { findEmployeeByBadge } from "@/lib/utils/badge-lookup";
@@ -88,12 +88,31 @@ function detectPunchType(currentState: PunchState): PunchType {
 const PUNCH_MIN_GAP_MS = 5 * 60 * 1000;
 
 /**
+ * Which directions POST records as stated (timeclockScanSchema.PunchType).
+ *
+ * The gate phone asks this before every batch send and sends nothing unless
+ * CLOCK_OUT is listed. A server from before PunchType has no GET here and
+ * answers 405, which the phone reads as "no": that is what makes the order of
+ * this deploy and the phone's install irrelevant. Before it, the route ignored
+ * the field and inferred the direction, clocking an already-out crew back in.
+ */
+export async function GET(req: NextRequest) {
+  if (!timeclockKeyValid(req)) {
+    return unauthorized();
+  }
+  return NextResponse.json(
+    { success: true, punchTypes: REQUESTABLE_PUNCH_TYPES },
+    { headers: { "Cache-Control": "no-store" } }
+  );
+}
+
+/**
  * Every refusal also carries a fixed `code`, so a tablet shows its own text
  * in the person's language instead of the English `error`, which stays for
  * builds that show it (TABLET-LANGUAGES-PLAN.md): UNAUTHORIZED, BAD_REQUEST,
  * NOT_FOUND, INACTIVE, VISITOR_AT_TIME_CLOCK, TOO_SOON, NO_PAY_PERIOD,
  * TIMESHEET_LOCKED, MEAL_LOCKOUT (with minutesLeft), INVALID_STATE,
- * SERVER_ERROR.
+ * LATER_PUNCH (a stated direction only), SERVER_ERROR.
  */
 export async function POST(req: NextRequest) {
   // 1. Authenticate via shared secret
@@ -121,7 +140,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { EmployeeCode, ScanDateTime, DeviceName, Warehouse, AppVersion } = parsed.data;
+  const { EmployeeCode, ScanDateTime, DeviceName, Warehouse, AppVersion, PunchType: requestedPunchType } = parsed.data;
 
   // 3. Look up the employee by either badge form — the 6-digit employee
   //    number or the 10-digit barcode. See badge-lookup for why both exist
@@ -441,8 +460,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 7. Auto-detect punch type and validate transition
-  const punchType = detectPunchType(stateBefore);
+  // 7. Auto-detect punch type and validate transition. A caller that states
+  //    the direction (the gate phone's batch send, CLOCK_OUT only: see
+  //    timeclockScanSchema) gets that direction or a refusal, never a guess:
+  //    someone already OUT is refused at 8 ("current state is OUT") instead of
+  //    being clocked back IN.
+  const punchType: PunchType = requestedPunchType ?? detectPunchType(stateBefore);
 
   // 7a. Meal lockout. A clock in too soon after a clock out is refused with the
   //     minutes left, as Oracle refuses it for California. The tablets show
@@ -486,6 +509,24 @@ export async function POST(req: NextRequest) {
       { success: false, code: "INVALID_STATE", error: transition.error },
       { status: 409 }
     );
+  }
+
+  // 8a. A stated direction is sent after the fact: the gate phone sends a crew
+  //     minutes after their badges were scanned, each at its scan time. If the
+  //     person has a punch AFTER that time (out at a time clock, then back in),
+  //     a clock out slotted in before it would break the timecard's order, so
+  //     it is refused. Inferred punches are live scans and never need this.
+  if (requestedPunchType) {
+    const later = await db.punch.findFirst({
+      where: { employeeId: employee.id, isRejected: false, correctedById: null, hoursOnly: false, punchTime: { gt: punchTime } },
+      select: { punchTime: true },
+    });
+    if (later) {
+      const error = `Cannot ${punchType} before a later punch`;
+      await saveRejectedPunch({ employeeId: employee.id, timesheetId: activeTimesheetId, punchType, source: "KIOSK", stateBefore, rejectionReason: error });
+      await settle("PUNCH_REJECTED", { punchType, rejectionReason: error });
+      return NextResponse.json({ success: false, code: "LATER_PUNCH", error }, { status: 409 });
+    }
   }
 
   const roundedTime = computeRoundedTime(punchTime, punchType, employee.ruleSet, employee.shift, personTimeZone(employee));
