@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCw, Search, UserPlus, UsersRound, X } from "lucide-react";
+import { Printer, RefreshCw, Search, UserPlus, UsersRound, X } from "lucide-react";
 import { Banner, Button, ConfirmDialog, Input, SegmentedControl } from "@/components/ui";
 import { Overlay } from "@/components/ui/overlay";
 import { endVisitor, getSiteVisitors } from "@/actions/visitor.actions";
 import { VISITOR_KIND_LABEL, VISITOR_TERM_LABEL, addDays } from "@/lib/visitors/visitor-pass";
 import type { VisitorRow } from "@/lib/visitors/visitors.service";
 import { NewVisitorWindow, dayWords } from "./new-visitor-window";
+import { PrintBadgeWindow } from "./print-badge-window";
 import { fmtTime } from "./presence-meta";
 import frame from "./export-window.module.css";
 import styles from "./visitors-window.module.css";
@@ -87,6 +88,7 @@ export function VisitorsWindow({
   const [q, setQ] = useState("");
   const [form, setForm] = useState<{ renew?: VisitorRow } | null>(null);
   const [ending, setEnding] = useState<VisitorRow | null>(null);
+  const [printing, setPrinting] = useState<VisitorRow | null>(null);
   const [endBusy, setEndBusy] = useState(false);
   const [endError, setEndError] = useState<string | null>(null);
   const windowRef = useRef<HTMLDivElement>(null);
@@ -115,7 +117,7 @@ export function VisitorsWindow({
   const topRef = useRef(false);
   useEffect(() => {
     closeRef.current = onClose;
-    topRef.current = !form && !ending;
+    topRef.current = !form && !ending && !printing;
   });
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
@@ -278,9 +280,14 @@ export function VisitorsWindow({
                           Renew
                         </Button>
                         {r.standing !== "ENDED" && r.standing !== "EXPIRED" && (
-                          <Button hierarchy="tertiary" size="sm" onClick={() => setEnding(r)}>
-                            End access
-                          </Button>
+                          <>
+                            <Button hierarchy="secondary" size="sm" iconOnly aria-label={`Print ${r.name}'s badge`} title="Print badge" onClick={() => setPrinting(r)}>
+                              <Printer className="h-4 w-4" aria-hidden="true" />
+                            </Button>
+                            <Button hierarchy="tertiary" size="sm" onClick={() => setEnding(r)}>
+                              End access
+                            </Button>
+                          </>
                         )}
                       </span>
                     </li>
@@ -304,6 +311,10 @@ export function VisitorsWindow({
           </span>
         </footer>
       </div>
+
+      {printing && (
+        <PrintBadgeWindow siteId={site.id} employeeId={printing.employeeId} name={printing.name} onClose={() => setPrinting(null)} />
+      )}
 
       {ending && (
         <ConfirmDialog

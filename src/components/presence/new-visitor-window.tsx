@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { BadgeCheck, CalendarDays, CircleCheck, RefreshCw, Repeat, UserPlus, X, type LucideIcon } from "lucide-react";
+import { BadgeCheck, CalendarDays, CircleCheck, Printer, RefreshCw, Repeat, UserPlus, X, type LucideIcon } from "lucide-react";
 import { Banner, Button, Input, SegmentedControl } from "@/components/ui";
 import { Overlay } from "@/components/ui/overlay";
 import { createVisitor, getNewVisitorData, renewVisitorPass, searchVisitorHosts, searchVisitors } from "@/actions/visitor.actions";
@@ -9,6 +9,7 @@ import { DEFAULT_VISITOR_TERM, VISITOR_KIND_LABEL, VISITOR_TERMS, VISITOR_TERM_L
 import type { AddedVisitor, HostMatch, VisitorMatch } from "@/lib/visitors/visitors.service";
 import frame from "./export-window.module.css";
 import styles from "./new-visitor-window.module.css";
+import { PrintBadgeWindow } from "./print-badge-window";
 
 /**
  * New Visitor on Live Attendance: loss prevention adds a visitor at the
@@ -106,6 +107,11 @@ export function NewVisitorWindow({
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [done, setDone] = useState<(AddedVisitor & { renewed: boolean }) | null>(null);
+  const [printing, setPrinting] = useState(false);
+  const printingRef = useRef(false);
+  useEffect(() => {
+    printingRef.current = printing;
+  }, [printing]);
   const windowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -129,7 +135,8 @@ export function NewVisitorWindow({
     const opener = document.activeElement as HTMLElement | null;
     windowRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      // The print window on top answers its own Escape.
+      if (e.key !== "Escape" || printingRef.current) return;
       e.stopPropagation();
       closeRef.current();
     };
@@ -424,11 +431,14 @@ export function NewVisitorWindow({
           <span className="ta-sheet-actions contents">
             {done ? (
               <>
+                <Button hierarchy="tertiary" onClick={onClose}>
+                  Done
+                </Button>
                 <Button hierarchy="secondary" onClick={another}>
                   Add another visitor
                 </Button>
-                <Button hierarchy="primary" onClick={onClose}>
-                  Done
+                <Button hierarchy="primary" leadingIcon={<Printer className="h-4 w-4" aria-hidden="true" />} onClick={() => setPrinting(true)}>
+                  Print badge
                 </Button>
               </>
             ) : (
@@ -444,6 +454,9 @@ export function NewVisitorWindow({
           </span>
         </footer>
       </div>
+      {printing && done && (
+        <PrintBadgeWindow siteId={site.id} employeeId={done.employeeId} name={done.name} onClose={() => setPrinting(false)} />
+      )}
     </Overlay>
   );
 }

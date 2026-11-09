@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { withRBAC } from "@/lib/rbac/guard";
+import { writeAuditLog } from "@/lib/audit/logger";
 import { getViewableSites } from "@/lib/presence/on-site.service";
 import { isVisitorKind, termFitsKind } from "@/lib/visitors/visitor-pass";
 import {
@@ -9,6 +10,7 @@ import {
   endVisitorAccess,
   findHosts,
   listSiteVisitors,
+  visitorBadge,
   findVisitors,
   nextVisitorBadge,
   recentCompanies,
@@ -130,3 +132,34 @@ export const endVisitor = withRBAC("VISITOR_MANAGE", async ({ tenantId, employee
   await assertSite(tenantId, { employeeId, role }, v.siteId);
   return endVisitorAccess(tenantId, employeeId, { siteId: v.siteId, employeeId: v.employeeId });
 });
+
+/**
+ * A visitor's badge, to preview or print. Each print is in the audit log, so
+ * security can see who printed which badge and when.
+ */
+export const getVisitorBadgeToPrint = withRBAC(
+  "VISITOR_MANAGE",
+  async ({ tenantId, employeeId, role }, input: { siteId: string; employeeId: string; paper: string; printing: boolean }) => {
+    if (!tenantId) throw new Error("NOT_FOUND");
+    const v = z
+      .object({
+        siteId: z.string().min(1).max(64),
+        employeeId: z.string().min(1).max(64),
+        paper: z.enum(["letter", "label", "card"]),
+        printing: z.boolean(),
+      })
+      .parse(input);
+    await assertSite(tenantId, { employeeId, role }, v.siteId);
+    const badge = await visitorBadge(tenantId, v.siteId, v.employeeId);
+    // The preview is not a print; only Print badge is recorded.
+    if (v.printing) await writeAuditLog({
+      tenantId,
+      actorId: employeeId,
+      entityType: "EMPLOYEE",
+      entityId: v.employeeId,
+      action: "VISITOR_BADGE_PRINTED",
+      changes: { badge: badge.badge, validUntil: badge.validUntil, paper: v.paper },
+    });
+    return badge;
+  },
+);

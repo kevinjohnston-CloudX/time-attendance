@@ -82,7 +82,7 @@ export async function getIdBadge(employeeId: string): Promise<IdBadge | null> {
  * ever injected. Level M survives a scuffed or glare-washed screen and keeps
  * the modules large: a six-digit number is version 1, 21 modules across.
  */
-function qrPath(text: string): { size: number; path: string } {
+export function qrPath(text: string): { size: number; path: string } {
   const { modules } = QRCode.create(text, { errorCorrectionLevel: "M" });
   let path = "";
   for (let y = 0; y < modules.size; y++) {

@@ -1,0 +1,33 @@
+/* Print badge. The frame, cards, rail and paper choices are the Export
+   window's (export-window.module.css); this is the narrower window and the
+   preview of the printed badge. */
+
+.window {
+  max-width: 720px;
+}
+
+/* The badge exactly as it prints, scaled down to the rail. */
+.preview {
+  position: relative;
+  max-width: 100%;
+  margin: 0 auto;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--ta-well);
+  box-shadow: inset 0 0 0 1px var(--ta-well-ring);
+  display: grid;
+  place-items: center;
+}
+.previewFrame {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 0;
+  background: var(--wms-color-base-white);
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+.previewWait {
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+}

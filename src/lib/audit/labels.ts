@@ -75,6 +75,7 @@ const NAMED: Record<string, string> = {
   VISITOR_ADDED: "Visitor added",
   VISITOR_RENEWED: "Visitor pass renewed",
   VISITOR_ENDED: "Visitor access ended",
+  VISITOR_BADGE_PRINTED: "Visitor badge printed",
   PREFERRED_LANGUAGE_SET: "Language set at a time clock",
   LEAVE_BALANCE_ADJUSTED: "Leave balance adjusted",
   LEAVE_BALANCE_RESET_TO_ACCRUAL: "Leave balance reset to accrual",

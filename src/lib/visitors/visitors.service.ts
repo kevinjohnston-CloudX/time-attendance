@@ -2,6 +2,8 @@ import { db } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { localDateString } from "@/lib/presence/on-site.service";
 import { markGateRefusalScheduled } from "@/lib/presence/gate-refusals.service";
+import { photoUrls } from "@/lib/presence/photos";
+import { qrPath } from "@/lib/badge/badge.service";
 import { SIGN_IN_ONLY_RULE_SET, VISITOR_DEPARTMENT } from "@/lib/sign-in-only";
 import { CLIENT_BADGE_PREFIX, NOT_VISITOR, issueClientBadge, previewClientBadge } from "@/lib/utils/client-badge";
 import {
@@ -464,4 +466,59 @@ export async function listSiteVisitors(tenantId: string, siteId: string): Promis
     addedBy: p.createdById ? (byId.get(p.createdById) ?? null) : null,
   }));
   return { today: here.today, rows, capped };
+}
+
+export interface VisitorBadge {
+  name: string;
+  company: string | null;
+  visiting: string | null;
+  badge: string;
+  kind: VisitorKind;
+  term: VisitorTerm;
+  validFrom: string;
+  validUntil: string;
+  siteName: string;
+  /** A signed link to their gate photo, or null. */
+  photo: string | null;
+  /** The QR's dark modules as one SVG path, on a grid `size` across: the badge number, as the gate reads it. */
+  qr: { size: number; path: string };
+}
+
+/**
+ * Everything a visitor's printed badge shows, for a pass at this building.
+ * The code is the plain badge number, as on every other badge (badge.service.ts).
+ */
+export async function visitorBadge(tenantId: string, siteId: string, employeeId: string): Promise<VisitorBadge> {
+  const p = await db.visitorPass.findFirst({
+    where: { tenantId, siteId, employeeId },
+    select: {
+      kind: true,
+      term: true,
+      company: true,
+      hostName: true,
+      validFrom: true,
+      validUntil: true,
+      site: { select: { name: true } },
+      employee: { select: { id: true, wmsId: true, barcode: true, employeeCode: true, user: { select: { name: true } } } },
+    },
+  });
+  const number = p?.employee.wmsId;
+  if (!p || !number) throw new Error("NOT_FOUND");
+  const e = p.employee;
+  const photo = await photoUrls(tenantId, [{ id: e.id, barcode: e.barcode, wmsId: e.wmsId, employeeCode: e.employeeCode }])
+    .then((urls) => urls.get(e.id) ?? null)
+    .catch(() => null);
+  return {
+    name: e.user.name ?? number,
+    company: p.company,
+    visiting: p.hostName,
+    badge: number,
+    kind: p.kind as VisitorKind,
+    term: p.term as VisitorTerm,
+    validFrom: day(p.validFrom),
+    validUntil: day(p.validUntil),
+    siteName: p.site.name,
+    photo,
+    qr: qrPath(number),
+  };
 }
