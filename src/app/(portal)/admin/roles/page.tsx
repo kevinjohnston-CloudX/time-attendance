@@ -6,9 +6,6 @@ import { getRoles } from "@/actions/role.actions";
 import { getPermissions } from "@/lib/rbac/permissions";
 import { ROLES, ROLE_RANK } from "@/lib/rbac/roles";
 import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
-import { db } from "@/lib/db";
-import { ownCompany } from "@/lib/rbac/company";
-import { withoutVisitors } from "@/lib/utils/client-badge";
 import { RolesClient } from "@/components/admin/roles-client";
 
 /**
@@ -58,20 +55,8 @@ export default async function RolesPage() {
   if (!session?.user) redirect(SESSION_ENDED_HREF);
   if (!await userHasPermission(session.user, "ROLE_MANAGE")) redirect("/admin");
 
-  const [rolesResult, roleCounts] = await Promise.all([
-    getRoles(),
-    // Held to the viewer's company: unscoped, it summed every company on the
-    // shared database. Visitors are not staff, so they are not counted.
-    db.employee.groupBy({
-      by: ["role"],
-      where: withoutVisitors({ tenantId: ownCompany(session.user.tenantId) }),
-      _count: { _all: true },
-    }),
-  ]);
+  const rolesResult = await getRoles();
 
-  const countByRole = Object.fromEntries(
-    (roleCounts as { role: string; _count: { _all: number } }[]).map((r) => [r.role, r._count._all])
-  );
 
   const builtinRoles = ROLES.map((key) => ({
     key,
@@ -81,7 +66,6 @@ export default async function RolesPage() {
     permissions: getPermissions(key)
       .map((p) => LEGACY_MAP[p])
       .filter(Boolean) as { resource: string; action: string; scope: string }[],
-    employeeCount: countByRole[key] ?? 0,
   }));
 
   return (

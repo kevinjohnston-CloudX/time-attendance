@@ -69,7 +69,6 @@ type BuiltinRoleSummary = {
   description: string | null;
   rank: number;
   permissions: { resource: string; action: string; scope: string }[];
-  employeeCount: number;
 };
 
 export function RolesClient({
