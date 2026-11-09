@@ -8,7 +8,7 @@ import { computeRoundedTime, computeShiftExpiry } from "@/lib/utils/date";
 import { getCurrentPunchState, findOpenPayPeriod, saveRejectedPunch, mealLockoutRejection, mealLockoutWait, TOO_SOON_REJECTION } from "@/lib/utils/punch-helpers";
 import { validateTransition } from "@/lib/state-machines/punch-state";
 import { timeclockScanSchema } from "@/lib/validators/punch.schema";
-import { recordScanEvent, resolveScanOutcome, setScanAsideFromAlternation } from "@/lib/services/scan-event.service";
+import { recordScanEvent, resolveScanOutcome } from "@/lib/services/scan-event.service";
 import { toTabletVerdict } from "@/lib/services/tablet-verdict";
 import { findEmployeeByBadge } from "@/lib/utils/badge-lookup";
 import { tabletTimeZone } from "@/lib/utils/tablet-time-zone";
@@ -468,8 +468,8 @@ export async function POST(req: NextRequest) {
     const wait = lastOut ? mealLockoutWait(lastOut.punchTime, punchTime, employee.ruleSet.mealLockoutMinutes) : 0;
     if (wait > 0) {
       const error = mealLockoutRejection(wait);
+      // settle() sets every refused scan aside from the alternation, this one included.
       await settle("PUNCH_REJECTED", { punchType, rejectionReason: error });
-      if (scanEventId) await setScanAsideFromAlternation(scanEventId, "Refused by the meal lockout: not counted as a clock in or out");
       return NextResponse.json({ success: false, punchId: null, code: "MEAL_LOCKOUT", error, minutesLeft: wait });
     }
   }

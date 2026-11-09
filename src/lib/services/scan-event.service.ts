@@ -168,6 +168,7 @@ async function reresolveFollowing(
   afterScanTime: Date,
   startingFrom: ScanDirection,
   timezone: string,
+  note = "direction re-resolved after a late scan filled an earlier gap",
 ): Promise<number> {
   // Bounded by the same anchor `resolveDirection` uses, or the correction would
   // run past the point where the chain restarts and "fix" rows that were right.
@@ -197,10 +198,7 @@ async function reresolveFollowing(
     if (event.direction !== expected) {
       await tx.scanEvent.update({
         where: { id: event.id },
-        data: {
-          direction: expected,
-          note: "direction re-resolved after a late scan filled an earlier gap",
-        },
+        data: { direction: expected, note },
       });
       corrected += 1;
     }
@@ -469,6 +467,14 @@ export function rereadWindowMsFor(stream: ScanStream): number {
  * failure here must not cost an employee a punch the pipeline already
  * accepted. A scan left at PENDING because this failed is itself visible to
  * the discrepancy sweep, which is the right outcome.
+ *
+ * <p>Every refusal is set aside from the time clock alternation here, whatever
+ * refused it ({@link setScanAsideFromAlternation}). Until 2026-11-06 only the
+ * meal lockout did that, so a "scanned again too quickly" (or inactive,
+ * visitor, no pay period, locked timesheet, invalid transition) kept the
+ * direction alternation gave it, and the person's next real punch resolved
+ * backwards: on NJ3-DOCK-A-CRTEST a CLOCK_IN at 15:46:51, a refused repeat at
+ * 15:49:44, then a CLOCK_OUT at 15:53:00 stored as IN.
  */
 export async function resolveScanOutcome(
   scanEventId: string,
@@ -496,6 +502,12 @@ export async function resolveScanOutcome(
   } catch (err) {
     console.error("scan_events: failed to resolve outcome for", scanEventId, err);
   }
+  if (result.outcome === "PUNCH_REJECTED") {
+    await setScanAsideFromAlternation(
+      scanEventId,
+      `Refused${result.rejectionReason ? ` (${result.rejectionReason})` : ""}: not counted as a clock in or out`,
+    );
+  }
 }
 
 /**
@@ -505,10 +517,48 @@ export async function resolveScanOutcome(
  * otherwise read as clocking OUT, and raised a direction mismatch. As Oracle,
  * whose state a refused punch does not toggle. Never throws, as
  * {@link resolveScanOutcome}.
+ *
+ * <p>Time clock only: the gate's directions are not decided by the timecard,
+ * and a gate scan is never refused here. Scans after this one in the same day
+ * are re-resolved from the scan before it, as for a late insert, so a refused
+ * scan that arrived after later ones (an offline queue flushing) cannot leave
+ * them inverted.
  */
 export async function setScanAsideFromAlternation(scanEventId: string, note: string): Promise<void> {
   try {
-    await db.scanEvent.update({ where: { id: scanEventId }, data: { direction: "UNKNOWN", note } });
+    await db.$transaction(async (tx) => {
+      const scan = await tx.scanEvent.findUnique({
+        where: { id: scanEventId },
+        select: {
+          employeeId: true,
+          stream: true,
+          scanTime: true,
+          direction: true,
+          employee: { select: { timeZone: true, site: { select: { timezone: true } } } },
+        },
+      });
+      if (!scan || scan.stream !== "TIME_CLOCK") return;
+      await tx.scanEvent.update({ where: { id: scanEventId }, data: { direction: "UNKNOWN", note } });
+      if (!scan.employeeId || scan.direction === "UNKNOWN") return;
+
+      const timezone = personTimeZone(scan.employee);
+      const previous = await tx.scanEvent.findFirst({
+        where: {
+          employeeId: scan.employeeId,
+          stream: scan.stream,
+          scanTime: { lt: scan.scanTime, gte: localMidnightUtc(scan.scanTime, timezone) },
+          direction: { in: ["IN", "OUT"] },
+        },
+        orderBy: { scanTime: "desc" },
+        select: { direction: true },
+      });
+      // With nothing before it, the next scan is the first of the day: IN.
+      await reresolveFollowing(
+        tx, scan.employeeId, scan.stream, scan.scanTime,
+        previous ? previous.direction : "OUT", timezone,
+        "direction re-resolved after an earlier refused scan was set aside",
+      );
+    });
   } catch (err) {
     console.error("scan_events: failed to set aside", scanEventId, err);
   }
