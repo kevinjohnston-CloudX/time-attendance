@@ -434,7 +434,7 @@ export function GateRefusalAlert({
               {visitor
                 ? visitorReason(card)
                 : ended
-                  ? "Former employee"
+                  ? "Terminated"
                   : card.reason === "NOT_A_WORKDAY"
                     ? "Scheduled off today"
                     : "Not on today's schedule"}
@@ -456,7 +456,7 @@ export function GateRefusalAlert({
         ) : ended ? (
           <div className={styles.gaGlance}>
             <Cell label="Supervisor" value={card.supervisor} empty="None on record" />
-            <Cell label="Terminated" value={ended.on ? dayWords(ended.on) : null} sub={ended.by === "WMS" ? "Recorded in WMS" : "Recorded in CloudTime"} empty="Date not on record" />
+            <Cell label="Termination date" value={ended.on ? dayWords(ended.on) : null} sub={ended.by === "WMS" ? "Recorded in WMS" : "Recorded in CloudTime"} empty="Date not on record" />
             <Cell label="Tries today" value={String(card.attempts)} sub={firstTry} />
           </div>
         ) : (
