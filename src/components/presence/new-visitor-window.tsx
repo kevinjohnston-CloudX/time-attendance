@@ -19,7 +19,8 @@ import type { AddedVisitor, HostMatch, VisitorBadge, VisitorMatch } from "@/lib/
 import { qrPath } from "@/lib/badge/qr-path";
 import frame from "./export-window.module.css";
 import styles from "./new-visitor-window.module.css";
-import { BadgeSample } from "./badge-sample";
+import { BadgeSample, badgeSampleHeight } from "./badge-sample";
+import { PAPER_LABEL, savedPaper, type BadgePaper } from "./visitor-badge-print";
 import { PrintBadgeWindow } from "./print-badge-window";
 
 /**
@@ -49,6 +50,9 @@ function todayAt(timezone: string): string {
 }
 
 const KINDS: VisitorKind[] = ["DAY_PASS", "FREQUENT"];
+
+/** The badge preview's width in the rail. */
+const BADGE_WIDTH = 268;
 
 /** Waits until typing stops before asking the server. */
 function useSearch<T>(text: string, run: (q: string) => Promise<T[]>): T[] {
@@ -116,6 +120,8 @@ export function NewVisitorWindow({
 }) {
   const [setup, setSetup] = useState<{ missing: string | null; nextBadge: string; companies: string[] } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // The paper this desk prints on (Print badge remembers it), so the preview is that badge.
+  const [paper, setPaper] = useState<BadgePaper>(() => (typeof window === "undefined" ? "letter" : savedPaper()));
   const [renewing, setRenewing] = useState<VisitorMatch | null>(renew ?? null);
   const [name, setName] = useState("");
   const [nameFocus, setNameFocus] = useState(false);
@@ -249,7 +255,7 @@ export function NewVisitorWindow({
     () =>
       live.badge
         ? {
-            name: live.name || "Visitor name",
+            name: live.name,
             company: live.company,
             visiting: live.host,
             badge: live.badge,
@@ -448,12 +454,18 @@ export function NewVisitorWindow({
 
             {/* ── The badge ── */}
             <aside className={`${frame.rail} ${styles.rail}`} aria-label="Badge">
-              <div className={styles.badgeWrap}>{sample ? <BadgeSample badge={sample} width={268} /> : <span className={styles.badgeWait} />}</div>
+              <div className={styles.badgeWrap}>
+                {sample ? (
+                  <BadgeSample badge={sample} paper={paper} width={BADGE_WIDTH} draft={!done} />
+                ) : (
+                  <span className={styles.badgeWait} style={{ height: badgeSampleHeight(paper, BADGE_WIDTH) }} />
+                )}
+              </div>
               <dl className={styles.summary}>
-                <Fact label="Building" value={site.name} />
                 <Fact label="Starts" value={dayWords(starts)} />
                 <Fact label="Expires" value={dayWords(expires)} strong />
                 <Fact label="Badge number" value={badgeNumber || "Assigned when added"} />
+                <Fact label="Prints on" value={PAPER_LABEL[paper]} />
               </dl>
             </aside>
           </div>
@@ -489,7 +501,17 @@ export function NewVisitorWindow({
           </span>
         </footer>
       </div>
-      {printing && done && <PrintBadgeWindow siteId={site.id} employeeId={done.employeeId} name={done.name} onClose={() => setPrinting(false)} />}
+      {printing && done && (
+        <PrintBadgeWindow
+          siteId={site.id}
+          employeeId={done.employeeId}
+          name={done.name}
+          onClose={() => {
+            setPrinting(false);
+            setPaper(savedPaper());
+          }}
+        />
+      )}
     </Overlay>
   );
 }

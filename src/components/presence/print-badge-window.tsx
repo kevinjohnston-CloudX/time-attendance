@@ -6,16 +6,16 @@ import { Banner, Button } from "@/components/ui";
 import { Overlay } from "@/components/ui/overlay";
 import { getVisitorBadgeToPrint } from "@/actions/visitor.actions";
 import type { VisitorBadge } from "@/lib/visitors/visitors.service";
-import { PAPER_BODY, PAPER_LABEL, badgeSheet, printBadgeSheet, type BadgePaper } from "./visitor-badge-print";
+import { PAPER_BODY, PAPER_LABEL, badgeSheet, printBadgeSheet, rememberPaper, savedPaper, type BadgePaper } from "./visitor-badge-print";
 import { BadgeSample } from "./badge-sample";
 import frame from "./export-window.module.css";
 import styles from "./print-badge-window.module.css";
 
 /**
  * Print badge, from New Visitor's result and the Visitors list: which paper,
- * a preview of exactly what prints, and Print (visitor-badge-print.ts). The
- * paper chosen is remembered on this computer, since a desk's printer does
- * not change between visitors.
+ * the badge exactly as it prints on it, and Print (visitor-badge-print.ts).
+ * The paper chosen is remembered on this computer, and New Visitor previews
+ * the badge on it too.
  */
 
 const PAPERS: { value: BadgePaper; icon: LucideIcon }[] = [
@@ -23,16 +23,6 @@ const PAPERS: { value: BadgePaper; icon: LucideIcon }[] = [
   { value: "label", icon: Tag },
   { value: "card", icon: CreditCard },
 ];
-
-const KEY = "cloudtime.visitorBadgePaper";
-function savedPaper(): BadgePaper {
-  try {
-    const v = window.localStorage.getItem(KEY);
-    return v === "label" || v === "card" ? v : "letter";
-  } catch {
-    return "letter";
-  }
-}
 
 export function PrintBadgeWindow({
   siteId,
@@ -86,11 +76,7 @@ export function PrintBadgeWindow({
 
   const pick = (p: BadgePaper) => {
     setPaper(p);
-    try {
-      window.localStorage.setItem(KEY, p);
-    } catch {
-      // A private window keeps no choice; the default is fine.
-    }
+    rememberPaper(p);
   };
 
   const print = async () => {
@@ -152,7 +138,7 @@ export function PrintBadgeWindow({
             </section>
             <aside className={frame.rail} aria-label="Preview">
               <div className={`${frame.railBlock} ${frame.previewBlock} ${styles.previewBlock}`}>
-                {badge ? <BadgeSample badge={badge} paper={paper} width={paper === "card" ? 232 : 248} /> : !failure && <span className={styles.previewWait} />}
+                {badge ? <BadgeSample badge={badge} paper={paper} width={248} /> : !failure && <span className={styles.previewWait} />}
               </div>
             </aside>
           </div>

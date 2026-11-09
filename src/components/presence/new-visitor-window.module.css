@@ -158,12 +158,11 @@
   border-radius: 14px 14px 0 0;
   box-shadow: inset 0 -1px 0 var(--stroke-divider);
 }
-/* The badge's own height, so the rail does not jump while the page loads. */
+/* The badge's own size (its height is set for the paper), so the rail does
+   not jump while the window loads. */
 .badgeWait {
   display: block;
   width: 268px;
-  height: 201px;
-  border-radius: 8px;
   background: var(--surface-card);
 }
 .summary {

@@ -1,12 +1,15 @@
-/* The printed badge, scaled into a window: a card lying on the page, as a
-   badge does on a desk. The badge page is white paper whatever the theme. */
+/* The printed badge, scaled into a window, lying on the window's well the
+   way the badge lies on a desk: the paper's own shape and nothing added to
+   it but a shadow under it. The badge is white paper whatever the theme. */
 
 .sample {
   position: relative;
   flex: none;
   overflow: hidden;
-  border-radius: 8px;
-  box-shadow: var(--ta-raised), 0 0 0 1px var(--stroke-divider);
+  background: var(--wms-color-base-white);
+  /* The theme's own lift: a menu's soft fall plus the raised hairline, so the
+     white edge reads on a light well and on a dark one alike. */
+  box-shadow: var(--shadow-menu), var(--ta-raised);
 }
 .frame {
   position: absolute;
