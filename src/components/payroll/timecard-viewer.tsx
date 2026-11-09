@@ -1106,6 +1106,17 @@ export function TimecardViewer({
   // the missing clock in or out on a day marked Missed punch.
   const canEdit = canChange && !missedPunchesOnly;
   const canFixMissed = canChange && !!timecard;
+  // Add time for such a supervisor (11/09): regular hours, on an open
+  // timecard, today or before (addTimeRefusal holds the server to the same).
+  const canAddTime = canEdit || (canFixMissed && timecard?.status === "OPEN");
+  const addTimePeriod = timecard?.payPeriod ?? payPeriods.find((pp) => pp.id === selectedPeriodId);
+  const addTimeMin = format(parseUtcDate(addTimePeriod?.startDate ?? new Date().toISOString()), "yyyy-MM-dd");
+  const storedEnd = format(parseUtcDate(addTimePeriod?.endDate ?? new Date().toISOString()), "yyyy-MM-dd");
+  const todayKey = format(toSiteClock(new Date(), siteTz), "yyyy-MM-dd");
+  // The supervisor's last day is the period's own (a weekly period stores the day after it).
+  const lastDayKey = addTimePeriod ? format(lastDayOf(addTimePeriod.endDate), "yyyy-MM-dd") : storedEnd;
+  const addTimeMax = canEdit ? storedEnd : todayKey < lastDayKey ? todayKey : lastDayKey;
+  const regularCode = payCodes.find((pc) => pc.id === timecard?.employee.ruleSet?.defaultPayCodeId);
 
   const canDeleteManual =
     !!canEdit &&
@@ -2514,7 +2525,7 @@ export function TimecardViewer({
                     {/* Said beside the status rather than in a line over the
                         grid: it is a fact about this timecard, like its status. */}
                     {!canEdit && (canFixMissed ? (
-                      <span title="You can add the missing clock in or clock out on a day marked Missed punch. HR and payroll make every other change.">
+                      <span title="You can add the missing clock in or clock out on a day marked Missed punch, a clock in and clock out on a day marked Absent, and regular hours with Add time for today or earlier. HR and payroll make every other change.">
                         <Badge>Missed punches only</Badge>
                       </span>
                     ) : (
@@ -2612,14 +2623,15 @@ export function TimecardViewer({
                       employeeName={displayName ?? ""}
                     />
                   )}
-                  {canEdit && (
+                  {canAddTime && (
                     <>
                       <Button
                         hierarchy="secondary"
                         size="sm"
                         leadingIcon={<Plus className="h-3.5 w-3.5" />}
                         onClick={() => {
-                          setNewEntryDate(format(toSiteClock(new Date(), siteTz), "yyyy-MM-dd"));
+                          // Today, or the nearest day of this period to it.
+                          setNewEntryDate(todayKey < addTimeMin ? addTimeMin : todayKey > addTimeMax ? addTimeMax : todayKey);
                           setNewInTimeStr("");
                           setNewOutTimeStr("");
                           setNewInAmPm("AM");
@@ -2638,7 +2650,7 @@ export function TimecardViewer({
                       {timecard && <RecalculateButton timesheetId={timecard.timesheetId} />}
                     </>
                   )}
-                  {!canEdit && canFixMissed && timecard && <RecalculateButton timesheetId={timecard.timesheetId} />}
+                  {!canAddTime && canFixMissed && timecard && <RecalculateButton timesheetId={timecard.timesheetId} />}
                 </div>
               </div>
                 );
@@ -2969,7 +2981,7 @@ export function TimecardViewer({
                                   </button>
                                 ) : hasMissingPunch ? (
                                   <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-warning)" }}>Missing</span>
-                                ) : canEdit ? (
+                                ) : canEdit || (canFixMissed && isAbsent) ? (
                                   <button
                                     type="button"
                                     onClick={() => startAddingPunch(dayKey, 0, "CLOCK_IN", day)}
@@ -3036,7 +3048,7 @@ export function TimecardViewer({
                                   </button>
                                 ) : hasMissingPunch ? (
                                   <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-warning)" }}>Missing</span>
-                                ) : canEdit ? (
+                                ) : canEdit || (canFixMissed && isAbsent) ? (
                                   <button
                                     type="button"
                                     onClick={() => startAddingPunch(dayKey, 0, "CLOCK_OUT", day)}
@@ -4444,7 +4456,7 @@ export function TimecardViewer({
       )}
 
       {/* Add Entry Modal */}
-      {showAddEntryModal && canEdit && (
+      {showAddEntryModal && canAddTime && (
         <Overlay
           className="ta-sheet-scrim z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
           onClick={() => { setShowAddEntryModal(false); setNewEntryError(null); }}
@@ -4491,8 +4503,8 @@ export function TimecardViewer({
                     value={newEntryDate}
                     onChange={(e) => setNewEntryDate(e.target.value)}
                     required
-                    min={format(parseUtcDate((timecard?.payPeriod ?? payPeriods.find((pp) => pp.id === selectedPeriodId))?.startDate ?? new Date().toISOString()), "yyyy-MM-dd")}
-                    max={format(parseUtcDate((timecard?.payPeriod ?? payPeriods.find((pp) => pp.id === selectedPeriodId))?.endDate ?? new Date().toISOString()), "yyyy-MM-dd")}
+                    min={addTimeMin}
+                    max={addTimeMax}
                   />
                 </div>
 
@@ -4565,7 +4577,7 @@ export function TimecardViewer({
                     <Input
                       label="Regular hours"
                       type="number"
-                      min="0"
+                      min={canEdit ? "0" : "0.01"}
                       max="999"
                       step="0.01"
                       value={newEntryHours}
@@ -4574,14 +4586,26 @@ export function TimecardViewer({
                       required
                       hint={
                         roundedHoursNote(newEntryHours) ??
-                        "For example 8 or 7.76, up to 24. Enter 0 with a pay code to mark the day without adding hours."
+                        (canEdit
+                          ? "For example 8 or 7.76, up to 24. Enter 0 with a pay code to mark the day without adding hours."
+                          : "For example 8 or 7.76, up to 24.")
                       }
                     />
                   </div>
                 )}
 
-                {/* Pay Code */}
-                {payCodes.length > 0 && (
+                {/* Pay Code: regular hours only, for a supervisor who fixes missed punches */}
+                {!canEdit && (
+                  <label className="flex flex-col gap-1.5">
+                    <span style={{ font: "var(--type-button2)", color: "var(--text-secondary)" }}>
+                      Pay code
+                    </span>
+                    <Select value="" disabled style={{ width: "100%" }} title="Supervisors add time as regular hours. HR and payroll set any other pay code.">
+                      <option value="">{regularCode ? payCodeOption(regularCode) : "Regular hours"}</option>
+                    </Select>
+                  </label>
+                )}
+                {canEdit && payCodes.length > 0 && (
                   <label className="flex flex-col gap-1.5">
                     <span style={{ font: "var(--type-button2)", color: "var(--text-secondary)" }}>
                       Pay code
@@ -4599,7 +4623,7 @@ export function TimecardViewer({
                   </label>
                 )}
                 {/* Reason code dropdown */}
-                {reasonCodes.length > 0 && (
+                {canEdit && reasonCodes.length > 0 && (
                   <label className="flex flex-col gap-1.5">
                     <span style={{ font: "var(--type-button2)", color: "var(--text-secondary)" }}>
                       Reason

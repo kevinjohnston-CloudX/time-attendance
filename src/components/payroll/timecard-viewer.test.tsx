@@ -208,14 +208,20 @@ describe("a supervisor allowed only to fix missed punches", () => {
     renderFixer();
     const row = (label: RegExp) => screen.getAllByRole("row").find((r) => label.test(r.textContent ?? ""))!;
     expect(screen.getByText("Missed punches only")).not.toBeNull();
-    expect(screen.queryByText("Add time")).toBeNull();
+    // Add time is there (regular hours only; see below).
+    expect(screen.getByRole("button", { name: "Add time" })).not.toBeNull();
     // Tuesday's punches are there to read, not to change.
     const tuesday = [...row(/Tue, Oct 13/).querySelectorAll("button")].filter((b) => /AM|PM/.test(b.textContent ?? ""));
     expect(tuesday.length).toBe(2);
     for (const b of tuesday) expect(b.hasAttribute("disabled")).toBe(true);
-    // No reason code, pay code or empty-day entry offered anywhere.
+    // No reason code or pay code offered anywhere.
     expect([...document.querySelectorAll("tr select:not([disabled])")].length).toBe(0);
-    expect([...row(/Wed, Oct 14/).querySelectorAll("button")].some((b) => b.textContent === "—")).toBe(false);
+    // Times go on a day marked Absent, and no other empty day: not the
+    // weekend, not today.
+    const dash = (label: RegExp) => [...row(label).querySelectorAll("button")].filter((b) => b.textContent === "—").length;
+    expect(dash(/Wed, Oct 14/)).toBe(2);
+    expect(dash(/Sun, Oct 11/)).toBe(0);
+    expect(dash(/Thu, Oct 15/)).toBe(0);
 
     fireEvent.click([...row(/Mon, Oct 12/).querySelectorAll("button")].find((b) => b.textContent === "Missing")!);
     const input = row(/Mon, Oct 12/).querySelector("input")!;
@@ -225,6 +231,59 @@ describe("a supervisor allowed only to fix missed punches", () => {
     await vi.waitFor(() => expect(addManualPunches).toHaveBeenCalledTimes(1));
     const [{ punches }] = addManualPunches.mock.calls[0] as unknown as [{ punches: { punchType: string }[] }];
     expect(punches.map((p) => p.punchType)).toEqual(["CLOCK_OUT"]);
+    vi.useRealTimers();
+  });
+
+  it("puts one shift on a day marked Absent", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-15T16:00:00Z"));
+    addManualPunches.mockClear();
+    renderFixer();
+    const wednesday = () => screen.getAllByRole("row").find((r) => /Wed, Oct 14/.test(r.textContent ?? ""))!;
+    const type = (nth: number, value: string) => {
+      fireEvent.click([...wednesday().querySelectorAll("button")].filter((b) => b.textContent === "—")[nth]!);
+      const input = wednesday().querySelector("input")!;
+      fireEvent.change(input, { target: { value } });
+      fireEvent.blur(input);
+    };
+    type(0, "8:00");
+    type(0, "4:30");
+    fireEvent.click(screen.getByText("Save changes"));
+    await vi.waitFor(() => expect(addManualPunches).toHaveBeenCalledTimes(1));
+    const [{ punches }] = addManualPunches.mock.calls[0] as unknown as [{ punches: { punchType: string; punchTime: string }[] }];
+    // 8:00 AM to 4:30 PM Eastern.
+    expect(punches).toEqual([
+      { punchType: "CLOCK_IN", punchTime: "2026-10-14T12:00:00.000Z" },
+      { punchType: "CLOCK_OUT", punchTime: "2026-10-14T20:30:00.000Z" },
+    ]);
+    vi.useRealTimers();
+  });
+
+  it("adds time as regular hours, today or before, with no reason code", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-15T16:00:00Z"));
+    renderFixer();
+    fireEvent.click(screen.getByRole("button", { name: "Add time" }));
+    const date = document.querySelector("form input[type=date]") as HTMLInputElement;
+    expect(date.value).toBe("2026-10-15");
+    expect(date.max).toBe("2026-10-15");
+    expect(date.min).toBe("2026-10-11");
+    const dialog = date.closest("form")!;
+    const selects = [...dialog.querySelectorAll("select")].filter((el) => !/AM or PM/.test(el.getAttribute("aria-label") ?? ""));
+    // One pay code, regular hours, and no Reason.
+    expect(selects.length).toBe(1);
+    expect(selects[0].disabled).toBe(true);
+    expect(selects[0].textContent).toMatch(/Regular hours/);
+    expect(dialog.textContent).not.toMatch(/Reason/);
+
+    const { addManualPunchPair } = await import("@/actions/timecard-entry.actions");
+    fireEvent.change(dialog.querySelector("input[placeholder=\"8:00\"]")!, { target: { value: "8:00" } });
+    fireEvent.change(dialog.querySelector("input[placeholder=\"5:00\"]")!, { target: { value: "4:30" } });
+    fireEvent.submit(dialog);
+    await vi.waitFor(() => expect(addManualPunchPair).toHaveBeenCalledTimes(1));
+    const [args] = (addManualPunchPair as unknown as { mock: { calls: [{ date: string; payCodeId?: string }][] } }).mock.calls[0];
+    expect(args.date).toBe("2026-10-15");
+    expect(args.payCodeId).toBeUndefined();
     vi.useRealTimers();
   });
 
