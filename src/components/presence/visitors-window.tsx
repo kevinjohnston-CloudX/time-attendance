@@ -7,7 +7,7 @@ import { Overlay } from "@/components/ui/overlay";
 import { endVisitor, getSiteVisitors } from "@/actions/visitor.actions";
 import { VISITOR_KIND_LABEL, VISITOR_TERM_LABEL, addDays } from "@/lib/visitors/visitor-pass";
 import type { VisitorRow } from "@/lib/visitors/visitors.service";
-import { NewVisitorWindow, dayWords } from "./new-visitor-window";
+import { NewVisitorWindow } from "./new-visitor-window";
 import { PrintBadgeWindow } from "./print-badge-window";
 import { fmtTime } from "./presence-meta";
 import frame from "./export-window.module.css";
