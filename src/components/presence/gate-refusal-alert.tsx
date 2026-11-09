@@ -435,9 +435,7 @@ export function GateRefusalAlert({
               {visitor
                 ? visitorReason(card)
                 : ended
-                  ? ended.on
-                    ? `Terminated ${dayWords(ended.on)}`
-                    : "Terminated"
+                  ? "Former employee"
                   : card.reason === "NOT_A_WORKDAY"
                     ? "Scheduled off today"
                     : "Not on today's schedule"}
