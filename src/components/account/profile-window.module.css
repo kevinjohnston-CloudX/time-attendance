@@ -1,0 +1,325 @@
+/* My profile. The frame (grey window, header, footer, raised cards) is the
+   Export window's (export-window.module.css). Inside it one fixed shape: the
+   details card on the left, the badge on the right. Changing the password
+   swaps what the card holds, never the size of the window. */
+
+/* Wide enough for the badge at its own size (400px, as on My Badge) beside
+   the details. */
+.window {
+  max-width: 1000px;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 372px;
+  gap: 12px;
+  align-items: stretch;
+}
+
+/* ---- The details card: the person, then sections split by full width rules ---- */
+.card {
+  gap: 0;
+  padding: 0;
+}
+.hero {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 24px 24px 22px;
+}
+/* Squared like the photo on the badge, not round like an avatar. */
+.photo {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--ta-well);
+  box-shadow: inset 0 0 0 1px var(--ta-well-ring);
+  font: var(--weight-semibold) 20px/1 var(--font-sans);
+  color: var(--text-secondary);
+}
+.photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.heroText {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+.name {
+  overflow: hidden;
+  font: var(--weight-bold) 20px/26px var(--font-sans);
+  letter-spacing: -0.015em;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.heroLine {
+  overflow: hidden;
+  font: var(--weight-medium) 14px/20px var(--font-sans);
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.heroMeta {
+  overflow: hidden;
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pill {
+  flex: none;
+  align-self: flex-start;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font: var(--weight-semibold) 12px/18px var(--font-sans);
+  white-space: nowrap;
+  background: var(--fill-disabled);
+  color: var(--text-secondary);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 24px 22px;
+  border-top: 1px solid var(--stroke-divider);
+}
+.sectionLabel {
+  margin: 0;
+  font: var(--weight-semibold) 14px/20px var(--font-sans);
+  color: var(--text-primary);
+}
+
+/* Two columns of label over value, so the eye reads down a column the way
+   it reads a printed form. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 24px;
+  margin: 0;
+}
+.cell {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.cellLabel {
+  font: var(--weight-medium) 12px/16px var(--font-sans);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.cellValue {
+  display: flex;
+  min-width: 0;
+  min-height: 20px;
+  align-items: center;
+  margin: 0;
+  overflow: hidden;
+  font: var(--weight-medium) 14px/20px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cellValue[data-empty] {
+  font-weight: var(--weight-regular);
+  color: var(--text-tertiary);
+}
+.lines {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+/* Loading: quiet bars where the words will be, so nothing moves when they land. */
+.wait {
+  display: block;
+  max-width: 100%;
+  border-radius: 6px;
+  background: var(--ta-well);
+}
+
+/* ---- The password form, in the same card ---- */
+.passwordForm {
+  display: flex;
+  flex-direction: column;
+}
+.passwordForm .section {
+  gap: 14px;
+  padding-block: 20px;
+}
+.passwordForm .section:first-child {
+  border-top: 0;
+}
+
+/* ---- The badge ---- */
+.rail {
+  gap: 0;
+}
+.badgeWell {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  padding: 16px;
+  background: var(--ta-well);
+  border-radius: 14px 14px 0 0;
+  box-shadow: inset 0 -1px 0 var(--stroke-divider);
+}
+/* The badge exactly as My Badge draws it (laid out at its own 400px), scaled
+   whole so the window fits a laptop screen. Nothing inside is re-wrapped or
+   cut: it is the same card, smaller. */
+.badgeScale {
+  width: 400px;
+  zoom: 0.85;
+}
+.badgeWait {
+  display: block;
+  width: 100%;
+  max-width: 400px;
+  height: 560px;
+  border-radius: 24px;
+  background: var(--surface-card);
+  opacity: 0.6;
+}
+.noBadge {
+  display: flex;
+  max-width: 220px;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  color: var(--icon-tertiary);
+}
+.noBadgeTitle {
+  margin-top: 4px;
+  font: var(--weight-semibold) 14px/20px var(--font-sans);
+  color: var(--text-primary);
+}
+.noBadgeBody {
+  font: var(--type-body2);
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+.railFoot {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px 10px 16px;
+}
+.railNote {
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  font: var(--type-body2);
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+/* Print badge: the two papers as choice rows, floating above the button. */
+.printAnchor {
+  position: relative;
+  flex: none;
+}
+.paperMenu {
+  position: absolute;
+  z-index: 3;
+  right: 0;
+  bottom: calc(100% + 6px);
+  display: flex;
+  width: 292px;
+  flex-direction: column;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--surface-card);
+  box-shadow: var(--shadow-menu);
+}
+.paperLabel {
+  padding: 4px 8px 6px;
+  font: var(--weight-semibold) 12px/16px var(--font-sans);
+  color: var(--text-tertiary);
+}
+.paperRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.paperRow:hover,
+.paperRow:focus-visible {
+  background: var(--ta-row-hover);
+  outline: none;
+}
+.paperIcon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--ta-well);
+  box-shadow: inset 0 0 0 1px var(--ta-well-ring);
+  color: var(--icon-secondary);
+}
+.paperIcon svg {
+  width: 16px;
+  height: 16px;
+}
+.paperText {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.paperTitle {
+  font: var(--weight-semibold) 13px/18px var(--font-sans);
+  color: var(--text-primary);
+}
+.paperBody {
+  font: var(--type-caption1);
+  color: var(--text-tertiary);
+}
+
+/* ---- A phone: the badge under the details, one column of values ---- */
+@media (max-width: 760px) {
+  .panes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hero,
+  .section {
+    padding-inline: 16px;
+  }
+  .badgeScale {
+    width: 100%;
+    max-width: 400px;
+    zoom: 1;
+  }
+  .badgeWait {
+    height: 360px;
+  }
+}
+@media (max-width: 420px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

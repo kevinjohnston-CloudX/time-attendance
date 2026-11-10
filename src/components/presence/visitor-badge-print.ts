@@ -84,8 +84,8 @@ export function rememberPaper(p: BadgePaper): void {
  * paper then wrapped and weighed differently. Arial is the fallback on both,
  * so even without the file they still match.
  */
-const FONT_FAMILY = "CloudTime Badge";
-function fontFace(): string {
+export const FONT_FAMILY = "CloudTime Badge";
+export function fontFace(): string {
   const origin = typeof window === "undefined" ? "" : window.location.origin;
   return `@font-face { font-family: "${FONT_FAMILY}"; src: url("${origin}/fonts/inter-latin.woff2") format("woff2"); font-weight: 100 900; font-display: block; }`;
 }

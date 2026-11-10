@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation";
 import { LinkPendingSpinner, useRouter } from "@/components/layout/navigation-progress";
 import { useRef, useState, useEffect, useTransition } from "react";
 import { signOut } from "next-auth/react";
-import { LogOut, Eye, X, Search, ChevronsUpDown, TriangleAlert } from "lucide-react";
+import { LogOut, Eye, X, Search, ChevronsUpDown, TriangleAlert, UserRound, ChevronRight, ChevronLeft, Check } from "lucide-react";
+import { ProfileWindow } from "@/components/account/profile-window";
 import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
 import { BrandTile } from "./cloudtime-logo";
 import { openCommandPalette } from "./command-palette";
@@ -360,6 +361,60 @@ export function SidebarRail({
   );
 }
 
+/**
+ * One choice in the account menu: an icon in a well, a title and one line,
+ * as the choice rows in the Export window read.
+ */
+function AccountMenuRow({
+  icon,
+  title,
+  body,
+  tone,
+  more = false,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  body: string;
+  tone?: "warning";
+  /** Opens a further list in the same menu, so it carries a chevron. */
+  more?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      aria-haspopup={more ? "menu" : "dialog"}
+      onClick={onClick}
+      className="ta-hoverable flex w-full items-center gap-2.5 rounded-lg px-2 py-[7px] text-left"
+    >
+      <span
+        className="inline-flex h-8 w-8 flex-none items-center justify-center rounded-[9px]"
+        style={{
+          background: tone === "warning" ? "var(--surface-warning)" : "var(--ta-well)",
+          boxShadow: tone === "warning" ? "none" : "inset 0 0 0 1px var(--ta-well-ring)",
+          color: tone === "warning" ? "var(--icon-warning)" : "var(--icon-secondary)",
+        }}
+      >
+        {icon}
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate" style={{ font: "var(--weight-semibold) 13px/18px var(--font-sans)", color: "var(--text-primary)" }}>
+          {title}
+        </span>
+        <span
+          className="truncate"
+          style={{ font: "var(--type-caption1)", color: tone === "warning" ? "var(--text-warning)" : "var(--text-tertiary)" }}
+        >
+          {body}
+        </span>
+      </span>
+      {more && <ChevronRight className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />}
+    </button>
+  );
+}
+
 export function Sidebar({
   userName,
   userPhoto,
@@ -376,7 +431,10 @@ export function Sidebar({
   const [isPending, startTransition] = useTransition();
   const collapsed = useSidebarCollapsed();
   const navMode = useNavMode();
+  // The account menu (roles with View as only) and the page it shows.
   const [showRolePicker, setShowRolePicker] = useState(false);
+  const [menuPage, setMenuPage] = useState<"account" | "viewAs">("account");
+  const [profileOpen, setProfileOpen] = useState(false);
   const [pinnedSection, setPinnedSection] = useState<{ id: string; path: string } | null>(null);
   const rolePickerRef = useRef<HTMLDivElement>(null);
 
@@ -408,7 +466,10 @@ export function Sidebar({
     });
   }
 
-  const sections = visibleSections({ permissions, isInactive, onlyHrefs });
+  // A phone only page (My Badge) is opened from My profile on a computer.
+  const sections = visibleSections({ permissions, isInactive, onlyHrefs })
+    .map((sec) => ({ ...sec, items: sec.items.filter((i) => !i.phoneOnly) }))
+    .filter((sec) => sec.items.length > 0);
 
   const current = activeHref(
     pathname,
@@ -416,72 +477,116 @@ export function Sidebar({
   );
 
   const realRoleLabel = ROLE_LABEL[realRole ?? ""] ?? realRole;
-  const togglePicker = () => canViewAs && setShowRolePicker((v) => !v);
+  /**
+   * The name card: a role with View as gets the account menu (My profile,
+   * View as); everyone else goes straight to My profile, since a menu of one
+   * item is a click for nothing.
+   */
+  const togglePicker = () => {
+    if (!canViewAs) {
+      setProfileOpen(true);
+      return;
+    }
+    setMenuPage("account");
+    setShowRolePicker((v) => !v);
+  };
+  const openProfile = () => {
+    setShowRolePicker(false);
+    setProfileOpen(true);
+  };
   const signOutNow = () => signOut({ callbackUrl: "/login" });
 
   /**
-   * The View as list. One list for every layout, placed by the caller, so it
-   * can never quietly go missing from one of them.
+   * The account menu, for roles with View as: My profile, and View as, which
+   * opens the role list in the same menu. One menu for every layout, placed by
+   * the caller, so it can never quietly go missing from one of them.
    */
   const renderRolePicker = (placement: string) =>
     showRolePicker && (
       <div
         role="menu"
-        className={`absolute z-50 w-[228px] rounded-xl p-1.5 ${placement}`}
+        aria-label={menuPage === "viewAs" ? "View as" : "Account"}
+        className={`absolute z-50 w-[264px] rounded-xl p-1.5 ${placement}`}
         style={{ background: "var(--surface-card)", boxShadow: "var(--ta-menu-shadow)" }}
       >
-        <div
-          className="px-2 pb-1 pt-1.5 uppercase"
-          style={{
-            font: "var(--weight-semibold) 11px/14px var(--font-sans)",
-            letterSpacing: "0.07em",
-            color: "var(--text-tertiary)",
-          }}
-        >
-          View as
-        </div>
-        {viewAsOptions.length === 0 && (
-          <p className="px-2 py-2" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-            No roles available
-          </p>
-        )}
-        {viewAsOptions.map((r) => {
-          const on = r.name === viewAsRole;
-          return (
-            <button
-              key={r.id}
-              type="button"
-              role="menuitem"
-              data-active={on}
-              disabled={isPending || on}
-              onClick={() => handleSetViewAs(r.id)}
-              className="ta-hoverable flex h-8 w-full items-center gap-2 rounded-lg px-2 disabled:cursor-default"
-              style={{
-                font: "var(--type-body2)",
-                background: on ? "var(--surface-info)" : "transparent",
-                color: on ? "var(--text-accent)" : "var(--text-secondary)",
-                opacity: isPending && !on ? 0.5 : 1,
-              }}
-            >
-              <span className="min-w-0 flex-1 truncate text-left">{r.name}</span>
-              {on && <span style={{ font: "var(--type-caption1)" }}>Active</span>}
-            </button>
-          );
-        })}
-        {viewAsRole && (
+        {menuPage === "account" ? (
           <>
-            <div className="mx-1.5 my-1 h-px" style={{ background: "var(--stroke-divider)" }} />
-            <button
-              type="button"
-              role="menuitem"
-              disabled={isPending}
-              onClick={handleClearViewAs}
-              className="ta-hoverable flex h-8 w-full items-center gap-2 rounded-lg px-2 disabled:opacity-50"
-              style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
-            >
-              <X className="h-3.5 w-3.5 flex-none" />
-              <span className="min-w-0 truncate">Return to {realRoleLabel}</span>
-            </button>
+            <AccountMenuRow
+              icon={<UserRound className="h-4 w-4" />}
+              title="My profile"
+              body="Your details, badge and password"
+              onClick={openProfile}
+            />
+            <AccountMenuRow
+              icon={<Eye className="h-4 w-4" />}
+              title="View as"
+              body={viewAsRole ? `Viewing as ${viewAsRole}` : "See CloudTime as another role"}
+              tone={viewAsRole ? "warning" : undefined}
+              more
+              onClick={() => setMenuPage("viewAs")}
+            />
+          </>
+        ) : (
+          <>
+            <div className="flex h-9 items-center gap-1 pb-1 pl-0.5 pr-2">
+              <button
+                type="button"
+                onClick={() => setMenuPage("account")}
+                aria-label="Back to the account menu"
+                className="ta-hoverable inline-flex h-7 w-7 flex-none items-center justify-center rounded-lg"
+                style={{ color: "var(--icon-secondary)" }}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span style={{ font: "var(--weight-semibold) 13px/18px var(--font-sans)", color: "var(--text-primary)" }}>View as</span>
+            </div>
+            <div className="mx-1.5 mb-1 h-px" style={{ background: "var(--stroke-divider)" }} />
+            {viewAsOptions.length === 0 && (
+              <p className="m-0 px-2 py-2" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+                No roles available
+              </p>
+            )}
+            <div className="ta-scroll flex max-h-[320px] flex-col overflow-y-auto">
+              {viewAsOptions.map((r) => {
+                const on = r.name === viewAsRole;
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={on}
+                    disabled={isPending || on}
+                    onClick={() => handleSetViewAs(r.id)}
+                    className="ta-hoverable flex h-9 w-full flex-none items-center gap-2 rounded-lg px-2 disabled:cursor-default"
+                    style={{
+                      font: on ? "var(--weight-semibold) 13px/18px var(--font-sans)" : "var(--type-body2)",
+                      background: on ? "var(--ta-choice-on)" : "transparent",
+                      color: on ? "var(--text-accent)" : "var(--text-primary)",
+                      opacity: isPending && !on ? 0.5 : 1,
+                    }}
+                  >
+                    <span className="min-w-0 flex-1 truncate text-left">{r.name}</span>
+                    {on && <Check className="h-4 w-4 flex-none" aria-hidden="true" />}
+                  </button>
+                );
+              })}
+            </div>
+            {viewAsRole && (
+              <>
+                <div className="mx-1.5 my-1 h-px" style={{ background: "var(--stroke-divider)" }} />
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={isPending}
+                  onClick={handleClearViewAs}
+                  className="ta-hoverable flex h-9 w-full items-center gap-2 rounded-lg px-2 disabled:opacity-50"
+                  style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                >
+                  <X className="h-4 w-4 flex-none" />
+                  <span className="min-w-0 truncate">Return to {realRoleLabel}</span>
+                </button>
+              </>
+            )}
           </>
         )}
       </div>
@@ -506,6 +611,7 @@ export function Sidebar({
   const renderFooter = (narrow: boolean) => (
     <div ref={rolePickerRef} className="relative flex-none p-2">
       {renderRolePicker("bottom-[calc(100%-2px)] left-2")}
+      {profileOpen && <ProfileWindow onClose={() => setProfileOpen(false)} />}
 
       {narrow ? (
         <div
@@ -521,9 +627,9 @@ export function Sidebar({
                 ? `${userName ?? "Signed in"}, viewing as ${viewAsRole}`
                 : `${userName ?? "Signed in"} (${realRoleLabel})`
             }
-            aria-haspopup={canViewAs ? "menu" : undefined}
+            aria-haspopup={canViewAs ? "menu" : "dialog"}
             aria-expanded={canViewAs ? showRolePicker : undefined}
-            className={`inline-flex rounded-full ${canViewAs ? "cursor-pointer" : "cursor-default"}`}
+            className="inline-flex cursor-pointer rounded-full"
           >
             <Avatar name={userName} photo={userPhoto} size={32} />
           </button>
@@ -564,12 +670,10 @@ export function Sidebar({
             <button
               type="button"
               onClick={togglePicker}
-              title={canViewAs ? "View as another role" : undefined}
-              aria-haspopup={canViewAs ? "menu" : undefined}
+              title={canViewAs ? "Account" : "My profile"}
+              aria-haspopup={canViewAs ? "menu" : "dialog"}
               aria-expanded={canViewAs ? showRolePicker : undefined}
-              className={`flex min-w-0 flex-1 items-center gap-2.5 rounded-[9px] p-1 text-left ${
-                canViewAs ? "ta-lift cursor-pointer" : "cursor-default"
-              }`}
+              className="ta-lift flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-[9px] p-1 text-left"
             >
               <Avatar name={userName} photo={userPhoto} size={32} ring />
               <span className="min-w-0 flex-1">
@@ -620,9 +724,9 @@ export function Sidebar({
             ? `${userName ?? "Signed in"}, viewing as ${viewAsRole}`
             : `${userName ?? "Signed in"} (${realRoleLabel})`
         }
-        aria-haspopup={canViewAs ? "menu" : undefined}
+        aria-haspopup={canViewAs ? "menu" : "dialog"}
         aria-expanded={canViewAs ? showRolePicker : undefined}
-        className={`inline-flex rounded-full ${canViewAs ? "cursor-pointer" : "cursor-default"}`}
+        className="inline-flex cursor-pointer rounded-full"
       >
         <Avatar name={userName} photo={userPhoto} size={32} />
       </button>
@@ -636,6 +740,7 @@ export function Sidebar({
         <LogOut className="h-4 w-4" />
       </button>
       {renderRolePicker("bottom-0 left-[calc(100%+10px)]")}
+      {profileOpen && <ProfileWindow onClose={() => setProfileOpen(false)} />}
     </div>
   );
 

@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
 import { signOut } from "next-auth/react";
 import { useTheme } from "next-themes";
-import { ChevronLeft, ChevronRight, Eye, LogOut, Menu as MenuIcon, QrCode, Search, ShieldCheck, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, LogOut, Menu as MenuIcon, QrCode, Search, ShieldCheck, UserRound, X } from "lucide-react";
+import { ProfileWindow } from "@/components/account/profile-window";
 import { LinkPendingSpinner, useRouter } from "@/components/layout/navigation-progress";
 import { useLinkStatus } from "next/link";
 import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
@@ -286,10 +287,13 @@ function PhoneMenu({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [pickingRole, setPickingRole] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     panelRef.current?.focus();
+    // The profile window takes its own Escape first (capture), so this only
+    // closes the menu when no window is open over it.
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -337,6 +341,11 @@ function PhoneMenu({
             </div>
           </div>
           {isInactive && <p className={styles.note}>Account inactive. View only.</p>}
+          <button type="button" className={styles.row} aria-haspopup="dialog" onClick={() => setProfileOpen(true)}>
+            <UserRound className={styles.rowIcon} aria-hidden="true" />
+            <span className={styles.rowLabel}>My profile</span>
+            <ChevronRight className={styles.rowChevron} aria-hidden="true" />
+          </button>
           {canViewAs && (
             <>
               <button
@@ -395,6 +404,7 @@ function PhoneMenu({
             <span className={styles.rowLabel}>Sign out</span>
           </button>
         </section>
+        {profileOpen && <ProfileWindow onClose={() => setProfileOpen(false)} />}
 
         {!liveAttendanceOnly && (
           <button type="button" className={styles.search} onClick={openCommandPalette}>

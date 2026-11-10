@@ -53,6 +53,11 @@ export type NavItem = {
    * than no number: people act on these.
    */
   badge?: number;
+  /**
+   * Listed in the phone menu only. On a computer the page is reached from the
+   * account (My profile), not the menu (Juan, 2026-11-10).
+   */
+  phoneOnly?: boolean;
 };
 
 export type NavSection = {
@@ -93,11 +98,11 @@ export const SECTIONS: NavSection[] = [
     icon: CircleUser,
     railLabel: "Me",
     label: "Me",
-    prefixes: ["/dashboard", "/time", "/badge", "/leave", "/documents", "/accruals", "/knowledge-base", "/account"],
+    prefixes: ["/dashboard", "/time", "/badge", "/leave", "/documents", "/accruals", "/knowledge-base"],
     items: [
       { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { label: "Punch Clock", href: "/time/punch", icon: Clock, permission: "PUNCH_OWN" },
-      { label: "My Badge", href: "/badge", icon: QrCode },
+      { label: "My Badge", href: "/badge", icon: QrCode, phoneOnly: true },
       // Only for someone with time of their own: a sign in only login (an
       // agency viewer, Loss Prevention) has no timesheet or punches.
       { label: "My Timesheet", href: "/time/timesheet", icon: ClipboardList, permission: ["PUNCH_OWN", "TIMESHEET_SUBMIT_OWN"] },
@@ -113,8 +118,6 @@ export const SECTIONS: NavSection[] = [
       // Everyone's: which guides each person sees is decided per article by
       // their role, in the ticketing system where the guides are written.
       { label: "Knowledge Base", href: "/knowledge-base", icon: LibraryBig },
-      // Everyone's; a Google only login is told where its password lives.
-      { label: "Change Password", href: "/account/password", icon: KeyRound },
     ],
   },
   {
