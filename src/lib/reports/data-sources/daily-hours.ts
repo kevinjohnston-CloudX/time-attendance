@@ -12,6 +12,7 @@ import { textFilter } from "../scope";
 import { readable } from "../readable";
 import { snapToLocalTime } from "@/lib/utils/date";
 import { codePaidUnder, overtimeCodesOf } from "../overtime-pay-code";
+import { rateInEffect } from "@/lib/pay-rates";
 
 const fieldMap: FieldMap = {
   employeeName:  { prismaPath: "timesheet.employee.user.name",       type: "string" },
@@ -21,19 +22,21 @@ const fieldMap: FieldMap = {
   site:          { prismaPath: "timesheet.employee.site.name",        type: "string" },
   siteId:        { prismaPath: "timesheet.employee.siteId",           type: "string" },
   payType:       { prismaPath: "timesheet.employee.payType",          type: "string" },
+  agencyId:      { prismaPath: "timesheet.employee.agencyId",         type: "string" },
   segmentDate:   { prismaPath: "segmentDate",                         type: "date" },
 };
 
 export const dailyHoursSource: DataSourceDefinition = {
   id: "DAILY_HOURS",
   label: "Daily hours",
-  description: "One row per employee per day: clock in and clock out, regular, overtime and double time worked, time off and holiday hours, and the day's paid total.",
+  description: "One row per employee per day: clock in and clock out, regular, overtime and double time worked, time off and holiday hours, the day's paid total, and its agency, rates and cost.",
   icon: "CalendarClock",
   columns: [
     { id: "employeeName",    label: "Employee",       type: "string",  defaultVisible: true },
     { id: "employeeCode",    label: "Badge ID",       type: "string",  defaultVisible: false },
     { id: "department",      label: "Department",     type: "string",  defaultVisible: true },
     { id: "site",            label: "Site",           type: "string",  defaultVisible: false },
+    { id: "agency",          label: "Agency",         type: "string",  defaultVisible: false },
     { id: "date",            label: "Date",           type: "date",    defaultVisible: true, across: true, varies: true },
     // For grouping a timesheet by week; weeks start on the company's day.
     { id: "week",            label: "Week",           type: "string",  defaultVisible: false, groupOrder: "weekStart", across: true },
@@ -50,6 +53,15 @@ export const dailyHoursSource: DataSourceDefinition = {
     { id: "unpaidMinutes",   label: "Unpaid time off", type: "number", defaultVisible: false },
     { id: "totalMinutes",    label: "Total paid",     type: "number",  defaultVisible: true },
     { id: "premiumMinutes",  label: "Meal premium", type: "number", defaultVisible: false },
+    // The day's money, at the rates in effect that day, priced as Labor cost
+    // prices them (laborCostSource): overtime at 1.5 times, double time at 2.
+    { id: "payRate",         label: "Pay rate",       type: "number",  defaultVisible: false, total: false, varies: true },
+    { id: "chargeRate",      label: "Charge rate",    type: "number",  defaultVisible: false, total: false, varies: true },
+    { id: "regCharge",       label: "Regular charge", type: "number",  defaultVisible: false, total: true },
+    { id: "otCharge",        label: "Overtime charge", type: "number", defaultVisible: false, total: true },
+    { id: "dtCharge",        label: "Double time charge", type: "number", defaultVisible: false, total: true },
+    { id: "chargeCost",      label: "Charge cost",    type: "number",  defaultVisible: false, total: true },
+    { id: "payCost",         label: "Pay cost",       type: "number",  defaultVisible: false, total: true },
     { id: "payType",         label: "Pay type",       type: "string",  defaultVisible: false },
     { id: "payCodes",        label: "Pay codes",      type: "string",  defaultVisible: false, varies: true },
     { id: "reasonCode",      label: "Reason code",    type: "string",  defaultVisible: false, varies: true },
@@ -65,6 +77,7 @@ export const dailyHoursSource: DataSourceDefinition = {
     { id: "employeeCode", label: "Badge ID",       type: "string", operators: ["contains", "eq"] },
     { id: "departmentId", label: "Department",     type: "string", operators: ["eq", "in"] },
     { id: "siteId",       label: "Site",           type: "string", operators: ["eq", "in"] },
+    { id: "agencyId",     label: "Agency",         type: "string", operators: ["eq", "in"] },
     { id: "payType",      label: "Pay type",       type: "string", operators: ["eq"],
       options: [
         { value: "HOURLY", label: "Hourly" },
@@ -75,17 +88,27 @@ export const dailyHoursSource: DataSourceDefinition = {
     { id: "lateBy", label: "Late by, in minutes", type: "number", operators: ["gte", "lte", "between"] },
     { id: "rolling7Hours", label: "Worked in 7 days, in hours", type: "number", operators: ["gte", "lte", "between"] },
   ],
-  groupableFields: ["employeeName", "week", "department", "site"],
+  groupableFields: ["employeeName", "week", "department", "site", "agency"],
   fieldMap,
 
   async execute(config: ReportConfig, tenantId: string): Promise<ReportResult> {
     const dateFilter = await resolveDateFilter(config.dateRange, tenantId);
-    const filterWhere = buildWhereClause(config.filters, fieldMap);
+    // The filters on the person (site, department, agency...) are built on
+    // their own, so the days without hours below read the same people as the
+    // hours. Built together, two or more filters came back as one AND list
+    // with no person part to hand on, and every absence in the company was
+    // added to a report filtered to one site and one agency.
+    const PERSON = "timesheet.employee.";
+    const personFields = Object.fromEntries(
+      Object.entries(fieldMap)
+        .filter(([, f]) => f.prismaPath.startsWith(PERSON))
+        .map(([id, f]) => [id, { ...f, prismaPath: f.prismaPath.slice(PERSON.length) }]),
+    );
+    const otherFields = Object.fromEntries(Object.entries(fieldMap).filter(([, f]) => !f.prismaPath.startsWith(PERSON)));
+    const employeeFilter = buildWhereClause(config.filters, personFields);
+    const rootFilterWhere = buildWhereClause(config.filters, otherFields);
 
     const dateTimesheetFilter = (dateFilter.timesheet as Record<string, unknown>) ?? {};
-    const employeeFilter =
-      ((filterWhere.timesheet as Record<string, unknown>)?.employee as Record<string, unknown>) ?? {};
-    const { timesheet: _ft, ...rootFilterWhere } = filterWhere as Record<string, unknown>;
 
     const where = {
       ...(dateFilter.segmentDate !== undefined ? { segmentDate: dateFilter.segmentDate } : {}),
@@ -105,7 +128,7 @@ export const dailyHoursSource: DataSourceDefinition = {
         payCode: { select: { code: true, label: true, payBucket: true } },
         timesheet: {
           include: {
-            employee: { include: { user: true, department: true, site: true } },
+            employee: { include: { user: true, department: true, site: { select: { name: true, timezone: true } } } },
             dayReasons: { include: { reasonCode: { select: { code: true, label: true } } } },
           },
         },
@@ -231,6 +254,7 @@ export const dailyHoursSource: DataSourceDefinition = {
     }
 
     await fillClockTimes(dayMap);
+    const money = await fillMoney(dayMap);
     const weekStart = await tenantWeekStart(tenantId);
     const attendance = await fillAttendance(dayMap);
 
@@ -256,6 +280,7 @@ export const dailyHoursSource: DataSourceDefinition = {
       payCodes:      day.payCodeSet.size > 0 ? Array.from(day.payCodeSet).join(", ") : null,
       reasonCode:    day.reasonCode,
       ...attendance.get(`${day.employeeId}|${day.date}`),
+      ...money.get(`${day.employeeId}|${day.date}`),
     }));
 
     // By date and then name unless the report says otherwise. Every column is
@@ -282,6 +307,60 @@ export const dailyHoursSource: DataSourceDefinition = {
     };
   },
 };
+
+const cents = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Each day's agency, rates and cost, priced the way the Labor cost report
+ * prices them, so a week here adds up to the same as Labor cost for that
+ * week: the pay rate history's row in effect on the day; regular hours at
+ * the rate, overtime at 1.5 times, double time at 2; charge on worked hours
+ * only, since paid time off and meal premiums are Bergen's cost, not billed
+ * hours. Salaried people and days with no rate in effect show no money
+ * rather than nothing priced at zero. One read for everyone on the report.
+ */
+async function fillMoney(dayMap: Map<string, DayRow>): Promise<Map<string, Record<string, string | number | null>>> {
+  const ids = [...new Set([...dayMap.values()].map((d) => d.employeeId))];
+  const out = new Map<string, Record<string, string | number | null>>();
+  if (ids.length === 0) return out;
+  const people = await db.employee.findMany({
+    where: { id: { in: ids } },
+    select: {
+      id: true,
+      agencyRef: { select: { code: true, description: true } },
+      payRates: { select: { effectiveDate: true, rate1: true, chargeRate: true } },
+    },
+  });
+  const byId = new Map(people.map((p) => [p.id, p]));
+  for (const day of dayMap.values()) {
+    const person = byId.get(day.employeeId);
+    const agency = person?.agencyRef ? `${person.agencyRef.code} ${person.agencyRef.description}`.trim() : null;
+    const row = !day.isSalary && person ? rateInEffect(person.payRates, day.date) : null;
+    if (!row) {
+      out.set(`${day.employeeId}|${day.date}`, { agency, payRate: null, chargeRate: null, regCharge: null, otCharge: null, dtCharge: null, chargeCost: null, payCost: null });
+      continue;
+    }
+    const rate = Number(row.rate1);
+    const charge = row.chargeRate == null ? null : Number(row.chargeRate);
+    const hours = (m: number) => m / 60;
+    // Paid hours that are not worked (time off, holidays) and meal premiums, at the plain rate.
+    const notWorked = Math.max(0, day.paidMinutes - day.regMinutes - day.otMinutes - day.dtMinutes) + day.premiumMinutes;
+    const reg = charge == null ? null : hours(day.regMinutes) * charge;
+    const ot = charge == null ? null : hours(day.otMinutes) * charge * 1.5;
+    const dt = charge == null ? null : hours(day.dtMinutes) * charge * 2;
+    out.set(`${day.employeeId}|${day.date}`, {
+      agency,
+      payRate: rate,
+      chargeRate: charge,
+      regCharge: reg == null ? null : cents(reg),
+      otCharge: ot == null ? null : cents(ot),
+      dtCharge: dt == null ? null : cents(dt),
+      chargeCost: charge == null ? null : cents(reg! + ot! + dt!),
+      payCost: cents((hours(day.regMinutes) + hours(day.otMinutes) * 1.5 + hours(day.dtMinutes) * 2 + hours(notWorked)) * rate),
+    });
+  }
+  return out;
+}
 
 /** The week a day falls in, "Sep 27 – Oct 3, 2026", with its first day to order weeks by, and its day of the week. */
 function weekOf(day: string, weekStart: number): { week: string; weekStart: string; weekday: string; weekdayOrder: number } {

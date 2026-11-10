@@ -650,6 +650,7 @@ export function ReportBuilder({
 function standardRange(dates: StandardReport["dates"], payPeriods: FilterOptions["payPeriods"]): DateRange | null {
   if (dates === "yesterday") return { type: "yesterday" };
   if (dates === "currentWeek") return { type: "calendar", unit: "week", which: "this" };
+  if (dates === "previousWeek") return { type: "calendar", unit: "week", which: "last" };
   if (dates === "previousMonth") return { type: "calendar", unit: "month", which: "last" };
   if (dates === "currentMonth") return { type: "calendar", unit: "month", which: "this" };
   if (dates === "currentYear") return { type: "calendar", unit: "year", which: "this" };
