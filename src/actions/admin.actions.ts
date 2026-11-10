@@ -1,6 +1,7 @@
 "use server";
 
 import { auth } from "@/lib/auth";
+import { ledgerDay, ledgerDayNote, onLedgerDays } from "@/lib/leave-ledger-days";
 import { manageOrView, userHasPermission } from "@/lib/rbac/check-permission";
 import { addMonths, addYears, differenceInMonths } from "date-fns";
 import { generatePeriodsForRuleSet } from "@/lib/pay-period-utils";
@@ -2767,7 +2768,10 @@ export const getLeaveTypeLedgerDetail = withRBAC(
       db.leaveAccrualLedger.findMany({
         where: { employeeId, leaveTypeId, createdAt: { gte: yearStart, lt: yearEnd }, action: { not: "EOD_SNAPSHOT" } },
         orderBy: { createdAt: "asc" },
-        select: { id: true, action: true, deltaSeconds: true, balanceAfterSeconds: true, createdAt: true, note: true, createdById: true },
+        select: {
+          id: true, action: true, deltaSeconds: true, balanceAfterSeconds: true, createdAt: true, note: true, createdById: true,
+          leaveRequestId: true, leaveRequest: { select: { startDate: true, endDate: true } },
+        },
       }),
       db.leaveRequest.findMany({
         where: { employeeId, leaveTypeId, status: { in: ["APPROVED", "PENDING"] }, startDate: { gte: yearStart, lt: yearEnd } },
@@ -2798,25 +2802,30 @@ export const getLeaveTypeLedgerDetail = withRBAC(
     // shows a 6.16 h posting as 6.16 (lib/leave-time).
     const openingBalance = (openingEntry?.balanceAfterSeconds ?? 0) / 60;
 
-    // Batch-fetch names for users who appear in these ledger entries
+    // Who made each entry. createdById is the actor's employee id (every
+    // writer passes ctx.employeeId); it was looked up as a user id, so By
+    // read "—" on every entry.
     const creatorIds = [...new Set(yearEntries.map((e) => e.createdById).filter(Boolean))] as string[];
-    const creatorUsers = creatorIds.length > 0
-      ? await db.user.findMany({ where: { id: { in: creatorIds } }, select: { id: true, name: true } })
+    const creators = creatorIds.length > 0
+      ? await db.employee.findMany({ where: { id: { in: creatorIds } }, select: { id: true, user: { select: { name: true } } } })
       : [];
-    const creatorNameById = new Map(creatorUsers.map((u) => [u.id, u.name]));
+    const creatorNameById = new Map(creators.map((c) => [c.id, c.user?.name ?? null]));
 
-    // Build historical entries
-    const entries: LedgerDetailEntry[] = yearEntries.map((e) => ({
+    // Build historical entries, each on the day it is for (leave-ledger-days).
+    const entries: LedgerDetailEntry[] = onLedgerDays(yearEntries.map((e) => ({
       id: e.id,
-      date: e.createdAt.toISOString().slice(0, 10),
+      date: ledgerDay(e.createdAt, e.leaveRequest),
       type: e.action,
       label: ledgerLabel(e.action),
       deltaMinutes: e.deltaSeconds / 60,
       runningBalance: e.balanceAfterSeconds / 60,
       isFuture: false,
-      note: e.note,
+      note: ledgerDayNote(e.note, e.createdAt, e.leaveRequest),
       createdByName: e.createdById ? (creatorNameById.get(e.createdById) ?? null) : null,
-    }));
+    })));
+    // A request already in the history is not upcoming leave as well.
+    const inLedger = new Set(yearEntries.map((e) => e.leaveRequestId).filter(Boolean));
+    const upcomingRequests = futureRequests.filter((r) => !inLedger.has(r.id));
 
     // Forecast: only for current or future year
     if (year >= today.getUTCFullYear() && employee.payCategoryId) {
@@ -2900,7 +2909,7 @@ export const getLeaveTypeLedgerDetail = withRBAC(
           | { kind: "forecast"; date: Date; deltaMinutes: number };
 
         const futureItems: FutureItem[] = [
-          ...futureRequests.map((r) => ({ kind: "leave" as const, date: r.startDate, id: r.id, durationMinutes: r.durationSeconds / 60, status: r.status })),
+          ...upcomingRequests.map((r) => ({ kind: "leave" as const, date: r.startDate, id: r.id, durationMinutes: r.durationSeconds / 60, status: r.status })),
           ...forecastItems.map((f) => ({ kind: "forecast" as const, date: f.date, deltaMinutes: f.deltaMinutes })),
         ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
@@ -2941,7 +2950,7 @@ export const getLeaveTypeLedgerDetail = withRBAC(
     } else {
       // Past year: just add future-approved requests that fall in the year (shouldn't happen but guard)
       let runningBal = yearEntries.length > 0 ? yearEntries[yearEntries.length - 1].balanceAfterSeconds / 60 : openingBalance;
-      for (const r of futureRequests) {
+      for (const r of upcomingRequests) {
         runningBal -= r.durationSeconds / 60;
         entries.push({
           id: r.id,
@@ -2956,11 +2965,23 @@ export const getLeaveTypeLedgerDetail = withRBAC(
       }
     }
 
-    // Sort by date (historical then future within same day)
+    // Sort by date (historical then future within same day); stable, so the
+    // history keeps the order onLedgerDays gave it.
     entries.sort((a, b) => {
       if (a.date !== b.date) return a.date.localeCompare(b.date);
       return Number(a.isFuture) - Number(b.isFuture);
     });
+
+    // After today, leave entered ahead of its day sits among the projections:
+    // one running balance through both, from the balance at the end of today.
+    const todayKey = todayUtc.toISOString().slice(0, 10);
+    const lastPast = entries.filter((e) => e.date <= todayKey).at(-1);
+    let running = lastPast ? lastPast.runningBalance : openingBalance;
+    for (const e of entries) {
+      if (e.date <= todayKey) continue;
+      running += e.deltaMinutes;
+      e.runningBalance = running;
+    }
 
     return { openingBalance, availableYears, entries };
   }

@@ -44,6 +44,9 @@ export const rejectMissedPunchSchema = z.object({
   punchId: z.string().cuid(),
 });
 
+/** The directions a time clock caller may state (see PunchType below). Clock out only. */
+export const REQUESTABLE_PUNCH_TYPES = ["CLOCK_OUT"] as const;
+
 export const timeclockScanSchema = z.object({
   EmployeeCode: z.string().min(1, "EmployeeCode is required"),
   ScanId: z.number().optional(),
@@ -58,6 +61,17 @@ export const timeclockScanSchema = z.object({
   /// without anyone standing in front of the tablet. Bounded because it lands
   /// in a column and comes from a client.
   AppVersion: z.string().max(32).optional(),
+  /// A direction the caller states instead of leaving it to the person's
+  /// state. Only the gate phone's batch send uses it (build 172): a crew
+  /// scanned out at the gate, sent afterwards as clock outs. Without it the
+  /// route infers OUT -> CLOCK_IN, and most of a batch is already OUT by the
+  /// time it is sent, so they would be clocked back in on their way off site.
+  ///
+  /// CLOCK_OUT is the only value. Clocking anyone IN on a caller's say-so is
+  /// refused at parse (400), for every caller. Time clocks never send it and
+  /// keep the inferred direction. GET /api/timeclock/punch lists this set so
+  /// a phone can check before sending, whichever was deployed first.
+  PunchType: z.enum(REQUESTABLE_PUNCH_TYPES).optional(),
 });
 
 /**
