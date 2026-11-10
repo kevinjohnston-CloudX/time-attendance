@@ -19,7 +19,8 @@ import { formatTimeOfDay, parseUtcDate, toSiteClock } from "@/lib/utils/date";
 import { hasOwnTime, userHasPermission } from "@/lib/rbac/check-permission";
 import { BuildingFilter, OverviewPeriodFilter } from "@/components/dashboard/overview-period-filter";
 import { WorkQueueList, type WorkQueueRow } from "@/components/supervisor/work-queue";
-import { countMissedPunchRequests, getTeamQueues } from "@/lib/team/team-overview";
+import { countMissedPunchRequests, getTeamQueues, getTimeOffAhead } from "@/lib/team/team-overview";
+import { TimeOffAheadCard } from "@/components/supervisor/time-off-ahead-card";
 import { getViewableSites } from "@/lib/presence/on-site.service";
 import { ownCompany } from "@/lib/rbac/company";
 import { Prisma } from "@prisma/client";
@@ -189,7 +190,7 @@ export default async function DashboardPage({
   const siteWhere = siteIds ? { siteId: { in: siteIds } } : {};
 
   // ── The cards, and the periods either side of this one ────────────────────
-  const [currentTimesheet, today, exceptionsFeed, presence, upcoming, prevPP, nextPP, companyExceptions, queues, missedPunchRequests, unsentLeave] = await Promise.all([
+  const [currentTimesheet, today, exceptionsFeed, presence, upcoming, prevPP, nextPP, companyExceptions, queues, missedPunchRequests, unsentLeave, timeOffAhead] = await Promise.all([
     payPeriod && employeeId
       ? db.timesheet.findFirst({
           where: { employeeId, payPeriodId: payPeriod.id },
@@ -206,7 +207,11 @@ export default async function DashboardPage({
       : null,
     canApproveTeam && tenantId
       ? getPresence(tenantId, hasPayrollAccess ? null : employeeId, now, hasPayrollAccess ? siteIds : null)
-      : null,
+      : // A view-only login (an agency viewer) sees who of its people is in,
+        // read only, as their punches already are to it.
+        !ownTime && canSeeTeamPunches && tenantId && employeeId
+        ? getPresence(tenantId, employeeId, now)
+        : null,
     tenantId
       ? getUpcoming(
           employeeId,
@@ -252,6 +257,12 @@ export default async function DashboardPage({
     canApproveTeam && tenantId ? countMissedPunchRequests(tenantId, employeeId, hasPayrollAccess) : 0,
     // Your own: a leave request saved but never sent.
     employeeId ? db.leaveRequest.count({ where: { employeeId, status: "DRAFT" } }) : 0,
+    // Who on a supervisor's team is off in the next two weeks, as Team
+    // Overview shows it. Company wide it would be every absence; Team
+    // Calendar is the place for that.
+    canApproveTeam && !hasPayrollAccess && tenantId
+      ? getTimeOffAhead(tenantId, employeeId, false, now)
+      : null,
   ]);
 
   // ── Period overview (PAY_PERIOD_MANAGE only) ─────────────────────────────
@@ -506,6 +517,94 @@ export default async function DashboardPage({
       )
     : 0;
 
+  // Team Presence: beside your own day's cards, or for a login with no time of
+  // its own, beside the card listing its people.
+  const presenceCard = presence && (
+    <Card
+      title="Team Presence"
+      subtitle={`Live · ${format(siteNow, "MMM d, h:mm a")} · ${hasPayrollAccess ? siteLabel : canApproveTeam ? "Your team" : "Your people"}`}
+    >
+      <div className="flex flex-col gap-3">
+        <div className="ta-dash-presence grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(126px,1fr))]">
+          {[
+            { label: "On the clock", value: presence.onClock, bg: "var(--surface-success)", color: "var(--text-success)" },
+            { label: "On meal", value: presence.onMeal, bg: "var(--surface-warning)", color: "var(--text-warning)" },
+            { label: "Not in", value: presence.notIn, bg: "var(--surface-card)", color: "var(--text-primary)" },
+            { label: "On leave", value: presence.onLeave, bg: "var(--surface-info)", color: "var(--text-accent)" },
+          ].map((p) => (
+            <div
+              key={p.label}
+              className="ta-dash-stat flex flex-col gap-0.5 rounded-lg px-3 py-2.5"
+              style={{ border: "1px solid var(--stroke-divider)", background: p.bg }}
+            >
+              <span className="wms-overline">{p.label}</span>
+              <span
+                className="tabular"
+                style={{
+                  font: "var(--weight-semibold) 22px/28px var(--font-sans)",
+                  color: p.color,
+                }}
+              >
+                {p.value}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex flex-col">
+          {presence.byDept.map((d) => {
+            const inPct = d.total ? (d.inCount / d.total) * 100 : 0;
+            const mealPct = d.total ? (d.mealCount / d.total) * 100 : 0;
+            return (
+              <div
+                key={d.dept}
+                className="flex items-center gap-3 py-2"
+                style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+              >
+                <span
+                  className="w-[82px] flex-none truncate"
+                  style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)" }}
+                  title={d.dept}
+                >
+                  {d.dept}
+                </span>
+                <div
+                  className="flex h-2 flex-1 overflow-hidden rounded-full"
+                  style={{ background: "var(--ta-track)" }}
+                >
+                  <div style={{ width: `${inPct}%`, background: "var(--fill-success)" }} />
+                  <div style={{ width: `${mealPct}%`, background: "var(--fill-warning)" }} />
+                </div>
+                <span
+                  className="tabular flex-none whitespace-nowrap text-right"
+                  style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                >
+                  {d.inCount} / {d.total} in
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        <div
+          className="flex flex-wrap items-center gap-4"
+          style={{ font: "var(--type-caption1)", color: "var(--text-secondary)" }}
+        >
+          {[
+            { label: "On the clock", bg: "var(--fill-success)" },
+            { label: "On meal", bg: "var(--fill-warning)" },
+            { label: "Not in", bg: "var(--ta-track)" },
+          ].map((l) => (
+            <span key={l.label} className="inline-flex items-center gap-1.5">
+              <span style={{ width: 10, height: 8, borderRadius: 2, background: l.bg }} />
+              {l.label}
+            </span>
+          ))}
+        </div>
+      </div>
+    </Card>
+  );
+
   return (
     <div className="flex flex-col gap-4">
       <PageHeader pinned
@@ -548,6 +647,7 @@ export default async function DashboardPage({
             </div>
           </Card>
         )}
+        {!ownTime && presenceCard}
         {today && (
           <Card
             title="Today"
@@ -748,7 +848,7 @@ export default async function DashboardPage({
       )}
 
       {/* ── Row 2: your team ── */}
-      {(companyExceptions || exceptionsFeed || presence) && (
+      {(companyExceptions || exceptionsFeed || (ownTime && presence)) && (
         <div className={CARD_GRID}>
           {companyExceptions && (
             <Card title="Exceptions" subtitle={`Open, every pay period · ${siteLabel}`}>
@@ -816,137 +916,59 @@ export default async function DashboardPage({
             </Card>
           )}
 
-          {presence && (
-            <Card
-              title="Team Presence"
-              subtitle={`Live · ${format(siteNow, "MMM d, h:mm a")} · ${hasPayrollAccess ? siteLabel : "Your team"}`}
-            >
-              <div className="flex flex-col gap-3">
-                <div className="ta-dash-presence grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(126px,1fr))]">
-                  {[
-                    { label: "On the clock", value: presence.onClock, bg: "var(--surface-success)", color: "var(--text-success)" },
-                    { label: "On meal", value: presence.onMeal, bg: "var(--surface-warning)", color: "var(--text-warning)" },
-                    { label: "Not in", value: presence.notIn, bg: "var(--surface-card)", color: "var(--text-primary)" },
-                    { label: "On leave", value: presence.onLeave, bg: "var(--surface-info)", color: "var(--text-accent)" },
-                  ].map((p) => (
-                    <div
-                      key={p.label}
-                      className="ta-dash-stat flex flex-col gap-0.5 rounded-lg px-3 py-2.5"
-                      style={{ border: "1px solid var(--stroke-divider)", background: p.bg }}
-                    >
-                      <span className="wms-overline">{p.label}</span>
-                      <span
-                        className="tabular"
-                        style={{
-                          font: "var(--weight-semibold) 22px/28px var(--font-sans)",
-                          color: p.color,
-                        }}
-                      >
-                        {p.value}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="flex flex-col">
-                  {presence.byDept.map((d) => {
-                    const inPct = d.total ? (d.inCount / d.total) * 100 : 0;
-                    const mealPct = d.total ? (d.mealCount / d.total) * 100 : 0;
-                    return (
-                      <div
-                        key={d.dept}
-                        className="flex items-center gap-3 py-2"
-                        style={{ borderBottom: "1px solid var(--stroke-divider)" }}
-                      >
-                        <span
-                          className="w-[82px] flex-none truncate"
-                          style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)" }}
-                          title={d.dept}
-                        >
-                          {d.dept}
-                        </span>
-                        <div
-                          className="flex h-2 flex-1 overflow-hidden rounded-full"
-                          style={{ background: "var(--ta-track)" }}
-                        >
-                          <div style={{ width: `${inPct}%`, background: "var(--fill-success)" }} />
-                          <div style={{ width: `${mealPct}%`, background: "var(--fill-warning)" }} />
-                        </div>
-                        <span
-                          className="tabular flex-none whitespace-nowrap text-right"
-                          style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
-                        >
-                          {d.inCount} / {d.total} in
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div
-                  className="flex flex-wrap items-center gap-4"
-                  style={{ font: "var(--type-caption1)", color: "var(--text-secondary)" }}
-                >
-                  {[
-                    { label: "On the clock", bg: "var(--fill-success)" },
-                    { label: "On meal", bg: "var(--fill-warning)" },
-                    { label: "Not in", bg: "var(--ta-track)" },
-                  ].map((l) => (
-                    <span key={l.label} className="inline-flex items-center gap-1.5">
-                      <span style={{ width: 10, height: 8, borderRadius: 2, background: l.bg }} />
-                      {l.label}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </Card>
-          )}
+          {ownTime && presenceCard}
         </div>
       )}
 
       {/* ── Row 3: what is coming ── */}
-      {upcoming.length > 0 && (
-        <Card title="Coming Up" subtitle="Next 30 days">
-          <div className="flex flex-col">
-            {upcoming.map((u) => (
-              <div
-                key={u.key}
-                className="flex items-center gap-3 py-2"
-                style={{ borderBottom: "1px solid var(--stroke-divider)" }}
-              >
-                <span
-                  className="tabular w-[66px] flex-none"
-                  style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
-                >
-                  {format(u.date, "MMM d")}
-                </span>
-                <span
-                  className="min-w-0 flex-1"
-                  style={{ font: "var(--type-body1)", textWrap: "pretty" }}
-                >
-                  {u.what}
-                </span>
-                <Badge tone={u.tone} size="sm">
-                  {u.kind}
-                </Badge>
-              </div>
-            ))}
-            {(canRequestLeave || canApproveTeam) && (
-              <div className="ta-card-links flex gap-2 pt-2.5">
-                {canRequestLeave && (
-                  <LinkButton href="/leave" hierarchy="secondary" size="sm">
-                    My Leave
-                  </LinkButton>
+      {(upcoming.length > 0 || timeOffAhead) && (
+        <div className={CARD_GRID}>
+          {upcoming.length > 0 && (
+            <Card title="Coming Up" subtitle="Next 30 days">
+              <div className="flex flex-col">
+                {upcoming.map((u) => (
+                  <div
+                    key={u.key}
+                    className="flex items-center gap-3 py-2"
+                    style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+                  >
+                    <span
+                      className="tabular w-[66px] flex-none"
+                      style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                    >
+                      {format(u.date, "MMM d")}
+                    </span>
+                    <span
+                      className="min-w-0 flex-1"
+                      style={{ font: "var(--type-body1)", textWrap: "pretty" }}
+                    >
+                      {u.what}
+                    </span>
+                    <Badge tone={u.tone} size="sm">
+                      {u.kind}
+                    </Badge>
+                  </div>
+                ))}
+                {(canRequestLeave || canApproveTeam) && (
+                  <div className="ta-card-links flex gap-2 pt-2.5">
+                    {canRequestLeave && (
+                      <LinkButton href="/leave" hierarchy="secondary" size="sm">
+                        My Leave
+                      </LinkButton>
+                    )}
+                    {/* Time Off Ahead beside it carries the same link. */}
+                    {canApproveTeam && !timeOffAhead && (
+                      <LinkButton href="/supervisor/leave" hierarchy="tertiary" size="sm">
+                        Team Calendar
+                      </LinkButton>
+                    )}
+                  </div>
                 )}
-                {canApproveTeam && (
-                  <LinkButton href="/supervisor/leave" hierarchy="tertiary" size="sm">
-                    Team Calendar
-                  </LinkButton>
-                )}
               </div>
-            )}
-          </div>
-        </Card>
+            </Card>
+          )}
+          {timeOffAhead && <TimeOffAheadCard timeOff={timeOffAhead} now={now} />}
+        </div>
       )}
 
       {/* ── Pay period overview ── */}

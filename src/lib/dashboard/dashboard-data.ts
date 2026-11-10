@@ -245,25 +245,31 @@ export async function getPresence(
   const siteClause = siteIds ? Prisma.sql`AND e."siteId" IN (${Prisma.join(siteIds)})` : Prisma.empty;
   const since = new Date(now.getTime() - PRESENCE_WINDOW_MS);
 
-  const [states, headcount] = await Promise.all([
-    supervisorId
-      ? db.$queryRaw<StateRow[]>`
+  // A team's punches are read for exactly the people in its headcount. The
+  // query used to name the supervisor itself, which missed an agency viewer's
+  // people (directReportsOf reaches them through the agency), so their On the
+  // clock always read 0.
+  const readHeadcount = () =>
+    db.employee.findMany({
+      where: scoped,
+      select: { id: true, onLeave: true, department: { select: { name: true } } },
+    });
+  const readTeamStates = (ids: string[]) =>
+    ids.length === 0
+      ? Promise.resolve([] as StateRow[])
+      : db.$queryRaw<StateRow[]>`
           SELECT DISTINCT ON (p."employeeId")
                  p."employeeId"       AS "employeeId",
                  p."stateAfter"::text AS state
           FROM "punches" p
-          JOIN "employees" e ON e.id = p."employeeId"
-          WHERE e."tenantId" = ${tenantId}
-            AND e."isActive" = true
-            AND (e."supervisorId" = ${supervisorId}
-                 OR EXISTS (SELECT 1 FROM "employee_supervisors" es
-                            WHERE es."employeeId" = e.id AND es."supervisorId" = ${supervisorId}))
+          WHERE p."employeeId" IN (${Prisma.join(ids)})
             AND p."isRejected" = false
             AND p."correctedById" IS NULL
             AND p."roundedTime" >= ${since}
           ORDER BY p."employeeId", p."roundedTime" DESC
-        `
-      : db.$queryRaw<StateRow[]>`
+        `;
+  const readCompanyStates = () =>
+    db.$queryRaw<StateRow[]>`
           SELECT DISTINCT ON (p."employeeId")
                  p."employeeId"       AS "employeeId",
                  p."stateAfter"::text AS state
@@ -276,13 +282,11 @@ export async function getPresence(
             AND p."correctedById" IS NULL
             AND p."roundedTime" >= ${since}
           ORDER BY p."employeeId", p."roundedTime" DESC
-        `,
-    db.employee.findMany({
-      where: scoped,
-      select: { id: true, onLeave: true, department: { select: { name: true } } },
-    }),
-  ]);
-
+        `;
+  // A team needs its people first; the company reads both at once.
+  const [states, headcount] = supervisorId
+    ? await readHeadcount().then(async (h) => [await readTeamStates(h.map((e) => e.id)), h] as const)
+    : await Promise.all([readCompanyStates(), readHeadcount()]);
   const stateById = new Map(states.map((s) => [s.employeeId, s.state]));
 
   const byDept = new Map<string, PresenceDept>();

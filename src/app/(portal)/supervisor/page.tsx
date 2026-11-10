@@ -14,6 +14,7 @@ import { EXCEPTION_TYPE_LABEL } from "@/lib/state-machines/labels";
 import { Badge, Card, LinkButton, exceptionTone } from "@/components/ui";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { WorkQueueList, workQueueRows } from "@/components/supervisor/work-queue";
+import { TimeOffAheadCard } from "@/components/supervisor/time-off-ahead-card";
 import styles from "@/components/supervisor/team-overview.module.css";
 
 /**
@@ -43,25 +44,8 @@ const GRID =
   "grid gap-4 items-stretch [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(340px,44%)),1fr))]";
 
 /** Every list in a panel uses the same row, so the pairs line up row for row. */
-const ROW = "flex min-h-[48px] items-center gap-3 py-2";
-
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${n.toLocaleString()} ${n === 1 ? one : many}`;
-}
-
-function dateRange(start: Date, end: Date): string {
-  const s = parseUtcDate(start);
-  const e = parseUtcDate(end);
-  if (s.getTime() === e.getTime()) return format(s, "EEE MMM d");
-  if (s.getMonth() === e.getMonth()) return `${format(s, "MMM d")} to ${format(e, "d")}`;
-  return `${format(s, "MMM d")} to ${format(e, "MMM d")}`;
-}
-
-function initialsOf(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
-  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
 }
 
 export default async function TeamOverviewPage() {
@@ -253,70 +237,7 @@ export default async function TeamOverviewPage() {
           )}
         </Card>
 
-        <Card
-          title="Time Off Ahead"
-          subtitle={
-            timeOff.total === 0
-              ? "Approved leave in the next 14 days"
-              : `${plural(timeOff.offToday, "person", "people")} off today, ${plural(timeOff.total, "absence")} in the next 14 days`
-          }
-          actions={
-            <LinkButton href="/supervisor/leave?tab=upcoming" hierarchy="tertiary" size="sm" className={styles.cardLink}>
-              Team Calendar
-            </LinkButton>
-          }
-        >
-          {timeOff.rows.length === 0 ? (
-            <Quiet>Nobody has approved time off in the next two weeks.</Quiet>
-          ) : (
-            <div className="flex flex-col">
-              {timeOff.rows.map((r, i) => {
-                const onNow = parseUtcDate(r.startDate) <= now;
-                return (
-                  <div
-                    key={r.id}
-                    className={ROW}
-                    style={{ borderTop: i === 0 ? undefined : "1px solid var(--stroke-divider)" }}
-                  >
-                    <Avatar name={r.name} />
-                    <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="truncate" style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)" }}>
-                        {r.name}
-                      </span>
-                      <span className="truncate" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-                        {[r.leaveType, r.department].filter(Boolean).join(" · ")}
-                      </span>
-                    </span>
-                    <span className="flex flex-none items-center gap-2">
-                      {onNow && (
-                        <Badge tone="info" size="sm">
-                          Off today
-                        </Badge>
-                      )}
-                      {/* "Off today" already says a one day absence's date; a
-                          phone gives the name that room. */}
-                      <span
-                        className={`tabular whitespace-nowrap${onNow && dateRange(r.startDate, r.endDate) === dateRange(r.startDate, r.startDate) ? " ta-phone-hide" : ""}`}
-                        style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
-                      >
-                        {dateRange(r.startDate, r.endDate)}
-                      </span>
-                    </span>
-                  </div>
-                );
-              })}
-              {timeOff.total > timeOff.rows.length && (
-                <Link
-                  href="/supervisor/leave?tab=upcoming"
-                  className="pt-2.5"
-                  style={{ font: "var(--type-body2)", color: "var(--text-accent)", textDecoration: "none" }}
-                >
-                  {plural(timeOff.total - timeOff.rows.length, "more absence", "more absences")}
-                </Link>
-              )}
-            </div>
-          )}
-        </Card>
+        <TimeOffAheadCard timeOff={timeOff} now={now} linkClassName={styles.cardLink} />
       </div>
 
       {/* ── What to work down ────────────────────────────────────────────── */}
@@ -387,18 +308,6 @@ function Tile({ label, value, dot }: { label: string; value: number; dot: string
         <span className="min-w-0">{label}</span>
       </span>
     </div>
-  );
-}
-
-function Avatar({ name }: { name: string }) {
-  return (
-    <span
-      aria-hidden="true"
-      className="inline-flex h-8 w-8 flex-none items-center justify-center rounded-full"
-      style={{ background: "var(--surface-tertiary)", color: "var(--text-secondary)", font: "var(--weight-semibold) 12px/1 var(--font-sans)" }}
-    >
-      {initialsOf(name)}
-    </span>
   );
 }
 
