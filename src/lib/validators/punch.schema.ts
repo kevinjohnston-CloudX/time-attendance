@@ -93,6 +93,11 @@ export const kioskScanSchema = z.object({
   LegacyScanType: z.string().optional(),
   /// The kiosk build that recorded this. See timeclockScanSchema.
   AppVersion: z.string().max(32).optional(),
+  /// The way a guard said this crossing went, 2026-11-10: the security phone's
+  /// batch mode, where the guard picks Entering or Leaving before scanning a
+  /// group. Stored as stated (directionSource SOURCE_COLUMN), never alternated.
+  /// Omitted by every tablet, which keeps alternation exactly as before.
+  Direction: z.enum(["IN", "OUT"]).optional(),
 });
 
 /**

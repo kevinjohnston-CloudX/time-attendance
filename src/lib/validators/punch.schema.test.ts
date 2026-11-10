@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { changeReasonSchema, correctPunchSchema, deletePunchSchema } from "./punch.schema";
+import { changeReasonSchema, correctPunchSchema, deletePunchSchema, kioskScanSchema } from "./punch.schema";
+
+describe("a security scan's stated direction", () => {
+  const scan = { EmployeeCode: "107538", ScanDateTime: "2026-11-10T17:20:00", Stream: "SECURITY" };
+
+  it("is optional, and IN or OUT when given", () => {
+    expect(kioskScanSchema.parse(scan).Direction).toBeUndefined();
+    expect(kioskScanSchema.parse({ ...scan, Direction: "IN" }).Direction).toBe("IN");
+    expect(kioskScanSchema.parse({ ...scan, Direction: "OUT" }).Direction).toBe("OUT");
+  });
+
+  it("refuses anything else", () => {
+    for (const Direction of ["in", "out", "UNKNOWN", "", null, 1]) {
+      expect(kioskScanSchema.safeParse({ ...scan, Direction }).success).toBe(false);
+    }
+  });
+});
 
 const base = { originalPunchId: "ckxxxxxxxxxxxxxxxxxxxxxxx", newPunchTime: "2026-11-03T13:00:00.000Z" };
 
