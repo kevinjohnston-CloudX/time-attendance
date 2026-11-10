@@ -1,33 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { signOut } from "next-auth/react";
+import { useEffect, useRef, useState } from "react";
 import { CreditCard, FileText, IdCard, KeyRound, Printer, UserRound, X } from "lucide-react";
 import { Banner, Button, Input } from "@/components/ui";
 import { Overlay } from "@/components/ui/overlay";
 import { IdBadge } from "@/components/badge/id-badge";
 import { ID_PAPER_BODY, ID_PAPER_LABEL, printIdBadge, type IdBadgePaper } from "@/components/badge/print-id-badge";
-import { useRouter } from "@/components/layout/navigation-progress";
-import { loadMyProfile } from "@/actions/profile.actions";
-import { changeOwnPassword } from "@/actions/password.actions";
-import type { MyProfile } from "@/lib/account/my-profile.service";
+import { NOT_ON_FILE, PASSWORD_AFTER, PASSWORD_RULES, dateWords, initials, signInMethod, useMyProfile, usePasswordChange } from "./use-my-profile";
 import frame from "@/components/presence/export-window.module.css";
 import styles from "./profile-window.module.css";
-
-const NOT_ON_FILE = "Not on file";
-
-function initials(name: string | null): string {
-  const parts = (name ?? "").split(/\s+/).filter(Boolean);
-  return ((parts[0]?.[0] ?? "") + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase() || "?";
-}
-
-/** A calendar date (YYYY-MM-DD) in words, read the same in every time zone. */
-function dateWords(iso: string | null): string | null {
-  if (!iso) return null;
-  const d = new Date(`${iso}T12:00:00Z`);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
-}
 
 function Cell({
   label,
@@ -63,10 +44,7 @@ function Cell({
  * corrects what is on file.
  */
 export function ProfileWindow({ onClose }: { onClose: () => void }) {
-  const router = useRouter();
   const windowRef = useRef<HTMLDivElement>(null);
-  const [profile, setProfile] = useState<MyProfile | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [view, setView] = useState<"details" | "password">("details");
   const badgeRef = useRef<HTMLDivElement>(null);
   const [paperMenu, setPaperMenu] = useState(false);
@@ -76,32 +54,14 @@ export function ProfileWindow({ onClose }: { onClose: () => void }) {
     if (card instanceof HTMLElement) printIdBadge(card, paper);
   };
 
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
+  const { profile, loadError, retry: load } = useMyProfile();
+  const pw = usePasswordChange();
+  const { current, setCurrent, next, setNext, confirm, setConfirm, saving, failure, filled } = pw;
 
   const closeRef = useRef(onClose);
   useEffect(() => {
     closeRef.current = onClose;
   }, [onClose]);
-
-  const fetchProfile = useCallback(
-    () =>
-      loadMyProfile()
-        .then((r) => (r.success ? setProfile(r.data) : setLoadError(r.message)))
-        .catch(() => setLoadError("Your profile could not be opened. Try again.")),
-    [],
-  );
-  const load = () => {
-    setLoadError(null);
-    void fetchProfile();
-  };
-
-  useEffect(() => {
-    void fetchProfile();
-  }, [fetchProfile]);
 
   // Focus, Escape and handing focus back, as every window here does. Escape
   // on the password form goes back to the details rather than closing.
@@ -142,38 +102,15 @@ export function ProfileWindow({ onClose }: { onClose: () => void }) {
   }, [view]);
 
   const openPassword = () => {
-    setCurrent("");
-    setNext("");
-    setConfirm("");
-    setFailure(null);
+    pw.reset();
     setView("password");
   };
-
-  async function submitPassword(e?: React.FormEvent) {
-    e?.preventDefault();
-    if (saving) return;
-    setFailure(null);
-    if (next !== confirm) {
-      setFailure("The new passwords do not match.");
-      return;
-    }
-    setSaving(true);
-    const result = await changeOwnPassword(current, next, confirm).catch(() => null);
-    if (!result?.success) {
-      setSaving(false);
-      setFailure(result?.message ?? "The password could not be changed. Try again.");
-      return;
-    }
-    // Every sign in has already ended on the server: leave now, with the reason.
-    await signOut({ redirect: false });
-    router.push("/login?changed=1");
-  }
+  const submitPassword = pw.submit;
 
   const p = profile;
   const e = p?.employee ?? null;
   const photo = p?.badge?.photo ?? null;
   const passwordView = view === "password";
-  const filled = current && next && confirm;
 
   return (
     <Overlay className={`${frame.scrim} ta-sheet-scrim`} onClick={(ev) => ev.target === ev.currentTarget && onClose()}>
@@ -242,7 +179,7 @@ export function ProfileWindow({ onClose }: { onClose: () => void }) {
                       onChange={(ev) => setNext(ev.target.value)}
                       required
                       minLength={8}
-                      hint="At least 8 characters, with an uppercase letter, a number and a symbol."
+                      hint={PASSWORD_RULES}
                     />
                     <Input
                       id="profile-confirm-password"
@@ -341,7 +278,7 @@ export function ProfileWindow({ onClose }: { onClose: () => void }) {
                       {p?.username && <Cell label="Username" value={p.username} />}
                       <Cell
                         label="Sign in method"
-                        value={p ? (p.hasPassword ? "Email and password" : "Google account") : undefined}
+                        value={p ? signInMethod(p) : undefined}
                         loading={!p}
                       />
                       <Cell label="Password" value={p && !p.hasPassword ? "Managed by Google" : undefined} loading={!p}>
@@ -421,7 +358,7 @@ export function ProfileWindow({ onClose }: { onClose: () => void }) {
         <footer className={frame.foot}>
           <span className={frame.footHint} aria-live="polite">
             {passwordView
-              ? "You will be signed out on every device, then sign in again with the new password."
+              ? PASSWORD_AFTER
               : "To correct any of these details, contact HR."}
           </span>
           <span className="ta-sheet-actions contents">

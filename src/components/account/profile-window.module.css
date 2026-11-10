@@ -300,6 +300,16 @@
   color: var(--text-tertiary);
 }
 
+/* ---- A small laptop or a tablet held sideways: a narrower badge ---- */
+@media (max-width: 1080px) {
+  .panes {
+    grid-template-columns: minmax(0, 1fr) 316px;
+  }
+  .badgeScale {
+    zoom: 0.71;
+  }
+}
+
 /* ---- A phone: the badge under the details, one column of values ---- */
 @media (max-width: 760px) {
   .panes {

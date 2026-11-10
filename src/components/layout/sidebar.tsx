@@ -5,8 +5,9 @@ import { usePathname } from "next/navigation";
 import { LinkPendingSpinner, useRouter } from "@/components/layout/navigation-progress";
 import { useRef, useState, useEffect, useTransition } from "react";
 import { signOut } from "next-auth/react";
-import { LogOut, Eye, X, Search, ChevronsUpDown, TriangleAlert, UserRound, ChevronRight, ChevronLeft, Check } from "lucide-react";
+import { LogOut, Eye, X, Search, ChevronsUpDown, TriangleAlert, UserRound, ChevronRight, ChevronLeft } from "lucide-react";
 import { ProfileWindow } from "@/components/account/profile-window";
+import { ViewAsList, type ViewAsOption } from "@/components/account/view-as-list";
 import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
 import { BrandTile } from "./cloudtime-logo";
 import { openCommandPalette } from "./command-palette";
@@ -78,7 +79,7 @@ interface SidebarProps {
   realRole?: string;
   viewAsRole?: string | null;
   canViewAs?: boolean;
-  viewAsOptions?: { id: string; name: string }[];
+  viewAsOptions?: ViewAsOption[];
   isInactive?: boolean;
   /** When set, the only pages the menu offers, whatever the permissions say. */
   onlyHrefs?: string[];
@@ -506,7 +507,7 @@ export function Sidebar({
       <div
         role="menu"
         aria-label={menuPage === "viewAs" ? "View as" : "Account"}
-        className={`absolute z-50 w-[264px] rounded-xl p-1.5 ${placement}`}
+        className={`absolute z-50 rounded-xl p-1.5 ${menuPage === "viewAs" ? "w-[288px]" : "w-[264px]"} ${placement}`}
         style={{ background: "var(--surface-card)", boxShadow: "var(--ta-menu-shadow)" }}
       >
         {menuPage === "account" ? (
@@ -528,65 +529,33 @@ export function Sidebar({
           </>
         ) : (
           <>
-            <div className="flex h-9 items-center gap-1 pb-1 pl-0.5 pr-2">
+            <div className="flex items-start gap-1.5 pb-2 pl-0.5 pr-2 pt-0.5">
               <button
                 type="button"
                 onClick={() => setMenuPage("account")}
                 aria-label="Back to the account menu"
-                className="ta-hoverable inline-flex h-7 w-7 flex-none items-center justify-center rounded-lg"
+                className="ta-hoverable inline-flex h-8 w-8 flex-none items-center justify-center rounded-lg"
                 style={{ color: "var(--icon-secondary)" }}
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <span style={{ font: "var(--weight-semibold) 13px/18px var(--font-sans)", color: "var(--text-primary)" }}>View as</span>
+              <span className="flex min-w-0 flex-col pt-[1px]">
+                <span style={{ font: "var(--weight-semibold) 14px/20px var(--font-sans)", color: "var(--text-primary)" }}>View as</span>
+                <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+                  See CloudTime the way a role sees it
+                </span>
+              </span>
             </div>
-            <div className="mx-1.5 mb-1 h-px" style={{ background: "var(--stroke-divider)" }} />
-            {viewAsOptions.length === 0 && (
-              <p className="m-0 px-2 py-2" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-                No roles available
-              </p>
-            )}
-            <div className="ta-scroll flex max-h-[320px] flex-col overflow-y-auto">
-              {viewAsOptions.map((r) => {
-                const on = r.name === viewAsRole;
-                return (
-                  <button
-                    key={r.id}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={on}
-                    disabled={isPending || on}
-                    onClick={() => handleSetViewAs(r.id)}
-                    className="ta-hoverable flex h-9 w-full flex-none items-center gap-2 rounded-lg px-2 disabled:cursor-default"
-                    style={{
-                      font: on ? "var(--weight-semibold) 13px/18px var(--font-sans)" : "var(--type-body2)",
-                      background: on ? "var(--ta-choice-on)" : "transparent",
-                      color: on ? "var(--text-accent)" : "var(--text-primary)",
-                      opacity: isPending && !on ? 0.5 : 1,
-                    }}
-                  >
-                    <span className="min-w-0 flex-1 truncate text-left">{r.name}</span>
-                    {on && <Check className="h-4 w-4 flex-none" aria-hidden="true" />}
-                  </button>
-                );
-              })}
-            </div>
-            {viewAsRole && (
-              <>
-                <div className="mx-1.5 my-1 h-px" style={{ background: "var(--stroke-divider)" }} />
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={isPending}
-                  onClick={handleClearViewAs}
-                  className="ta-hoverable flex h-9 w-full items-center gap-2 rounded-lg px-2 disabled:opacity-50"
-                  style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
-                >
-                  <X className="h-4 w-4 flex-none" />
-                  <span className="min-w-0 truncate">Return to {realRoleLabel}</span>
-                </button>
-              </>
-            )}
+            <div className="mx-1.5 mb-1.5 h-px" style={{ background: "var(--stroke-divider)" }} />
+            <ViewAsList
+              variant="menu"
+              roles={viewAsOptions}
+              current={viewAsRole ?? null}
+              realRoleLabel={realRoleLabel ?? "your role"}
+              pending={isPending}
+              onPick={handleSetViewAs}
+              onReturn={handleClearViewAs}
+            />
           </>
         )}
       </div>

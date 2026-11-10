@@ -1,0 +1,253 @@
+/* The View as role list (view-as-list.tsx): the account menu on a computer,
+   and the View as screen in the phone menu. One structure at two sizes. */
+
+.list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+/* ---- Search, for companies with many roles ---- */
+.search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  margin: 2px 2px 6px;
+  padding: 0 10px;
+  border-radius: 9px;
+  background: var(--ta-well);
+  box-shadow: inset 0 0 0 1px var(--ta-well-ring);
+  color: var(--icon-tertiary);
+}
+.search:focus-within {
+  box-shadow: inset 0 0 0 1.5px var(--stroke-accent-focus);
+}
+.searchIcon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+.search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font: var(--type-body2);
+  color: var(--text-primary);
+}
+.search input::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* ---- The roles ---- */
+.rows {
+  display: flex;
+  max-height: 336px;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.role,
+.back {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 6px 6px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  text-align: left;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.role:hover:not(:disabled),
+.back:hover:not(:disabled) {
+  background: var(--ta-row-hover);
+}
+.role:focus-visible,
+.back:focus-visible {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: -2px;
+}
+.role:disabled {
+  cursor: default;
+}
+.role:disabled:not([data-on]) {
+  opacity: 0.55;
+}
+
+/* Initials in a well, squared like the app's other tiles. */
+.tile {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--ta-well);
+  box-shadow: inset 0 0 0 1px var(--ta-well-ring);
+  font: var(--weight-semibold) 11.5px/1 var(--font-sans);
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+}
+.text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.name {
+  overflow: hidden;
+  font: var(--weight-medium) 13.5px/18px var(--font-sans);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tag {
+  overflow: hidden;
+  font: var(--type-caption1);
+  color: var(--text-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The role on screen now: the choice colour, the accent tile and a tick. */
+.role[data-on] {
+  background: var(--ta-choice-on);
+  box-shadow: inset 0 0 0 1px var(--stroke-accent);
+}
+.role[data-on] .tile {
+  background: var(--fill-accent);
+  box-shadow: none;
+  color: var(--text-on-accent);
+}
+.role[data-on] .name {
+  font-weight: var(--weight-semibold);
+  color: var(--text-accent);
+}
+.current {
+  display: inline-flex;
+}
+.mark {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--icon-accent);
+}
+
+.empty {
+  margin: 0;
+  padding: 14px 10px;
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+}
+
+/* ---- The way back, apart from the roles ---- */
+.back {
+  margin-top: 6px;
+  border-top: 1px solid var(--stroke-divider);
+  border-radius: 0 0 10px 10px;
+  padding-top: 10px;
+}
+.backIcon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--surface-warning);
+  color: var(--icon-warning);
+}
+.backIcon svg {
+  width: 16px;
+  height: 16px;
+}
+.backBody {
+  font: var(--type-caption1);
+  color: var(--text-tertiary);
+}
+
+/* ---- The phone: the same rows at touch size, in the menu's cards ---- */
+.list[data-variant="phone"] {
+  gap: 20px;
+}
+.list[data-variant="phone"] .search {
+  height: 44px;
+  margin: 0;
+  border-radius: 12px;
+  background: var(--surface-card);
+  box-shadow: var(--ta-raised);
+}
+.list[data-variant="phone"] .search input {
+  font: var(--type-body1);
+}
+.list[data-variant="phone"] .rows {
+  max-height: none;
+  gap: 0;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--surface-card);
+  box-shadow: var(--ta-raised);
+}
+.list[data-variant="phone"] .role,
+.list[data-variant="phone"] .back {
+  min-height: 60px;
+  gap: 14px;
+  padding: 10px 16px;
+  border-radius: 0;
+}
+.list[data-variant="phone"] .role + .role {
+  border-top: 1px solid var(--stroke-divider);
+}
+.list[data-variant="phone"] .role[data-on] {
+  box-shadow: none;
+}
+.list[data-variant="phone"] .role:active:not(:disabled),
+.list[data-variant="phone"] .back:active:not(:disabled) {
+  background: var(--ta-row-hover);
+}
+.list[data-variant="phone"] .tile,
+.list[data-variant="phone"] .backIcon {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  font-size: 13px;
+}
+.list[data-variant="phone"] .name {
+  font-size: 16px;
+  line-height: 22px;
+}
+.list[data-variant="phone"] .tag,
+.list[data-variant="phone"] .backBody {
+  font: var(--type-body2);
+}
+.list[data-variant="phone"] .mark {
+  width: 20px;
+  height: 20px;
+}
+.list[data-variant="phone"] .back {
+  margin-top: 0;
+  border-top: 0;
+  border-radius: 14px;
+  background: var(--surface-card);
+  box-shadow: var(--ta-raised);
+}
+.list[data-variant="phone"] .empty {
+  padding: 18px 16px;
+  font: var(--type-body1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .role,
+  .back {
+    transition: none;
+  }
+}
