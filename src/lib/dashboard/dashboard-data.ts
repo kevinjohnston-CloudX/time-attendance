@@ -342,6 +342,8 @@ export async function getUpcoming(
   now: Date,
   payPeriodEnd: Date | null,
   timezone: string,
+  /** What the pay period's close says for this person, or null to leave it out. */
+  closeLabel: string | null = "Pay period closes, approvals due",
 ): Promise<UpcomingRow[]> {
   // From the start of today, not from this moment. startDate and the holiday
   // date are @db.Date at UTC midnight, so comparing them against a mid-afternoon
@@ -358,7 +360,8 @@ export async function getUpcoming(
       ? db.leaveRequest.findMany({
           where: {
             employeeId,
-            status: { in: ["APPROVED", "PENDING"] },
+            // Waiting on HR is still pending to the person who asked.
+            status: { in: ["APPROVED", "PENDING", "PENDING_HR"] },
             startDate: { gte: from, lte: horizon },
           },
           orderBy: { startDate: "asc" },
@@ -384,11 +387,11 @@ export async function getUpcoming(
 
   const rows: UpcomingRow[] = [];
 
-  if (payPeriodEnd && payPeriodEnd >= from && payPeriodEnd <= horizon) {
+  if (closeLabel && payPeriodEnd && payPeriodEnd >= from && payPeriodEnd <= horizon) {
     rows.push({
       key: "close",
       date: payPeriodEnd,
-      what: "Pay period closes, approvals due",
+      what: closeLabel,
       kind: "Payroll",
       tone: "info",
     });
