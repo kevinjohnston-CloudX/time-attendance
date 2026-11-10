@@ -148,6 +148,13 @@ type TimecardPunch = {
   punchType: string;
   roundedTime: string;
   source: string;
+  /** On a clock in, its shift's pay code (shift-clock-in). */
+  payCodeId?: string | null;
+  /**
+   * A pair Add time made from a number of hours: kept from 12:00 AM, so its
+   * times are not ones anybody punched, and the timecard shows none.
+   */
+  hoursOnly?: boolean;
 };
 
 type TimecardSegment = {
@@ -291,11 +298,11 @@ interface TimecardViewerProps {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 interface PunchPair {
-  inPunch: { id: string; punchType: string; roundedTime: string; source: string } | null;
-  outPunch: { id: string; punchType: string; roundedTime: string; source: string } | null;
+  inPunch: TimecardPunch | null;
+  outPunch: TimecardPunch | null;
 }
 
-function buildPunchPairs(punches: { id: string; punchType: string; roundedTime: string; source: string }[]): PunchPair[] {
+function buildPunchPairs(punches: TimecardPunch[]): PunchPair[] {
   const clocks = punches
     .filter((p) => p.punchType === "CLOCK_IN" || p.punchType === "CLOCK_OUT")
     .sort((a, b) => new Date(a.roundedTime).getTime() - new Date(b.roundedTime).getTime());
@@ -1106,9 +1113,8 @@ export function TimecardViewer({
   // the missing clock in or out on a day marked Missed punch.
   const canEdit = canChange && !missedPunchesOnly;
   const canFixMissed = canChange && !!timecard;
-  // Add time for such a supervisor (11/09): regular hours, on an open
-  // timecard, today or before (addTimeRefusal holds the server to the same).
-  const canAddTime = canEdit || (canFixMissed && timecard?.status === "OPEN");
+  // Add time is HR's and payroll's (11/10).
+  const canAddTime = canEdit;
   const addTimePeriod = timecard?.payPeriod ?? payPeriods.find((pp) => pp.id === selectedPeriodId);
   const addTimeMin = format(parseUtcDate(addTimePeriod?.startDate ?? new Date().toISOString()), "yyyy-MM-dd");
   const storedEnd = format(parseUtcDate(addTimePeriod?.endDate ?? new Date().toISOString()), "yyyy-MM-dd");
@@ -1117,6 +1123,28 @@ export function TimecardViewer({
   const lastDayKey = addTimePeriod ? format(lastDayOf(addTimePeriod.endDate), "yyyy-MM-dd") : storedEnd;
   const addTimeMax = canEdit ? storedEnd : todayKey < lastDayKey ? todayKey : lastDayKey;
   const regularCode = payCodes.find((pc) => pc.id === timecard?.employee.ruleSet?.defaultPayCodeId);
+  // A supervisor who fixes missed punches does so on rows of regular hours
+  // only (11/10): a shift's code is on its clock in, as the server reads it
+  // (lib/timecards/missed-punch-fix).
+  const regularCodeId = timecard?.employee.ruleSet?.defaultPayCodeId ?? null;
+  const onRegularRow = (clockIn: TimecardPunch | null | undefined): boolean => !clockIn?.payCodeId || clockIn.payCodeId === regularCodeId;
+  // Days with a shift or a code on another pay code; a supervisor waives
+  // the meal on the other days, today or before (mealWaiverRefusal). A meal
+  // premium waiver stays with HR and payroll.
+  const otherCodeDayKeys = new Set([
+    ...(timecard?.punches ?? [])
+      .filter((p) => p.punchType === "CLOCK_IN" && !onRegularRow(p))
+      .map((p) => format(toSiteClock(new Date(p.roundedTime), siteTz), "yyyy-MM-dd")),
+    ...(timecard?.segments ?? [])
+      .filter((s) => s.segmentType === "LEAVE" && s.durationMinutes === 0 && s.payCode && s.payCode.id !== regularCodeId)
+      .map((s) => s.segmentDate.slice(0, 10)),
+  ]);
+  // Hours entered with Add time (hoursOnly): no clock times to show, and
+  // removed and added again to change (the row's bin), not retimed.
+  const hoursEntryCell = (
+    <span title="Hours entered with Add time, not clock times. To change them, remove the entry and add it again." style={{ color: "var(--text-disabled)" }}>—</span>
+  );
+  const canWaiveMeal = (dayKey: string): boolean => !!canEdit || (canFixMissed && dayKey <= todayKey && !otherCodeDayKeys.has(dayKey));
 
   const canDeleteManual =
     !!canEdit &&
@@ -2525,7 +2553,7 @@ export function TimecardViewer({
                     {/* Said beside the status rather than in a line over the
                         grid: it is a fact about this timecard, like its status. */}
                     {!canEdit && (canFixMissed ? (
-                      <span title="You can add the missing clock in or clock out on a day marked Missed punch, a clock in and clock out on a day marked Absent, and regular hours with Add time for today or earlier. HR and payroll make every other change.">
+                      <span title="You can add the missing clock in or clock out on a row of regular hours marked Missed punch, a clock in and clock out on a day marked Absent, and waive a meal on a day of regular hours, today or earlier. HR and payroll make every other change, meal premium waivers and Add time included.">
                         <Badge>Missed punches only</Badge>
                       </span>
                     ) : (
@@ -2744,6 +2772,10 @@ export function TimecardViewer({
                       return days.map((day) => {
                       const dayKey = format(day, "yyyy-MM-dd");
                       const dayPunches = punchesForDay(day);
+                      // Only hours entered with Add time: no meal is deducted from them
+                      // (segment-builder skips hoursOnly pairs), so none to waive.
+                      const dayClockIns = dayPunches.filter((p) => p.punchType === "CLOCK_IN");
+                      const hoursEnteredOnly = dayClockIns.length > 0 && dayClockIns.every((p) => p.hoursOnly);
                       const daySegments = segmentsForDay(day);
                       const isWeekend = [0, 6].includes(day.getDay());
                       const isExpanded = expandedDays.has(dayKey);
@@ -2952,6 +2984,8 @@ export function TimecardViewer({
                                   onCancel={cancelEditing}
                                   onDelete={(reason) => deletePunchDirect(firstIn.id, reason)}
                                 />
+                              ) : firstIn?.hoursOnly ? (
+                                hoursEntryCell
                               ) : firstIn ? (
                                 <button
                                   type="button"
@@ -3019,6 +3053,8 @@ export function TimecardViewer({
                                   onCancel={cancelEditing}
                                   onDelete={(reason) => deletePunchDirect(lastOut.id, reason)}
                                 />
+                              ) : lastOut?.hoursOnly ? (
+                                hoursEntryCell
                               ) : lastOut ? (
                                 <button
                                   type="button"
@@ -3036,7 +3072,7 @@ export function TimecardViewer({
                                     <button type="button" onClick={() => setPendingNewPunches((prev) => prev.filter((p) => !(p.dayKey === dayKey && p.pairIndex === 0 && p.punchType === "CLOCK_OUT")))} className="rounded bg-transparent p-0.5 ta-hoverable" style={{ border: 0, cursor: "pointer", color: "var(--icon-error)" }} title="Remove pending"><X className="h-2.5 w-2.5" /></button>
                                   </div>
                                 );
-                                return hasMissingPunch && (canEdit || canFixMissed) ? (
+                                return hasMissingPunch && (canEdit || (canFixMissed && onRegularRow(firstIn))) ? (
                                   <button
                                     type="button"
                                     onClick={() => startAddingPunch(dayKey, 0, "CLOCK_OUT", day, firstIn ? atSite(firstIn.roundedTime) : null)}
@@ -3197,11 +3233,11 @@ export function TimecardViewer({
                               const effectiveHasWaiver = waiverToggled ? !dbWaiver : !!dbWaiver;
                               return (
                                 <td className="px-3 py-1 text-left" onClick={(e) => e.stopPropagation()}>
-                                  {totalWorkForThreshold <= effectiveMealBreakAfterMinutes ? (
+                                  {hoursEnteredOnly || totalWorkForThreshold <= effectiveMealBreakAfterMinutes ? (
                                     <span style={{ font: "var(--type-body2)", color: "var(--text-disabled)" }}>—</span>
                                   ) : effectiveHasWaiver ? (
                                     <div className="flex items-center gap-1.5">
-                                      {canEdit ? (
+                                      {canWaiveMeal(dayStr) ? (
                                         <button
                                           type="button"
                                           onClick={() => handleToggleWaiver(dayStr)}
@@ -3225,7 +3261,7 @@ export function TimecardViewer({
                                         <span style={{ font: "var(--type-caption1)", color: "var(--text-error)" }}>{waiverError}</span>
                                       )}
                                     </div>
-                                  ) : canEdit ? (
+                                  ) : canWaiveMeal(dayStr) ? (
                                     <div className="flex items-center gap-1.5">
                                       <button
                                         type="button"
@@ -3564,7 +3600,9 @@ export function TimecardViewer({
                                       onCancel={cancelEditing}
                                       onDelete={(reason) => deletePunchDirect(pairIn.id, reason)}
                                     />
-                                  ) : pairIn ? (
+                                  ) : pairIn?.hoursOnly ? (
+                                hoursEntryCell
+                              ) : pairIn ? (
                                     <button type="button" onClick={() => startEditing(pairIn)} disabled={!canEdit} className={canEdit ? gridCellButtonClass : "bg-transparent"} style={punchCellStyle(pendingPunchEdits.has(pairIn.id), canEdit)}>{pendingPunchEdits.has(pairIn.id) ? format(pendingPunchEdits.get(pairIn.id)!, "h:mm a") : format(atSite(pairIn.roundedTime), "h:mm a")}</button>
                                   ) : (() => {
                                     const pendingNewPairIn = pendingNewPunches.find((p) => p.dayKey === dayKey && p.pairIndex === pairIdx && p.punchType === "CLOCK_IN");
@@ -3605,7 +3643,9 @@ export function TimecardViewer({
                                       onCancel={cancelEditing}
                                       onDelete={(reason) => deletePunchDirect(pairOut.id, reason)}
                                     />
-                                  ) : pairOut ? (
+                                  ) : pairOut?.hoursOnly ? (
+                                hoursEntryCell
+                              ) : pairOut ? (
                                     <button type="button" onClick={() => startEditing(pairOut)} disabled={!canEdit} className={canEdit ? gridCellButtonClass : "bg-transparent"} style={punchCellStyle(pendingPunchEdits.has(pairOut.id), canEdit)}>{pendingPunchEdits.has(pairOut.id) ? format(pendingPunchEdits.get(pairOut.id)!, "h:mm a") : format(atSite(pairOut.roundedTime), "h:mm a")}</button>
                                   ) : (() => {
                                     const pendingNewPairOut = pendingNewPunches.find((p) => p.dayKey === dayKey && p.pairIndex === pairIdx && p.punchType === "CLOCK_OUT");
@@ -3618,7 +3658,7 @@ export function TimecardViewer({
                                     // A later pair left open reads as missing too, as the
                                     // first pair does, and adding it starts from that pair's in.
                                     if (hasMissingPunch) {
-                                      return canEdit || canFixMissed ? (
+                                      return canEdit || (canFixMissed && onRegularRow(pairIn)) ? (
                                         <button
                                           type="button"
                                           onClick={() => startAddingPunch(dayKey, pairIdx, "CLOCK_OUT", day, pairIn ? atSite(pairIn.roundedTime) : null)}

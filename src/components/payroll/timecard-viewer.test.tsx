@@ -161,10 +161,13 @@ describe("the summary of a period with unpaid leave", () => {
 });
 
 // Bergen's supervisors, 11/05: HR wanted them to correct missed punches and
-// make no other change to a timecard.
+// make no other change to a timecard. 11/10: on rows of regular hours only,
+// with meal waivers but not meal premium waivers, and no Add time.
 describe("a supervisor allowed only to fix missed punches", () => {
-  function renderFixer() {
-    const punch = (id: string, punchType: string, roundedTime: string) => ({ id, punchType, roundedTime, source: "TABLET" });
+  const punch = (id: string, punchType: string, roundedTime: string, payCodeId: string | null = null) => ({ id, punchType, roundedTime, source: "TABLET", payCodeId });
+  // Tuesday's shift, 8:00 AM to 4:30 PM Eastern, worked out.
+  const tuesdayWork = { id: "w2", segmentType: "WORK", startTime: "2026-10-13T12:00:00.000Z", endTime: "2026-10-13T20:30:00.000Z", durationMinutes: 510, segmentDate: "2026-10-13T00:00:00.000Z", payBucket: "REGULAR", payBucketOverride: null, isPaid: true, payCode: null };
+  function renderFixer(o: { mealConfig?: object; segments?: object[]; punches?: object[] } = {}) {
     render(
       <TimecardViewer
         payPeriods={[{ id: "p1", startDate: "2026-10-11T00:00:00.000Z", endDate: "2026-10-25T00:00:00.000Z", status: "OPEN" }]}
@@ -177,15 +180,15 @@ describe("a supervisor allowed only to fix missed punches", () => {
           exceptions: [{ id: "x1", exceptionType: "MISSING_PUNCH", occurredAt: "2026-10-12T12:00:00.000Z" }],
           payPeriod: { startDate: "2026-10-11T00:00:00.000Z", endDate: "2026-10-25T00:00:00.000Z", status: "OPEN" },
           employee: {
-            user: { name: "Test Person" }, department: { name: "Vas" }, employeeCode: "T1", wmsId: "605247", payRate: 15, payType: "HOURLY", startedOn: "2020-01-01", shift: null,
+            user: { name: "Test Person" }, department: { name: "Vas" }, employeeCode: "T1", wmsId: "605247", payRate: 15, payType: "HOURLY", startedOn: "2020-01-01", shift: o.mealConfig ? { mealConfig: o.mealConfig } : null,
             ruleSet: { overtimeRequiresAuth: false, allowTimesheetOtAuth: false, defaultPayCodeId: null },
           },
-          punches: [
+          punches: (o.punches ?? [
             punch("i1", "CLOCK_IN", "2026-10-12T12:00:00.000Z"),
             punch("i2", "CLOCK_IN", "2026-10-13T12:00:00.000Z"),
             punch("o2", "CLOCK_OUT", "2026-10-13T20:30:00.000Z"),
-          ],
-          segments: [], overtimeBuckets: [], mealWaivers: [], mealPremiumWaivers: [], notes: [], dayReasons: [],
+          ]) as never,
+          segments: (o.segments ?? []) as never, overtimeBuckets: [], mealWaivers: [], mealPremiumWaivers: [], notes: [], dayReasons: [],
         }}
         payFrequency="BIWEEKLY"
         payCodes={[{ id: "pc0", code: 0, label: "Regular hours" }]}
@@ -208,8 +211,8 @@ describe("a supervisor allowed only to fix missed punches", () => {
     renderFixer();
     const row = (label: RegExp) => screen.getAllByRole("row").find((r) => label.test(r.textContent ?? ""))!;
     expect(screen.getByText("Missed punches only")).not.toBeNull();
-    // Add time is there (regular hours only; see below).
-    expect(screen.getByRole("button", { name: "Add time" })).not.toBeNull();
+    // Add time is HR's and payroll's.
+    expect(screen.queryByRole("button", { name: "Add time" })).toBeNull();
     // Tuesday's punches are there to read, not to change.
     const tuesday = [...row(/Tue, Oct 13/).querySelectorAll("button")].filter((b) => /AM|PM/.test(b.textContent ?? ""));
     expect(tuesday.length).toBe(2);
@@ -259,31 +262,49 @@ describe("a supervisor allowed only to fix missed punches", () => {
     vi.useRealTimers();
   });
 
-  it("adds time as regular hours, today or before, with no reason code", async () => {
+  it("adds no missing clock out to a shift on another pay code", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-15T16:00:00Z"));
-    renderFixer();
-    fireEvent.click(screen.getByRole("button", { name: "Add time" }));
-    const date = document.querySelector("form input[type=date]") as HTMLInputElement;
-    expect(date.value).toBe("2026-10-15");
-    expect(date.max).toBe("2026-10-15");
-    expect(date.min).toBe("2026-10-11");
-    const dialog = date.closest("form")!;
-    const selects = [...dialog.querySelectorAll("select")].filter((el) => !/AM or PM/.test(el.getAttribute("aria-label") ?? ""));
-    // One pay code, regular hours, and no Reason.
-    expect(selects.length).toBe(1);
-    expect(selects[0].disabled).toBe(true);
-    expect(selects[0].textContent).toMatch(/Regular hours/);
-    expect(dialog.textContent).not.toMatch(/Reason/);
+    renderFixer({ punches: [punch("i1", "CLOCK_IN", "2026-10-12T12:00:00.000Z", "pcOt")] });
+    const monday = screen.getAllByRole("row").find((r) => /Mon, Oct 12/.test(r.textContent ?? ""))!;
+    expect(monday.textContent).toMatch(/Missing/);
+    expect([...monday.querySelectorAll("button")].some((b) => b.textContent === "Missing")).toBe(false);
+    vi.useRealTimers();
+  });
 
-    const { addManualPunchPair } = await import("@/actions/timecard-entry.actions");
-    fireEvent.change(dialog.querySelector("input[placeholder=\"8:00\"]")!, { target: { value: "8:00" } });
-    fireEvent.change(dialog.querySelector("input[placeholder=\"5:00\"]")!, { target: { value: "4:30" } });
-    fireEvent.submit(dialog);
-    await vi.waitFor(() => expect(addManualPunchPair).toHaveBeenCalledTimes(1));
-    const [args] = (addManualPunchPair as unknown as { mock: { calls: [{ date: string; payCodeId?: string }][] } }).mock.calls[0];
-    expect(args.date).toBe("2026-10-15");
-    expect(args.payCodeId).toBeUndefined();
+  it("waives the meal deducted on a day", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-15T16:00:00Z"));
+    const { toggleMealWaiver } = await import("@/actions/timesheet.actions");
+    (toggleMealWaiver as unknown as { mockClear: () => void }).mockClear();
+    renderFixer({ mealConfig: { autoDeduct: true, meals: [{ workAtLeastHours: 6, deductMinutes: 30 }] }, segments: [tuesdayWork] });
+    const tuesday = () => screen.getAllByRole("row").find((r) => /Tue, Oct 13/.test(r.textContent ?? ""))!;
+    fireEvent.click([...tuesday().querySelectorAll("button")].find((b) => b.textContent === "Waive")!);
+    fireEvent.click(screen.getByText("Save changes"));
+    await vi.waitFor(() => expect(toggleMealWaiver).toHaveBeenCalledWith({ timesheetId: "t1", segmentDate: "2026-10-13" }));
+    vi.useRealTimers();
+  });
+
+  it("can't waive a meal premium", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-15T16:00:00Z"));
+    const premium = { ...tuesdayWork, id: "mp2", segmentType: "MEAL_PREMIUM", startTime: "2026-10-13T20:30:00.000Z", endTime: "2026-10-13T21:30:00.000Z", durationMinutes: 60, payCode: { id: "pcMp", code: 20, label: "Meal premium" } };
+    renderFixer({ segments: [tuesdayWork, premium] });
+    expect(screen.getAllByText(/Meal premium/).length).toBeGreaterThan(0);
+    expect(screen.queryAllByRole("button", { name: /^Waive/ }).length).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it("shows hours entered with Add time without clock times, and no meal to waive", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-15T16:00:00Z"));
+    // 8 hours entered on Tuesday: kept from 12:00 AM to 8:00 AM Eastern.
+    const entered = { ...punch("h1", "CLOCK_IN", "2026-10-13T04:00:00.000Z", "pcFmla"), hoursOnly: true };
+    const enteredOut = { ...punch("h2", "CLOCK_OUT", "2026-10-13T12:00:00.000Z"), hoursOnly: true };
+    renderFixer({ punches: [entered, enteredOut], mealConfig: { autoDeduct: true, meals: [{ workAtLeastHours: 6, deductMinutes: 30 }] }, segments: [{ ...tuesdayWork, startTime: entered.roundedTime, endTime: enteredOut.roundedTime, durationMinutes: 480 }] });
+    const tuesday = screen.getAllByRole("row").find((r) => /Tue, Oct 13/.test(r.textContent ?? ""))!;
+    expect(tuesday.textContent).not.toMatch(/12:00 AM|8:00 AM/);
+    expect([...tuesday.querySelectorAll("button")].some((b) => /Waive/.test(b.textContent ?? ""))).toBe(false);
     vi.useRealTimers();
   });
 

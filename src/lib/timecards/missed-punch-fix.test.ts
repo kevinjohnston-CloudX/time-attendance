@@ -3,12 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/db", () => ({ db: {} }));
 vi.mock("@/lib/rbac/check-permission", () => ({ checkPermission: async () => false }));
 
-import { MISSED_PUNCH_ONLY_ERROR, addTimeRefusal, isAbsentDay, missedPunchRefusal } from "./missed-punch-fix";
+import { MISSED_PUNCH_ONLY_ERROR, NOT_REGULAR_ROW_ERROR, isAbsentDay, mealWaiverRefusal, missedPunchRefusal } from "./missed-punch-fix";
 
 // Eastern time: 8:00 AM on 11/03 is 13:00 UTC.
 const tz = "America/New_York";
 const at = (iso: string) => new Date(iso);
-const p = (punchType: string, iso: string) => ({ punchType, roundedTime: at(iso) });
+const p = (punchType: string, iso: string, payCodeId: string | null = null) => ({ punchType, roundedTime: at(iso), payCodeId });
 
 describe("a supervisor allowed only to fix missed punches", () => {
   // Clocked in 8:00 AM on 11/03 and never out: 11/03 is marked Missed punch.
@@ -102,30 +102,27 @@ describe("a supervisor filling a day marked Absent", () => {
   });
 });
 
-// 11/09: Add time again, as regular hours, today or before, on an open timecard.
-describe("a supervisor adding time", () => {
-  const ok = { status: "OPEN", day: "2026-11-09", today: "2026-11-09", regularCodeId: "reg" };
+// 11/10: on rows of regular hours only, and meal waivers but not premiums.
+describe("a supervisor on rows of regular hours", () => {
+  const missed = new Set(["2026-11-03"]);
+  const out = [{ punchType: "CLOCK_OUT" as const, at: at("2026-11-03T21:30:00Z") }];
 
-  it("adds regular hours today or on a day before it", () => {
-    expect(addTimeRefusal(ok)).toBeNull();
-    expect(addTimeRefusal({ ...ok, day: "2026-11-02", payCodeId: "reg", hours: 8 })).toBeNull();
+  it("closes a shift on the regular hours code, or on none", () => {
+    expect(missedPunchRefusal(out, [p("CLOCK_IN", "2026-11-03T13:00:00Z", "reg")], missed, tz, new Set(), "reg")).toBeNull();
+    expect(missedPunchRefusal(out, [p("CLOCK_IN", "2026-11-03T13:00:00Z")], missed, tz, new Set(), "reg")).toBeNull();
   });
 
-  it("adds nothing for a future date", () => {
-    expect(addTimeRefusal({ ...ok, day: "2026-11-10" })).toMatch(/future date/);
+  it("closes no shift HR put on another pay code, past a meal too", () => {
+    expect(missedPunchRefusal(out, [p("CLOCK_IN", "2026-11-03T13:00:00Z", "ot")], missed, tz, new Set(), "reg")).toBe(NOT_REGULAR_ROW_ERROR);
+    const withMeal = [p("CLOCK_IN", "2026-11-03T13:00:00Z", "pto"), p("MEAL_START", "2026-11-03T17:00:00Z"), p("MEAL_END", "2026-11-03T17:30:00Z")];
+    expect(missedPunchRefusal(out, withMeal, missed, tz, new Set(), "reg")).toBe(NOT_REGULAR_ROW_ERROR);
   });
 
-  it("adds no other pay code", () => {
-    expect(addTimeRefusal({ ...ok, payCodeId: "pto" })).toMatch(/only as regular hours/);
-  });
-
-  it("adds nothing to a timecard that is not open", () => {
-    for (const status of ["SUBMITTED", "SUP_APPROVED", "PAYROLL_APPROVED", "LOCKED"]) {
-      expect(addTimeRefusal({ ...ok, status })).toMatch(/open timecard/);
-    }
-  });
-
-  it("adds no 0 hour entry, which only marks the day with a pay code", () => {
-    expect(addTimeRefusal({ ...ok, hours: 0 })).toMatch(/more than 0/);
+  it("waives a meal today or before, on a day of regular hours", () => {
+    const o = { today: "2026-11-10", otherCodeDays: new Set(["2026-11-04"]) };
+    expect(mealWaiverRefusal({ ...o, day: "2026-11-10" })).toBeNull();
+    expect(mealWaiverRefusal({ ...o, day: "2026-11-03" })).toBeNull();
+    expect(mealWaiverRefusal({ ...o, day: "2026-11-11" })).toMatch(/future date/);
+    expect(mealWaiverRefusal({ ...o, day: "2026-11-04" })).toMatch(/day of regular hours/);
   });
 });

@@ -294,6 +294,8 @@ export default async function TimecardsPage({
           punchType: p.punchType,
           roundedTime: p.roundedTime.toISOString(),
           source: p.source,
+          payCodeId: p.payCodeId ?? null,
+          hoursOnly: p.hoursOnly,
         })),
         segments: timecard.segments.map((s) => ({
           id: s.id,

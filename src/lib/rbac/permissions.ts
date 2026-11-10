@@ -82,8 +82,9 @@ export const TIMECARD_EDITORS: Permission[] = ["PAY_PERIOD_MANAGE", "PUNCH_EDIT_
 export const TIMECARD_EDITORS_COMPANY: Permission[] = ["PAY_PERIOD_MANAGE", "PUNCH_EDIT_ANY", "TIMECARD_EDIT_ANY"];
 /**
  * Who may fix a missed punch on a timecard: every editor, and a role allowed
- * that alone (Bergen's supervisors, 11/05: HR keeps every other change). The
- * actions that take it hold a fixer to the missed punch itself
+ * that alone (Bergen's supervisors, 11/05: HR keeps every other change; 11/10
+ * on regular hours rows only, and meal waivers but not meal premium waivers).
+ * The actions that take it hold a fixer to the missed punch itself
  * (lib/timecards/missed-punch-fix).
  */
 export const MISSED_PUNCH_FIXERS: Permission[] = [...TIMECARD_EDITORS, "PUNCH_FIX_MISSED_TEAM"];

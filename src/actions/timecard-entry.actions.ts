@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { MISSED_PUNCH_FIXERS, TIMECARD_EDITORS, TIMECARD_EDITORS_COMPANY } from "@/lib/rbac/permissions";
-import { assertMissedPunchFix, fixesMissedPunchesOnly, addTimeRefusal } from "@/lib/timecards/missed-punch-fix";
+import { assertMissedPunchFix, fixesMissedPunchesOnly } from "@/lib/timecards/missed-punch-fix";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
@@ -108,9 +108,9 @@ export const getLeaveTypesForTimecard = withRBAC(
 // ─── Add a manual IN/OUT punch pair to a timesheet day ───────────────────────
 
 export const addManualPunchPair = withRBAC(
-  // A supervisor allowed only to fix missed punches adds time here too: as
-  // regular hours, up to today, on an open timecard (addTimeRefusal).
-  MISSED_PUNCH_FIXERS,
+  // Add time is HR's and payroll's: a supervisor who fixes missed punches
+  // fills an Absent day from the timecard grid instead (11/10).
+  TIMECARD_EDITORS,
   async (ctx, input: unknown) => {
     const { timesheetId, date: entryDate, inTime, outTime, reason, payCodeId } =
       manualPunchPairSchema.parse(input);
@@ -150,12 +150,6 @@ export const addManualPunchPair = withRBAC(
     // A pair past midnight is the odd late evening (7:00 PM to 12:30 AM); one
     // longer than 16 hours is an AM/PM slip, not a shift.
     const localDay = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(d);
-    const fixOnly = await fixesMissedPunchesOnly();
-    if (fixOnly) {
-      const day = [entryDate, localDay(inDate)].sort().at(-1)!;
-      const refusal = addTimeRefusal({ status: ts.status, day, today: localDay(new Date()), payCodeId, regularCodeId: ruleSet.defaultPayCodeId });
-      if (refusal) throw new Error(refusal);
-    }
     if (localDay(inDate) !== localDay(outDate) && outDate.getTime() - inDate.getTime() > MAX_OVERNIGHT_MS) {
       throw new Error("A shift past midnight can be up to 16 hours. Check the AM and PM.");
     }
@@ -181,8 +175,8 @@ export const addManualPunchPair = withRBAC(
     // (created via the Code dropdown on a day with no punches). Inherit its pay code
     // so the deduction fires automatically when hours are added to that day.
     // Fall back to the rule set's default pay code if no marker exists.
-    let effectivePayCodeId = fixOnly ? (ruleSet.defaultPayCodeId ?? null) : (payCodeId ?? null);
-    if (!effectivePayCodeId && !fixOnly) {
+    let effectivePayCodeId = payCodeId ?? null;
+    if (!effectivePayCodeId) {
       const [ny, nm, nd] = entryDate.split("-").map(Number);
       const dayStart = new Date(Date.UTC(ny, nm - 1, nd));
       const dayEnd = new Date(Date.UTC(ny, nm - 1, nd + 1));
@@ -647,9 +641,8 @@ export const saveTimesheetNote = withRBAC(
 const LEAVE_BUCKETS = new Set(["PTO", "SICK", "FMLA", "BEREAVEMENT", "JURY_DUTY", "MILITARY", "UNPAID"]);
 
 export const addManualHoursEntry = withRBAC(
-  // A supervisor allowed only to fix missed punches adds hours here too: as
-  // regular hours, up to today, on an open timecard (addTimeRefusal).
-  MISSED_PUNCH_FIXERS,
+  // HR's and payroll's, as Add time is (11/10).
+  TIMECARD_EDITORS,
   async (ctx, input: unknown) => {
     const parsed = z.object({
       timesheetId: z.string(),
@@ -661,20 +654,8 @@ export const addManualHoursEntry = withRBAC(
       payCodeId: z.string().optional(),
       note: z.string().optional(),
     }).parse(input);
-    const { timesheetId, date, hours, note } = parsed;
-    let { payCodeId } = parsed;
+    const { timesheetId, date, hours, note, payCodeId } = parsed;
     const { employeeId: actorId, tenantId } = ctx;
-    if (await fixesMissedPunchesOnly()) {
-      const person = await db.timesheet.findUniqueOrThrow({
-        where: { id: timesheetId },
-        select: { status: true, employee: { select: { timeZone: true, site: { select: { timezone: true } }, ruleSet: { select: { defaultPayCodeId: true } } } } },
-      });
-      const regularCodeId = person.employee.ruleSet.defaultPayCodeId;
-      const today = new Intl.DateTimeFormat("en-CA", { timeZone: personTimeZone(person.employee, "UTC") }).format(new Date());
-      const refusal = addTimeRefusal({ status: person.status, day: date, today, payCodeId, regularCodeId, hours });
-      if (refusal) throw new Error(refusal);
-      payCodeId = regularCodeId ?? undefined;
-    }
     // Only a timecard in the caller's company, and never their own.
     const sheet = await timesheetInScope(ctx, timesheetId, TIMECARD_EDITORS_COMPANY);
     if (sheet.employeeId === ctx.employeeId) throw new Error("You can't change your own timecard");

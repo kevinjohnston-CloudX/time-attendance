@@ -85,7 +85,7 @@ const RESOURCE_INFO: Record<string, PermInfo> = {
       "read:team":  "View your team's current punch status and punch history.",
       "write:team": "Manually add, edit, or delete punch records for your team members.",
       "write:all":  "Manually add, edit, or delete punch records for any employee.",
-      "execute:team": "Fix your team's missed punches and nothing else: add the missing clock in or clock out on a day marked Missed punch, or one clock in and clock out on a day marked Absent, and Add time on an open timecard for today or earlier, all under the person's regular hours pay code. Changing or removing punches, hours, pay codes, reason codes and meal waivers needs Write. Give Timecards Read too, to open the timecards.",
+      "execute:team": "Fix your team's missed punches on regular hours rows: add the missing clock in or clock out on a day marked Missed punch, or one clock in and clock out on a day marked Absent, under the person's regular hours pay code, and waive a meal on a day of regular hours, today or earlier. Changing or removing punches, Add time, hours, pay codes, reason codes, meal premium waivers and rows on another pay code need Write. Give Timecards Read too, to open the timecards.",
     },
   },
   timesheet: {

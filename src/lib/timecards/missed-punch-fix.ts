@@ -3,6 +3,7 @@ import { checkPermission } from "@/lib/rbac/check-permission";
 import { TIMECARD_EDITORS } from "@/lib/rbac/permissions";
 import { dayAt } from "@/lib/timecards/change-note";
 import { endedOn, startedOn } from "@/lib/engines/segment-builder";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 /**
  * A missed punch fixed by somebody allowed nothing else on a timecard
@@ -20,13 +21,28 @@ import { endedOn, startedOn } from "@/lib/engines/segment-builder";
  * on that day and a clock out after it, that day or the next. Absent is the
  * timecard's own rule: a past weekday in the period, while employed, with no
  * punches, leave, holiday or pay code on it.
+ *
+ * <p>11/10: only on a row of regular hours. A shift's pay code is kept on its
+ * clock in (shift-clock-in), so a clock out is not added after a clock in HR
+ * put on another code (overtime, leave, Salary). They may also waive the meal
+ * deducted on a day of regular hours, today or before (mealWaiverRefusal),
+ * but not a meal premium, and Add time went back to HR and payroll.
  */
 
 export const MISSED_PUNCH_ONLY_ERROR =
   "You can only add the missing clock in or clock out on a day marked Missed punch, or one clock in and clock out on a day marked Absent. Ask HR or payroll for any other change to this timecard.";
 
+export const NOT_REGULAR_ROW_ERROR =
+  "You can fix a missed punch only on a row of regular hours. Ask HR or payroll to fix one on another pay code.";
+
 export type AddedPunch = { punchType: "CLOCK_IN" | "CLOCK_OUT"; at: Date };
-export type TimecardPunch = { punchType: string; roundedTime: Date };
+/** `payCodeId` on a clock in is its shift's pay code. */
+export type TimecardPunch = { punchType: string; roundedTime: Date; payCodeId?: string | null };
+
+/** A code that is regular hours: none, or the rule set's own. */
+export function isRegularCode(payCodeId: string | null | undefined, regularCodeId: string | null): boolean {
+  return !payCodeId || payCodeId === regularCodeId;
+}
 
 function shiftDay(day: string, by: number): string {
   const d = new Date(day + "T12:00:00.000Z");
@@ -38,7 +54,8 @@ function shiftDay(day: string, by: number): string {
  * Why these punches are not a missed punch fix, or null when each closes one.
  * `existing` is the timecard's approved, uncorrected punches; `missedDays` the
  * days ("yyyy-MM-dd" at the person's time zone) with an open missed punch;
- * `absentDays` the days marked Absent.
+ * `absentDays` the days marked Absent; `regularCodeId` the rule set's regular
+ * hours code.
  */
 export function missedPunchRefusal(
   added: AddedPunch[],
@@ -46,6 +63,7 @@ export function missedPunchRefusal(
   missedDays: Set<string>,
   timeZone: string,
   absentDays: Set<string> = new Set(),
+  regularCodeId: string | null = null,
 ): string | null {
   if (fillsAbsentDay(added, existing, absentDays, timeZone)) return null;
 
@@ -63,6 +81,9 @@ export function missedPunchRefusal(
       // the next one, if any, starts another shift.
       if (!before || before.punchType === "CLOCK_OUT") return MISSED_PUNCH_ONLY_ERROR;
       if (after && after.punchType !== "CLOCK_IN") return MISSED_PUNCH_ONLY_ERROR;
+      // The shift it closes is regular hours: its clock in carries the code.
+      const start = punches.filter((e) => (e.punchType === "CLOCK_IN" || e.punchType === "CLOCK_OUT") && e.roundedTime.getTime() < t).at(-1);
+      if (start?.punchType === "CLOCK_IN" && !isRegularCode(start.payCodeId, regularCodeId)) return NOT_REGULAR_ROW_ERROR;
       const day = dayAt(before.roundedTime, timeZone);
       const on = dayAt(p.at, timeZone);
       if (!missedDays.has(day) || (on !== day && on !== shiftDay(day, 1))) return MISSED_PUNCH_ONLY_ERROR;
@@ -110,18 +131,15 @@ export function isAbsentDay(
 }
 
 /**
- * Add time, for a supervisor allowed only to fix missed punches (11/09): a
- * row of regular hours, clock in and out or a number of hours, on today or a
- * day before it, on an open timecard. No other pay code and no future day.
- * `day` and `today` are "yyyy-MM-dd" at the person's time zone;
- * `payCodeId` is the one asked for, if any, and `regularCodeId` the rule
- * set's regular hours code.
+ * A meal waiver, or taking one back, by a supervisor allowed only to fix
+ * missed punches (11/10): on today or a day before it, and on a day of regular
+ * hours, not one with a shift or a code on another pay code (`otherCodeDays`).
+ * A meal premium waiver stays with HR and payroll. Days are "yyyy-MM-dd" at
+ * the person's time zone.
  */
-export function addTimeRefusal(o: { status: string; day: string; today: string; payCodeId?: string | null; regularCodeId: string | null; hours?: number }): string | null {
-  if (o.status !== "OPEN") return "You can add time only to an open timecard. Ask HR or payroll for this one.";
-  if (o.day > o.today) return "You can't add time for a future date. Add it on the day, or after.";
-  if (o.payCodeId && o.payCodeId !== o.regularCodeId) return "You can add time only as regular hours. Ask HR or payroll for any other pay code.";
-  if (o.hours !== undefined && !(o.hours > 0)) return "Enter the hours worked, more than 0.";
+export function mealWaiverRefusal(o: { day: string; today: string; otherCodeDays: Set<string> }): string | null {
+  if (o.day > o.today) return "You can't waive a meal on a future date. Waive it on the day, or after.";
+  if (o.otherCodeDays.has(o.day)) return "You can waive a meal only on a day of regular hours. Ask HR or payroll for a day on another pay code.";
   return null;
 }
 
@@ -140,7 +158,7 @@ export async function assertMissedPunchFix(timesheetId: string, timeZone: string
   const [existing, open, sheet, segments] = await Promise.all([
     db.punch.findMany({
       where: { timesheetId, isApproved: true, correctedById: null },
-      select: { punchType: true, roundedTime: true },
+      select: { punchType: true, roundedTime: true, payCodeId: true },
     }),
     db.exception.findMany({
       where: { timesheetId, exceptionType: "MISSING_PUNCH", resolvedAt: null },
@@ -150,7 +168,7 @@ export async function assertMissedPunchFix(timesheetId: string, timeZone: string
       where: { id: timesheetId },
       select: {
         payPeriod: { select: { startDate: true, endDate: true } },
-        employee: { select: { hireDate: true, adjustedHireDate: true, terminatedAt: true } },
+        employee: { select: { hireDate: true, adjustedHireDate: true, terminatedAt: true, ruleSet: { select: { defaultPayCodeId: true } } } },
       },
     }),
     db.workSegment.findMany({ where: { timesheetId }, select: { segmentDate: true } }),
@@ -168,6 +186,34 @@ export async function assertMissedPunchFix(timesheetId: string, timeZone: string
     segmentDays: new Set(segments.map((s) => s.segmentDate.toISOString().slice(0, 10))),
   };
   const absentDays = new Set(added.map((p) => dayAt(p.at, timeZone)).filter((d) => isAbsentDay(d, absent)));
-  const refusal = missedPunchRefusal(added, existing, missedDays, timeZone, absentDays);
+  const refusal = missedPunchRefusal(added, existing, missedDays, timeZone, absentDays, sheet.employee.ruleSet.defaultPayCodeId ?? null);
+  if (refusal) throw new Error(refusal);
+}
+
+/** Throws unless the meal on this day ("yyyy-MM-dd") may be waived, or the waiver taken back, by a missed punch fixer. */
+export async function assertMealWaiverDay(timesheetId: string, day: string): Promise<void> {
+  const [clockIns, sheet, markers] = await Promise.all([
+    db.punch.findMany({
+      where: { timesheetId, isApproved: true, correctedById: null, punchType: "CLOCK_IN", payCodeId: { not: null } },
+      select: { roundedTime: true, payCodeId: true },
+    }),
+    db.timesheet.findUniqueOrThrow({
+      where: { id: timesheetId },
+      select: { employee: { select: { timeZone: true, site: { select: { timezone: true } }, ruleSet: { select: { defaultPayCodeId: true } } } } },
+    }),
+    // A pay code put on a day with no hours.
+    db.workSegment.findMany({
+      where: { timesheetId, segmentType: "LEAVE", durationMinutes: 0, payCodeId: { not: null } },
+      select: { segmentDate: true, payCodeId: true },
+    }),
+  ]);
+  const regularCodeId = sheet.employee.ruleSet.defaultPayCodeId ?? null;
+  const timeZone = personTimeZone(sheet.employee, "UTC");
+  const otherCodeDays = new Set([
+    ...clockIns.filter((p) => !isRegularCode(p.payCodeId, regularCodeId)).map((p) => dayAt(p.roundedTime, timeZone)),
+    // A segment's date is the person's own day, stored at midnight UTC.
+    ...markers.filter((m) => !isRegularCode(m.payCodeId, regularCodeId)).map((m) => m.segmentDate.toISOString().slice(0, 10)),
+  ]);
+  const refusal = mealWaiverRefusal({ day, today: dayAt(new Date(), timeZone), otherCodeDays });
   if (refusal) throw new Error(refusal);
 }
