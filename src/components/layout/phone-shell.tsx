@@ -5,7 +5,9 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore, useTransition, type ReactNode } from "react";
 import { signOut } from "next-auth/react";
 import { useTheme } from "next-themes";
-import { ChevronLeft, ChevronRight, Eye, LogOut, Menu as MenuIcon, QrCode, Search, ShieldCheck, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, LogOut, Menu as MenuIcon, QrCode, Search, ShieldCheck, UserRound } from "lucide-react";
+import { PhonePasswordScreen, PhoneProfileScreen, PhoneScreen } from "@/components/account/profile-phone";
+import { ViewAsList, type ViewAsOption } from "@/components/account/view-as-list";
 import { LinkPendingSpinner, useRouter } from "@/components/layout/navigation-progress";
 import { useLinkStatus } from "next/link";
 import { setViewAsRole, clearViewAsRole } from "@/actions/view-as.actions";
@@ -170,7 +172,7 @@ type PhoneNavProps = {
   realRole?: string;
   viewAsRole?: string | null;
   canViewAs?: boolean;
-  viewAsOptions?: { id: string; name: string }[];
+  viewAsOptions?: ViewAsOption[];
   isInactive?: boolean;
   liveAttendanceOnly?: boolean;
   /** How many things wait on this person's decision, for the Approvals tab. */
@@ -285,12 +287,25 @@ function PhoneMenu({
   const pathname = usePathname();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [pickingRole, setPickingRole] = useState(false);
+  // Which screen the menu shows: the menu itself, or a screen pushed over it
+  // (My profile, Change password, View as), each with a way back.
+  const [screen, setScreen] = useState<"menu" | "profile" | "password" | "viewAs">("menu");
+  const screenRef = useRef(screen);
   const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    screenRef.current = screen;
+  }, [screen]);
 
   useEffect(() => {
     panelRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    // Escape steps back one screen, and closes the menu from the menu itself.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const at = screenRef.current;
+      if (at === "password") setScreen("profile");
+      else if (at !== "menu") setScreen("menu");
+      else onClose();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
@@ -307,7 +322,6 @@ function PhoneMenu({
     startTransition(async () => {
       if (id) await setViewAsRole(id);
       else await clearViewAsRole();
-      setPickingRole(false);
       // Home is usually where the menu already is, so arriving there would
       // not close it: close it here, so the new view is what shows.
       onClose();
@@ -319,6 +333,24 @@ function PhoneMenu({
   return (
     <div id="phone-menu" ref={panelRef} tabIndex={-1} role="dialog" aria-label="Menu" className={styles.menu}>
       <div className={styles.menuInner}>
+        {screen === "profile" ? (
+          <PhoneProfileScreen onBack={() => setScreen("menu")} onPassword={() => setScreen("password")} onLeave={onClose} />
+        ) : screen === "password" ? (
+          <PhonePasswordScreen onBack={() => setScreen("profile")} />
+        ) : screen === "viewAs" ? (
+          <PhoneScreen back="Menu" onBack={() => setScreen("menu")} title="View as" lede="See CloudTime the way a role sees it">
+            <ViewAsList
+              variant="phone"
+              roles={viewAsOptions}
+              current={viewAsRole ?? null}
+              realRoleLabel={roleLabel || "your role"}
+              pending={isPending}
+              onPick={(id) => viewAs(id)}
+              onReturn={() => viewAs(null)}
+            />
+          </PhoneScreen>
+        ) : (
+          <>
         <h1 className={styles.menuTitle}>Menu</h1>
 
         <section className={styles.card} aria-label="Your account">
@@ -337,46 +369,18 @@ function PhoneMenu({
             </div>
           </div>
           {isInactive && <p className={styles.note}>Account inactive. View only.</p>}
+          <button type="button" className={styles.row} onClick={() => setScreen("profile")}>
+            <UserRound className={styles.rowIcon} aria-hidden="true" />
+            <span className={styles.rowLabel}>My profile</span>
+            <ChevronRight className={styles.rowChevron} aria-hidden="true" />
+          </button>
           {canViewAs && (
-            <>
-              <button
-                type="button"
-                className={styles.row}
-                aria-expanded={pickingRole}
-                onClick={() => setPickingRole((v) => !v)}
-              >
-                <Eye className={styles.rowIcon} aria-hidden="true" />
-                <span className={styles.rowLabel}>View as another role</span>
-                <ChevronRight className={styles.rowChevron} data-open={pickingRole} aria-hidden="true" />
-              </button>
-              {pickingRole && (
-                <div className={styles.roles} role="group" aria-label="View as">
-                  {viewAsOptions.length === 0 && <p className={styles.note}>No roles available</p>}
-                  {viewAsOptions.map((r) => {
-                    const on = r.name === viewAsRole;
-                    return (
-                      <button
-                        key={r.id}
-                        type="button"
-                        className={styles.roleRow}
-                        data-on={on}
-                        disabled={isPending || on}
-                        onClick={() => viewAs(r.id)}
-                      >
-                        <span className="min-w-0 flex-1 truncate text-left">{r.name}</span>
-                        {on && <span className={styles.roleActive}>Active</span>}
-                      </button>
-                    );
-                  })}
-                  {viewAsRole && (
-                    <button type="button" className={styles.roleRow} disabled={isPending} onClick={() => viewAs(null)}>
-                      <X className="h-4 w-4 flex-none" aria-hidden="true" />
-                      <span className="min-w-0 flex-1 truncate text-left">Return to {roleLabel}</span>
-                    </button>
-                  )}
-                </div>
-              )}
-            </>
+            <button type="button" className={styles.row} onClick={() => setScreen("viewAs")}>
+              <Eye className={styles.rowIcon} aria-hidden="true" />
+              <span className={styles.rowLabel}>View as</span>
+              {viewAsRole && <span className={styles.rowValue}>{viewAsRole}</span>}
+              <ChevronRight className={styles.rowChevron} aria-hidden="true" />
+            </button>
           )}
           <button
             type="button"
@@ -450,6 +454,8 @@ function PhoneMenu({
             </Link>
           </div>
         </section>
+          </>
+        )}
       </div>
     </div>
   );

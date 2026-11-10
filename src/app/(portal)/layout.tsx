@@ -135,7 +135,7 @@ export default async function PortalLayout({
   // viewer. A super admin inside a company used to see "No roles available",
   // and a System Admin was offered roles of their own rank that then did
   // nothing.
-  let viewAsOptions: { id: string; name: string; rank: number }[] = [];
+  let viewAsOptions: { id: string; name: string; rank: number; liveAttendanceOnly: boolean }[] = [];
   const me = canUseViewAs && session.user.id ? await liveIdentity(session.user.id) : null;
   if (me) {
     const cookieStore = await cookies();
@@ -143,7 +143,7 @@ export default async function PortalLayout({
     if (lookupTenantId) {
       viewAsOptions = await db.customRole.findMany({
         where: { tenantId: lookupTenantId, isActive: true, rank: { lt: me.rank } },
-        select: { id: true, name: true, rank: true },
+        select: { id: true, name: true, rank: true, liveAttendanceOnly: true },
         orderBy: { rank: "desc" },
       });
     }
@@ -293,7 +293,7 @@ export default async function PortalLayout({
           realRole={roleShown}
           viewAsRole={viewAsRole}
           canViewAs={canUseViewAs && isEmployeeActive}
-          viewAsOptions={viewAsOptions.map((r) => ({ id: r.id, name: r.name }))}
+          viewAsOptions={viewAsOptions.map((r) => ({ id: r.id, name: r.name, liveAttendanceOnly: r.liveAttendanceOnly }))}
           isInactive={!isEmployeeActive}
           onlyHrefs={liveAttendanceOnly ? LIVE_ATTENDANCE_ONLY_HREFS : undefined}
         />
@@ -342,7 +342,7 @@ export default async function PortalLayout({
         realRole={roleShown}
         viewAsRole={viewAsRole}
         canViewAs={canUseViewAs && isEmployeeActive}
-        viewAsOptions={viewAsOptions.map((r) => ({ id: r.id, name: r.name }))}
+        viewAsOptions={viewAsOptions.map((r) => ({ id: r.id, name: r.name, liveAttendanceOnly: r.liveAttendanceOnly }))}
         isInactive={!isEmployeeActive}
         liveAttendanceOnly={liveAttendanceOnly}
         approvalsCount={approvalsCount}

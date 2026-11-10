@@ -316,6 +316,16 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A row's current value, quiet, before its chevron (View as: the role on screen). */
+.rowValue {
+  max-width: 45%;
+  flex: none;
+  overflow: hidden;
+  font: var(--type-body1);
+  color: var(--text-warning);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .rowChevron {
   width: 18px;
   height: 18px;
@@ -335,36 +345,6 @@
 }
 .row[data-on="true"] .rowLabel {
   font-weight: var(--weight-semibold);
-}
-
-.roles {
-  display: flex;
-  flex-direction: column;
-  padding: 0 8px 8px 42px;
-}
-.roleRow {
-  display: flex;
-  min-height: 44px;
-  align-items: center;
-  gap: 10px;
-  padding: 0 10px;
-  border-radius: 10px;
-  font: var(--type-body1);
-  font-size: 15px;
-  color: var(--text-secondary);
-}
-.roleRow:active:not(:disabled) {
-  background: var(--ta-row-hover);
-}
-.roleRow[data-on="true"] {
-  background: var(--ta-choice-on);
-  color: var(--text-accent);
-}
-.roleRow:disabled:not([data-on="true"]) {
-  opacity: 0.5;
-}
-.roleActive {
-  font: var(--weight-medium) 13px/18px var(--font-sans);
 }
 
 .search {
