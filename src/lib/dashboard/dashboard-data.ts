@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { leaveDayKeys } from "@/lib/leave-days";
 import { parseUtcDate, startOfDayInTz, toSiteClock } from "@/lib/utils/date";
@@ -227,11 +228,21 @@ export const PRESENCE_WINDOW_MS = 36 * 60 * 60 * 1000;
  * at all, which is why the department totals come from a separate count:
  * without it "not in" would silently leave them out.
  */
-export async function getPresence(tenantId: string, supervisorId: string | null, now = new Date()): Promise<Presence> {
+export async function getPresence(
+  tenantId: string,
+  supervisorId: string | null,
+  now = new Date(),
+  /** Company wide only: the buildings to count, or null for all of them. */
+  siteIds: string[] | null = null,
+): Promise<Presence> {
+  // An empty list is no building, not every building.
+  if (siteIds && siteIds.length === 0) siteIds = ["-"];
   // Staff only: visitors are counted on Live Attendance, not here.
+  const atSites = siteIds ? { siteId: { in: siteIds } } : {};
   const scoped = withoutVisitors(
-    supervisorId ? { tenantId, isActive: true, ...directReportsOf(supervisorId) } : { tenantId, isActive: true },
+    supervisorId ? { tenantId, isActive: true, ...directReportsOf(supervisorId) } : { tenantId, isActive: true, ...atSites },
   );
+  const siteClause = siteIds ? Prisma.sql`AND e."siteId" IN (${Prisma.join(siteIds)})` : Prisma.empty;
   const since = new Date(now.getTime() - PRESENCE_WINDOW_MS);
 
   const [states, headcount] = await Promise.all([
@@ -260,6 +271,7 @@ export async function getPresence(tenantId: string, supervisorId: string | null,
           JOIN "employees" e ON e.id = p."employeeId"
           WHERE e."tenantId" = ${tenantId}
             AND e."isActive" = true
+            ${siteClause}
             AND p."isRejected" = false
             AND p."correctedById" IS NULL
             AND p."roundedTime" >= ${since}
