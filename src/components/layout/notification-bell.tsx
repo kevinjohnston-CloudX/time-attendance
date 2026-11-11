@@ -52,29 +52,22 @@ export function NotificationBell({ items }: { items: WaitingItem[] }) {
         aria-label={label}
         aria-haspopup="dialog"
         aria-expanded={open}
-        // With something waiting, the button widens into a capsule and the
-        // count sits beside the bell, so no count ever covers the icon.
-        className={
-          total > 0
-            ? "ta-pill-btn inline-flex h-7 items-center gap-[5px] rounded-full pl-1.5 pr-[5px]"
-            : "ta-pill-btn grid h-7 w-7 place-items-center rounded-full"
-        }
+        // Something waiting is a dot on the bell itself, not a number: for an
+        // admin the open exceptions alone ran to thousands, so the count read
+        // "99+" all day and said nothing. The list below carries the counts.
+        className="ta-pill-btn grid h-7 w-7 place-items-center rounded-full"
         style={{ color: "var(--icon-tertiary)" }}
       >
-        <Bell className="h-4 w-4 flex-none" />
-        {total > 0 && (
-          <span
-            aria-hidden
-            className="tabular h-[18px] min-w-[18px] whitespace-nowrap rounded-full px-[5px] text-center"
-            style={{
-              background: "var(--fill-accent)",
-              color: "var(--text-on-accent)",
-              font: "var(--weight-semibold) 11px/18px var(--font-sans)",
-            }}
-          >
-            {total > 99 ? "99+" : total}
-          </span>
-        )}
+        <span className="relative grid place-items-center">
+          <Bell className="h-4 w-4 flex-none" />
+          {total > 0 && (
+            <span
+              aria-hidden
+              className="absolute right-[-1px] top-[-1px] h-[7px] w-[7px] rounded-full"
+              style={{ background: "var(--fill-accent)", boxShadow: "0 0 0 1.5px var(--surface-card)" }}
+            />
+          )}
+        </span>
       </button>
 
       {/* Anchored to the icon pill, as the handoff does, not to the bell. */}
