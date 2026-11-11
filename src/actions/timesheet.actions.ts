@@ -9,6 +9,7 @@ import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { timesheetIdSchema, type TimesheetIdInput } from "@/lib/validators/timesheet.schema";
 import { z } from "zod";
+import { assertMealWaiverDay, fixesMissedPunchesOnly } from "@/lib/timecards/missed-punch-fix";
 
 // ─── recalculateSegments ──────────────────────────────────────────────────────
 
@@ -164,13 +165,17 @@ const mealWaiverSchema = z.object({
 });
 
 export const toggleMealWaiver = withRBAC(
-  TIMECARD_EDITORS,
+  // A supervisor who fixes missed punches waives the meal too (11/10), today
+  // or before, on a day of regular hours. A meal premium waiver
+  // (toggleMealPremiumWaiver) stays with HR and payroll.
+  MISSED_PUNCH_FIXERS,
   async (ctx, input: unknown): Promise<{ success: boolean; waived: boolean }> => {
     const { employeeId: actorId, tenantId } = ctx;
     const { timesheetId, segmentDate } = mealWaiverSchema.parse(input);
     const sheet = await timesheetInScope(ctx, timesheetId, TIMECARD_EDITORS_COMPANY);
     if (sheet.employeeId === ctx.employeeId) throw new Error("You can't approve or change your own timecard. Ask another admin to do it.");
     assertEditable(sheet.status);
+    if (await fixesMissedPunchesOnly()) await assertMealWaiverDay(timesheetId, segmentDate);
 
     const dateObj = new Date(segmentDate + "T00:00:00.000Z");
 

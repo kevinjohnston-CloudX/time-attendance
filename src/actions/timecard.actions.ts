@@ -177,7 +177,7 @@ export const getTimecardByEmployeeAndPeriod = withRBAC(
         punches: {
           where: { isApproved: true, correctedById: null },
           orderBy: { roundedTime: "asc" },
-          select: { id: true, punchType: true, roundedTime: true, source: true },
+          select: { id: true, punchType: true, roundedTime: true, source: true, payCodeId: true, hoursOnly: true },
         },
         segments: {
           orderBy: { startTime: "asc" },
@@ -365,7 +365,7 @@ export const getTimecardDetail = withRBAC(
         punches: {
           where: { isApproved: true, correctedById: null },
           orderBy: { roundedTime: "asc" },
-          select: { id: true, punchType: true, roundedTime: true, source: true },
+          select: { id: true, punchType: true, roundedTime: true, source: true, payCodeId: true, hoursOnly: true },
         },
         segments: {
           orderBy: { startTime: "asc" },

@@ -108,8 +108,8 @@ export const getLeaveTypesForTimecard = withRBAC(
 // ─── Add a manual IN/OUT punch pair to a timesheet day ───────────────────────
 
 export const addManualPunchPair = withRBAC(
-  // Supervisors too, for their own team's timecards: the scope check in
-  // each action keeps them to their direct reports and off their own.
+  // Add time is HR's and payroll's: a supervisor who fixes missed punches
+  // fills an Absent day from the timecard grid instead (11/10).
   TIMECARD_EDITORS,
   async (ctx, input: unknown) => {
     const { timesheetId, date: entryDate, inTime, outTime, reason, payCodeId } =
@@ -641,11 +641,10 @@ export const saveTimesheetNote = withRBAC(
 const LEAVE_BUCKETS = new Set(["PTO", "SICK", "FMLA", "BEREAVEMENT", "JURY_DUTY", "MILITARY", "UNPAID"]);
 
 export const addManualHoursEntry = withRBAC(
-  // Supervisors too, for their own team's timecards: the scope check in
-  // each action keeps them to their direct reports and off their own.
+  // HR's and payroll's, as Add time is (11/10).
   TIMECARD_EDITORS,
   async (ctx, input: unknown) => {
-    const { timesheetId, date, hours, payCodeId, note } = z.object({
+    const parsed = z.object({
       timesheetId: z.string(),
       date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       // Leave codes take more than a day's 24 hours (a PTO payout or
@@ -655,6 +654,7 @@ export const addManualHoursEntry = withRBAC(
       payCodeId: z.string().optional(),
       note: z.string().optional(),
     }).parse(input);
+    const { timesheetId, date, hours, note, payCodeId } = parsed;
     const { employeeId: actorId, tenantId } = ctx;
     // Only a timecard in the caller's company, and never their own.
     const sheet = await timesheetInScope(ctx, timesheetId, TIMECARD_EDITORS_COMPANY);

@@ -44,6 +44,9 @@ export const rejectMissedPunchSchema = z.object({
   punchId: z.string().cuid(),
 });
 
+/** The directions a time clock caller may state (see PunchType below). Clock out only. */
+export const REQUESTABLE_PUNCH_TYPES = ["CLOCK_OUT"] as const;
+
 export const timeclockScanSchema = z.object({
   EmployeeCode: z.string().min(1, "EmployeeCode is required"),
   ScanId: z.number().optional(),
@@ -58,6 +61,17 @@ export const timeclockScanSchema = z.object({
   /// without anyone standing in front of the tablet. Bounded because it lands
   /// in a column and comes from a client.
   AppVersion: z.string().max(32).optional(),
+  /// A direction the caller states instead of leaving it to the person's
+  /// state. Only the gate phone's batch send uses it (build 172): a crew
+  /// scanned out at the gate, sent afterwards as clock outs. Without it the
+  /// route infers OUT -> CLOCK_IN, and most of a batch is already OUT by the
+  /// time it is sent, so they would be clocked back in on their way off site.
+  ///
+  /// CLOCK_OUT is the only value. Clocking anyone IN on a caller's say-so is
+  /// refused at parse (400), for every caller. Time clocks never send it and
+  /// keep the inferred direction. GET /api/timeclock/punch lists this set so
+  /// a phone can check before sending, whichever was deployed first.
+  PunchType: z.enum(REQUESTABLE_PUNCH_TYPES).optional(),
 });
 
 /**
@@ -79,6 +93,11 @@ export const kioskScanSchema = z.object({
   LegacyScanType: z.string().optional(),
   /// The kiosk build that recorded this. See timeclockScanSchema.
   AppVersion: z.string().max(32).optional(),
+  /// The way a guard said this crossing went, 2026-11-10: the security phone's
+  /// batch mode, where the guard picks Entering or Leaving before scanning a
+  /// group. Stored as stated (directionSource SOURCE_COLUMN), never alternated.
+  /// Omitted by every tablet, which keeps alternation exactly as before.
+  Direction: z.enum(["IN", "OUT"]).optional(),
 });
 
 /**
