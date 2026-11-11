@@ -42,7 +42,9 @@ export function Window({
   busy = false,
   flush = false,
   closeOnScrim = true,
+  dismissible = true,
   alert = false,
+  side = false,
   onSubmit,
   bodyClassName,
   className,
@@ -67,8 +69,14 @@ export function Window({
   /** The body draws its own panes edge to edge, with no scroll of its own. */
   flush?: boolean;
   closeOnScrim?: boolean;
+  /** False for a window that must be closed on purpose, by its own button
+   *  (a key shown once): no X, and Escape and the scrim do nothing. */
+  dismissible?: boolean;
   /** A confirmation: read out as an alert, and always above whatever opened it. */
   alert?: boolean;
+  /** A panel down the right edge, full height, for looking through a list
+   *  one entry at a time while the list stays in view. A sheet on a phone. */
+  side?: boolean;
   /** A form window: the body and the footer are one form, so Enter in a
    *  field and a submit button in the actions both send it. */
   onSubmit?: (e: FormEvent<HTMLFormElement>) => void;
@@ -86,8 +94,8 @@ export function Window({
   const busyRef = useRef(busy);
   useEffect(() => {
     closeRef.current = onClose;
-    busyRef.current = busy;
-  }, [onClose, busy]);
+    busyRef.current = busy || !dismissible;
+  }, [onClose, busy, dismissible]);
 
   useEffect(() => {
     stack.push(id);
@@ -133,7 +141,7 @@ export function Window({
   }, [id]);
 
   const close = () => {
-    if (!busy) onClose();
+    if (!busy && dismissible) onClose();
   };
 
   const body = (
@@ -158,6 +166,7 @@ export function Window({
     <Overlay
       className={`${styles.scrim} ta-sheet-scrim`}
       data-depth={depth}
+      data-side={side || undefined}
       onClick={(e) => closeOnScrim && e.target === e.currentTarget && close()}
     >
       <div
@@ -168,6 +177,7 @@ export function Window({
         aria-labelledby={titleId}
         aria-busy={busy || undefined}
         data-alert={alert || undefined}
+        data-side={side || undefined}
         className={`${styles.window} ta-sheet${className ? ` ${className}` : ""}`}
         style={{ maxWidth: width ?? SIZES[size] }}
       >
@@ -181,9 +191,11 @@ export function Window({
             </h2>
             {subtitle && <span className={styles.subtitle}>{subtitle}</span>}
           </span>
-          <Button hierarchy="tertiary" size="sm" iconOnly onClick={close} disabled={busy} aria-label="Close">
-            <X className="h-4 w-4" />
-          </Button>
+          {dismissible && (
+            <Button hierarchy="tertiary" size="sm" iconOnly onClick={close} disabled={busy} aria-label="Close">
+              <X className="h-4 w-4" />
+            </Button>
+          )}
         </header>
 
         {onSubmit ? (

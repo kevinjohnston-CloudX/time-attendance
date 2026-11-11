@@ -78,10 +78,6 @@
     clip: rect(0 0 0 0);
   }
 
-  /* The file picker's button at a finger's size. */
-  .file::file-selector-button {
-    padding: 10px 14px !important;
-  }
 }
 
 /* The people suggestions under a name field inside a sheet: in the flow on
@@ -93,3 +89,4 @@
     max-height: 40dvh !important;
   }
 }
+

@@ -225,7 +225,7 @@ export function RolesClient({ roles, builtinRoles }: { roles: RoleSummary[]; bui
     <div className="mt-6">
       <div className="mb-4 flex items-center justify-end">
         <button onClick={() => setShowCreate(true)} className={btnPrimary + " flex items-center gap-1.5"}>
-          <Plus className="h-4 w-4" /> New Role
+          <Plus className="h-4 w-4" /> New role
         </button>
       </div>
 

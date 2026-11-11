@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, useTransition, type CSSProperties, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarClock, Check, Copy, EllipsisVertical, KeyRound, Users } from "lucide-react";
 import { format } from "date-fns";
@@ -9,7 +9,7 @@ import { SCOPE_LABEL } from "@/lib/api/scopes";
 import { Badge, Banner, Button, ConfirmDialog, Input, Toast, useToast } from "@/components/ui";
 import { CopyButton } from "@/components/admin/api-documentation";
 import styles from "./integrations.module.css";
-import { Overlay } from "@/components/ui/overlay";
+import { Window, WindowBlock, WindowCard } from "@/components/ui/window";
 
 /**
  * The API Keys panel from the Integrations handoff: the key list with a menu
@@ -159,27 +159,10 @@ function NewKeyDialog({ onClose, onCreated }: { onClose: () => void; onCreated: 
   const [directory, setDirectory] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const ref = useRef<HTMLFormElement>(null);
-  const closeRef = useRef(onClose);
-  const pendingRef = useRef(pending);
+  const nameRef = useRef<HTMLDivElement>(null);
+  // The name, once the window has taken focus for itself.
   useEffect(() => {
-    closeRef.current = onClose;
-    pendingRef.current = pending;
-  }, [onClose, pending]);
-
-  useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    ref.current?.querySelector<HTMLInputElement>("input")?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      if (!pendingRef.current) closeRef.current();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      window.removeEventListener("keydown", onKey, true);
-      opener?.focus?.();
-    };
+    nameRef.current?.querySelector<HTMLInputElement>("input")?.focus();
   }, []);
 
   const submit = (e: FormEvent) => {
@@ -197,83 +180,64 @@ function NewKeyDialog({ onClose, onCreated }: { onClose: () => void; onCreated: 
     });
   };
 
+  const scope = (on: boolean, set: (v: boolean) => void, icon: React.ReactNode, key: keyof typeof SCOPE_LABEL) => (
+    <label className={styles.scopeChoice} data-on={on}>
+      <input type="checkbox" checked={on} disabled={pending} onChange={(e) => set(e.target.checked)} className="sr-only" />
+      <span className={styles.scopeIcon}>{icon}</span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className={styles.scopeTitle}>{SCOPE_LABEL[key].title}</span>
+        <span className={styles.scopeBody}>{SCOPE_LABEL[key].line}</span>
+      </span>
+      <span className={styles.scopeMark} aria-hidden="true">
+        {on && <Check />}
+      </span>
+    </label>
+  );
+
   return (
-    <Overlay className="ta-sheet-scrim z-[58] flex items-start justify-center px-4 pb-4 pt-[18vh]">
-      <div className="absolute inset-0" style={{ background: "var(--wms-overlay-modal)" }} onClick={() => !pending && onClose()} />
-      <form
-        ref={ref}
-        onSubmit={submit}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="new-key-title"
-        className="ta-modal ta-sheet relative w-[520px] max-w-full px-[22px] pb-[18px] pt-5"
-        style={{ borderRadius: 18, ["--ta-sheet-pad" as string]: "18px" }}
-      >
-        <div className="mb-4 flex items-center gap-3">
-          <span className="grid h-9 w-9 flex-none place-items-center" style={{ borderRadius: 10, background: "var(--surface-info)", color: "var(--icon-accent)" }}>
-            <KeyRound className="h-[18px] w-[18px]" aria-hidden />
-          </span>
-          <span className="flex flex-col gap-0.5">
-            <span id="new-key-title" style={{ font: "var(--weight-semibold) 15px/20px var(--font-sans)", color: "var(--text-primary)" }}>
-              New Key
-            </span>
-            <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>The key is generated on the server and shown to you once.</span>
-          </span>
-        </div>
-        <Input
-          label="Key name"
-          required
-          maxLength={100}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. Timeclock 5903"
-          hint="Name it after the thing that will hold it, not the person creating it."
-        />
-        <div className="mt-3 flex flex-col gap-1.5">
-          <span style={{ font: "var(--weight-medium) 13px/18px var(--font-sans)", color: "var(--text-secondary)" }}>Access</span>
-          <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>A key can do only what is picked here. Pick at least one.</span>
-          <label className={styles.scopeChoice} data-on={timeOff}>
-            <input type="checkbox" checked={timeOff} disabled={pending} onChange={(e) => setTimeOff(e.target.checked)} className="sr-only" />
-            <span className={styles.scopeIcon}>
-              <CalendarClock aria-hidden />
-            </span>
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className={styles.scopeTitle}>{SCOPE_LABEL[TIME_OFF].title}</span>
-              <span className={styles.scopeBody}>{SCOPE_LABEL[TIME_OFF].line}</span>
-            </span>
-            <span className={styles.scopeMark} aria-hidden="true">
-              {timeOff && <Check />}
-            </span>
-          </label>
-          <label className={styles.scopeChoice} data-on={directory}>
-            <input type="checkbox" checked={directory} disabled={pending} onChange={(e) => setDirectory(e.target.checked)} className="sr-only" />
-            <span className={styles.scopeIcon}>
-              <Users aria-hidden />
-            </span>
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className={styles.scopeTitle}>{SCOPE_LABEL[DIRECTORY].title}</span>
-              <span className={styles.scopeBody}>{SCOPE_LABEL[DIRECTORY].line}</span>
-            </span>
-            <span className={styles.scopeMark} aria-hidden="true">
-              {directory && <Check />}
-            </span>
-          </label>
-        </div>
-        {error && (
-          <div className="mt-3">
-            <Banner tone="error" title="The key was not created" body={error} />
-          </div>
-        )}
-        <div className={`ta-sheet-actions mt-1 flex justify-end gap-2 pt-1 ${styles.sheetFoot}`}>
+    <Window
+      icon={<KeyRound />}
+      title="New API key"
+      subtitle="It is generated on the server and shown to you once."
+      size="sm"
+      width={520}
+      busy={pending}
+      onClose={onClose}
+      onSubmit={submit}
+      actions={
+        <>
           <Button type="button" hierarchy="secondary" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
           <Button pending={pending} type="submit" disabled={!name.trim() || (!timeOff && !directory) || pending}>
-            {pending ? "Generating…" : "Generate"}
+            {pending ? "Generating…" : "Generate key"}
           </Button>
-        </div>
-      </form>
-    </Overlay>
+        </>
+      }
+    >
+      {error && <Banner tone="error" title="The key was not created" body={error} />}
+      <WindowCard>
+        <WindowBlock>
+          <div ref={nameRef}>
+            <Input
+              label="Key name"
+              required
+              maxLength={100}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="For example: Timeclock 5903"
+              hint="Name it after the thing that will hold it, not the person creating it."
+            />
+          </div>
+        </WindowBlock>
+        <WindowBlock label="Access" note="A key can do only what is picked here. Pick at least one.">
+          <div className="flex flex-col gap-1.5">
+            {scope(timeOff, setTimeOff, <CalendarClock aria-hidden />, TIME_OFF)}
+            {scope(directory, setDirectory, <Users aria-hidden />, DIRECTORY)}
+          </div>
+        </WindowBlock>
+      </WindowCard>
+    </Window>
   );
 }
 
@@ -303,37 +267,35 @@ function CopyKeyButton({ text }: { text: string }) {
 
 /** Shown once, straight after the server generated the key. */
 function RevealDialog({ name, fullKey, onClose }: { name: string; fullKey: string; onClose: () => void }) {
-  const ref = useRef<HTMLDivElement>(null);
+  const doneId = useId();
   useEffect(() => {
-    ref.current?.querySelector<HTMLElement>("[data-done]")?.focus();
-  }, []);
+    document.getElementById(doneId)?.focus({ preventScroll: true });
+  }, [doneId]);
   return (
-    <Overlay className="ta-sheet-scrim z-[60] flex items-center justify-center p-4" style={{ background: "var(--wms-overlay-modal)" }}>
-      <div
-        ref={ref}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="reveal-title"
-        className="ta-modal ta-sheet w-full max-w-[520px] px-[22px] pb-[18px] pt-[22px]"
-        style={{ borderRadius: 18, ["--ta-sheet-pad" as string]: "18px" }}
-      >
-        <div className="flex items-center gap-3">
-          <span className="grid h-[42px] w-[42px] flex-none place-items-center" style={{ borderRadius: 12, background: "var(--surface-success)", color: "var(--icon-success)" }}>
-            <KeyRound className="h-5 w-5" aria-hidden />
+    <Window
+      tone="success"
+      icon={<KeyRound />}
+      title="API key created"
+      subtitle={name}
+      size="sm"
+      width={520}
+      dismissible={false}
+      onClose={onClose}
+      foot="Only Done closes this window."
+      actions={
+        <>
+          <span className="ta-phone-only">
+            <CopyKeyButton text={fullKey} />
           </span>
-          <span className="flex min-w-0 flex-col gap-0.5">
-            <span id="reveal-title" style={{ font: "var(--type-h3)", color: "var(--text-primary)" }}>
-              API key created
-            </span>
-            <span className="truncate" style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-              {name}
-            </span>
-          </span>
-        </div>
-        <div className="mt-4">
-          <Banner tone="warning" body="Copy this key now. Only its hash is stored, so closing this window is the last time anyone can read it." />
-        </div>
-        <div className="mt-3 flex items-center gap-2 py-2.5 pl-3.5 pr-2" style={{ borderRadius: 12, background: "var(--ta-code-bg)" }}>
+          <Button id={doneId} onClick={onClose}>
+            Done
+          </Button>
+        </>
+      }
+    >
+      <Banner tone="warning" body="Copy this key now. Only its hash is stored, so closing this window is the last time anyone can read it." />
+      <WindowCard padded>
+        <div className="flex items-center gap-2 py-2.5 pl-3.5 pr-2" style={{ borderRadius: 12, background: "var(--ta-code-bg)" }}>
           <code className="min-w-0 flex-1 break-all" style={{ fontFamily: MONO, fontSize: 12.5, lineHeight: 1.6, color: "var(--ta-code-fg)" }}>
             {fullKey}
           </code>
@@ -341,16 +303,8 @@ function RevealDialog({ name, fullKey, onClose }: { name: string; fullKey: strin
             <CopyButton text={fullKey} label="Copy" dark />
           </span>
         </div>
-        <div className={`mt-[18px] flex justify-end gap-2 ${styles.revealFoot}`}>
-          <span className="ta-phone-only">
-            <CopyKeyButton text={fullKey} />
-          </span>
-          <Button data-done onClick={onClose}>
-            Done
-          </Button>
-        </div>
-      </div>
-    </Overlay>
+      </WindowCard>
+    </Window>
   );
 }
 
@@ -489,7 +443,7 @@ export function ApiKeysManager({
             </span>
             <span style={{ font: "var(--weight-semibold) 15px/22px var(--font-sans)", color: "var(--text-primary)" }}>No API keys yet</span>
             <span style={{ maxWidth: 380, font: "var(--type-body1)", color: "var(--text-secondary)" }}>
-              A timeclock or an export needs a key before it can reach this company. Use New Key above.
+              A timeclock or an export needs a key before it can reach this company. Use New key above.
             </span>
           </div>
         ) : (

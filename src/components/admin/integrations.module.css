@@ -191,16 +191,10 @@
     font-size: 15px !important;
   }
 
-  /* ---- The two windows ---- */
-  .sheetFoot {
-    margin-top: 12px !important;
-  }
+  /* ---- The key windows ---- */
   /* The key is copied with a full width button beside Done, so the small
      one inside the code box is not needed. */
   .codeCopy {
     display: none;
-  }
-  .revealFoot :global(.wms-btn) {
-    flex: 1 1 0;
   }
 }

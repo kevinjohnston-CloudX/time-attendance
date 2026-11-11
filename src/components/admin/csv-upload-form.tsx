@@ -3,10 +3,12 @@
 import { useState, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { bulkCreateEmployees } from "@/actions/admin.actions";
-import { Upload, Download, FileSpreadsheet, X } from "lucide-react";
+import { CircleAlert, Download, FileSpreadsheet, Upload } from "lucide-react";
 import type { CsvEmployeeRow } from "@/lib/validators/admin.schema";
-import { Button } from "@/components/ui";
-import { Overlay } from "@/components/ui/overlay";
+import { Banner, Button } from "@/components/ui";
+import { Window, WindowBlock, WindowCard } from "@/components/ui/window";
+import { FileWell } from "@/components/ui/file-well";
+import styles from "./csv-upload-form.module.css";
 
 interface Props {
   sites: string[];
@@ -74,7 +76,7 @@ function parseCsv(text: string): { rows: CsvEmployeeRow[]; parseErrors: string[]
     .filter((l) => l.length > 0);
 
   if (lines.length < 2) {
-    return { rows: [], parseErrors: ["CSV must have a header row and at least one data row."] };
+    return { rows: [], parseErrors: ["The file needs a header row and at least one employee under it."] };
   }
 
   const headerFields = parseCsvLine(lines[0]).map((h) => h.toLowerCase().replace(/\s+/g, ""));
@@ -85,7 +87,7 @@ function parseCsv(text: string): { rows: CsvEmployeeRow[]; parseErrors: string[]
     (h) => !headerFields.includes(h.toLowerCase())
   );
   if (missing.length > 0) {
-    return { rows: [], parseErrors: [`Missing CSV columns: ${missing.join(", ")}`] };
+    return { rows: [], parseErrors: [`These columns are missing: ${missing.join(", ")}. Start from the template.`] };
   }
 
   const colIndex = Object.fromEntries(
@@ -97,7 +99,7 @@ function parseCsv(text: string): { rows: CsvEmployeeRow[]; parseErrors: string[]
   for (let i = 1; i < lines.length; i++) {
     const fields = parseCsvLine(lines[i]);
     if (fields.length < headerFields.length) {
-      parseErrors.push(`Row ${i + 1}: expected ${headerFields.length} columns, got ${fields.length}`);
+      parseErrors.push(`Row ${i + 1} has ${fields.length} columns instead of ${headerFields.length}.`);
       continue;
     }
 
@@ -156,9 +158,7 @@ export function CsvUploadForm({ sites, departments, ruleSets }: Props) {
     URL.revokeObjectURL(url);
   }
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  function handleFile(file: File) {
     setResult(null);
     setFileName(file.name);
 
@@ -212,120 +212,103 @@ export function CsvUploadForm({ sites, departments, ruleSets }: Props) {
       </Button>
 
       {open && (
-        <Overlay
-          className="ta-sheet-scrim z-50 flex items-center justify-center p-4"
-          onClick={(e) => { if (e.target === e.currentTarget) closeModal(); }}
+        <Window
+          icon={<FileSpreadsheet />}
+          title="Import employees"
+          subtitle="Add many employees at once from a spreadsheet saved as CSV."
+          size="sm"
+          busy={isPending}
+          onClose={closeModal}
+          foot={
+            result
+              ? null
+              : parseErrors.length
+                ? "Fix the file and choose it again."
+                : parsedRows.length
+                  ? `Ready to import ${employeesWord(parsedRows.length)}.`
+                  : "Nothing is imported until you choose Import."
+          }
+          footTone={!result && parseErrors.length ? "error" : undefined}
+          actions={
+            result ? (
+              <>
+                <Button hierarchy="secondary" onClick={reset}>
+                  Import another file
+                </Button>
+                <Button onClick={closeModal}>Done</Button>
+              </>
+            ) : (
+              <>
+                <Button hierarchy="secondary" onClick={closeModal} disabled={isPending}>
+                  Cancel
+                </Button>
+                <Button
+                  pending={isPending}
+                  leadingIcon={<Upload className="h-4 w-4" aria-hidden="true" />}
+                  onClick={handleUpload}
+                  disabled={isPending || parsedRows.length === 0 || parseErrors.length > 0}
+                >
+                  {isPending ? "Importing…" : parsedRows.length && !parseErrors.length ? `Import ${employeesWord(parsedRows.length)}` : "Import"}
+                </Button>
+              </>
+            )
+          }
         >
-          {/* Backdrop */}
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          {result && <Banner tone={result.created > 0 ? "success" : "error"} body={`${created(result.created)}.`} />}
 
-          {/* Modal */}
-          <div className="ta-sheet relative w-full max-w-lg rounded-2xl ta-modal p-6" style={{ "--ta-sheet-pad": "24px" } as React.CSSProperties}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-[var(--text-primary)]">
-                Import Employees from CSV
-              </h3>
-              <button
-                onClick={closeModal}
-                className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+          <WindowCard>
+            <WindowBlock label="Template" note="Start from the template so the columns are in the order CloudTime reads.">
+              <span>
+                <Button hierarchy="secondary" size="sm" leadingIcon={<Download className="h-4 w-4" aria-hidden="true" />} onClick={downloadTemplate}>
+                  Download template
+                </Button>
+              </span>
+            </WindowBlock>
+            <WindowBlock>
+              <FileWell
+                label="File"
+                accept=".csv"
+                icon={<FileSpreadsheet />}
+                fileName={fileName}
+                detail={fileName ? (parsedRows.length ? employeesWord(parsedRows.length) : parseErrors.length ? "Could not be read" : "Reading the file") : "A CSV file, or drop it here"}
+                inputRef={fileRef}
+                onFile={handleFile}
+              />
+            </WindowBlock>
+          </WindowCard>
+
+          {(parseErrors.length > 0 || (result && result.errors.length > 0)) && (
+            <WindowCard>
+              <WindowBlock
+                label={
+                  result
+                    ? `${rowsWord(result.errors.length)} could not be imported`
+                    : `${rowsWord(parseErrors.length)} could not be read`
+                }
               >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="mt-5 flex flex-wrap items-center gap-3">
-              <button
-                onClick={downloadTemplate}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-400 dark:hover:bg-zinc-800"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Download Template
-              </button>
-
-              <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-[var(--fill-accent)] px-3 py-1.5 text-sm font-medium text-[var(--text-on-accent)] hover:bg-[var(--fill-accent-hover)]">
-                <FileSpreadsheet className="h-3.5 w-3.5" />
-                Choose File
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept=".csv"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-              </label>
-
-              {fileName && (
-                <span className="text-sm text-[var(--text-tertiary)]">
-                  {fileName}
-                </span>
-              )}
-            </div>
-
-            {/* Parse errors */}
-            {parseErrors.length > 0 && (
-              <div className="mt-4 rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
-                <p className="text-sm font-medium text-red-600 dark:text-red-400">
-                  Parse errors ({parseErrors.length}):
-                </p>
-                <ul className="mt-1 max-h-48 overflow-y-auto list-inside list-disc text-sm text-red-600 dark:text-red-400">
-                  {parseErrors.map((err, i) => (
-                    <li key={i}>{err}</li>
+                <ul className={`${styles.problems} ta-scroll`}>
+                  {(result ? result.errors.map((e) => (e.row > 0 ? `Row ${e.row}: ${e.message}` : e.message)) : parseErrors).map((msg, i) => (
+                    <li key={i} className={styles.problem}>
+                      <CircleAlert aria-hidden="true" />
+                      <span>{msg}</span>
+                    </li>
                   ))}
                 </ul>
-              </div>
-            )}
-
-            {/* Preview */}
-            {parsedRows.length > 0 && parseErrors.length === 0 && !result && (
-              <div className="mt-4">
-                <p className="text-sm text-[var(--text-secondary)]">
-                  Ready to import <span className="font-semibold">{parsedRows.length}</span> employee
-                  {parsedRows.length !== 1 && "s"}.
-                </p>
-                <button
-                  onClick={handleUpload}
-                  disabled={isPending}
-                  className="mt-3 rounded-lg bg-[var(--fill-accent)] px-4 py-2 text-sm font-medium text-[var(--text-on-accent)] hover:bg-[var(--fill-accent-hover)] disabled:opacity-50"
-                >
-                  {isPending ? "Importing…" : "Upload & Create"}
-                </button>
-              </div>
-            )}
-
-            {/* Results */}
-            {result && (
-              <div className="mt-4">
-                {result.created > 0 && (
-                  <p className="text-sm font-medium text-green-600 dark:text-green-400">
-                    Successfully created {result.created} employee{result.created !== 1 && "s"}.
-                  </p>
-                )}
-                {result.errors.length > 0 && (
-                  <div className="mt-2 rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
-                    <p className="text-sm font-medium text-red-600 dark:text-red-400">
-                      Errors ({result.errors.length}):
-                    </p>
-                    <ul className="mt-1 max-h-48 overflow-y-auto list-inside list-disc text-sm text-red-600 dark:text-red-400">
-                      {result.errors.map((err, i) => (
-                        <li key={i}>
-                          {err.row > 0 && `Row ${err.row}: `}
-                          {err.message}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                <button
-                  onClick={reset}
-                  className="mt-3 text-sm text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-                >
-                  Upload another file
-                </button>
-              </div>
-            )}
-          </div>
-        </Overlay>
+              </WindowBlock>
+            </WindowCard>
+          )}
+        </Window>
       )}
     </>
   );
+}
+
+function employeesWord(n: number): string {
+  return `${n.toLocaleString("en-US")} ${n === 1 ? "employee" : "employees"}`;
+}
+function rowsWord(n: number): string {
+  return `${n.toLocaleString("en-US")} ${n === 1 ? "row" : "rows"}`;
+}
+function created(n: number): string {
+  return n === 0 ? "No employees were created" : `${employeesWord(n)} created`;
 }

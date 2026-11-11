@@ -12,6 +12,15 @@
   padding: 16px;
   background: var(--wms-overlay-modal);
 }
+/* A side panel: down the right edge, the full height of the screen. */
+.scrim[data-side] {
+  align-items: stretch;
+  justify-content: flex-end;
+  padding: 12px;
+}
+.window[data-side] {
+  max-height: none;
+}
 /* A window opened on top of another window. */
 .scrim[data-depth="2"] {
   z-index: 60;
@@ -151,6 +160,13 @@
   flex: none;
   align-items: center;
   gap: 8px;
+}
+/* A button that cannot be pressed yet keeps its outline on the grey: the
+   kit's disabled fill is the frame's own grey and would vanish into it. */
+.foot :global(.wms-btn:disabled) {
+  background: var(--surface-card);
+  outline: 1px solid var(--stroke-divider);
+  outline-offset: -1px;
 }
 
 /* ---- The pieces a body is built from ---- */

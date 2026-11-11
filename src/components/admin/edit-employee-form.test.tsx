@@ -129,4 +129,14 @@ describe("Employee record", () => {
     expect(control("email").value).toBe("guest@example.com");
     expect(control("departmentId").disabled).toBe(false);
   });
+
+  it("Set temporary password opens its window, and Escape closes it without saving", async () => {
+    const { setTemporaryPassword } = await import("@/actions/password.actions");
+    render(<EditEmployeeForm {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Set temporary password" }));
+    expect(screen.getByRole("dialog", { name: "Set temporary password" })).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Set temporary password" })).toBeNull();
+    expect(setTemporaryPassword).not.toHaveBeenCalled();
+  });
 });

@@ -126,7 +126,7 @@ export function IntegrationsClient({
                   reference would make something you cannot see. */}
               {onKeys && (
                 <Button className="ta-header-primary" leadingIcon={<Plus className="h-4 w-4" />} onClick={() => setCreateOpen(true)}>
-                  New Key
+                  New key
                 </Button>
               )}
               {onHooks && (

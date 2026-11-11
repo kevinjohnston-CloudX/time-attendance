@@ -1,0 +1,72 @@
+/* The file well (file-well.tsx): an icon, the file's name or the prompt,
+   and Browse. The whole well opens the picker, and takes a dropped file. */
+.well {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 10px 14px 10px 10px;
+  border: 1.5px dashed var(--stroke-default);
+  border-radius: 12px;
+  background: var(--ta-well);
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.well:hover,
+.well[data-dragging] {
+  border-color: var(--stroke-accent);
+  background: var(--ta-choice-on);
+}
+.well[data-filled] {
+  border-style: solid;
+  border-color: var(--stroke-divider);
+  background: var(--surface-card);
+}
+.well:has(:focus-visible) {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: 2px;
+}
+.icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--surface-card);
+  box-shadow: var(--ta-raised);
+  color: var(--icon-accent);
+}
+.icon svg {
+  width: 18px;
+  height: 18px;
+}
+.text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.title {
+  overflow: hidden;
+  font: var(--weight-semibold) 14px/20px var(--font-sans);
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.detail {
+  font: var(--type-body2);
+  color: var(--text-secondary);
+}
+.action {
+  flex: none;
+  font: var(--weight-semibold) 14px/20px var(--font-sans);
+  color: var(--text-accent);
+  white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+  .well {
+    min-height: 72px;
+  }
+}
