@@ -296,6 +296,7 @@ export default async function TimecardsPage({
           source: p.source,
           payCodeId: p.payCodeId ?? null,
           hoursOnly: p.hoursOnly,
+          enteredByYou: p.source === "MANUAL" && !!session.user.employeeId && p.approvedById === session.user.employeeId,
         })),
         segments: timecard.segments.map((s) => ({
           id: s.id,

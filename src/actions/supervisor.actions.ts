@@ -12,6 +12,8 @@ import { computeRoundedTime } from "@/lib/utils/date";
 import {
   resolveExceptionSchema,
   addMissingPunchSchema,
+  addAbsentDayPunchesSchema,
+  type AddAbsentDayPunchesInput,
   correctAndResolveSchema,
   type ResolveExceptionInput,
   type AddMissingPunchInput,
@@ -292,6 +294,96 @@ export const addMissingPunchForEmployee = withRBAC(
         entityType: "PUNCH",
         entityId: timesheetId,
         changes: { after: { punchType, punchTime: punchTimeStr, reason } },
+      });
+    });
+
+    await rebuildSegments(timesheetId, timesheet.employee.ruleSet);
+    revalidatePath("/supervisor/exceptions");
+    revalidatePath("/time/history");
+    revalidatePath(`/time/timesheet/${timesheetId}`);
+  }
+);
+
+/**
+ * An Absent day filled from the Exceptions page: its clock in and clock out
+ * in one request, and the absence resolved. Added one at a time, as a missing
+ * punch is, a supervisor who fixes missed punches only was refused: their rule
+ * fills an Absent day with a whole shift (assertMissedPunchFix), and its clock
+ * in alone is half of one. The clock in is regular hours for them, as it is on
+ * the timecard (saveManualPunches).
+ */
+export const addAbsentDayPunches = withRBAC(
+  ["PUNCH_EDIT_TEAM", "PUNCH_FIX_MISSED_TEAM"],
+  async (ctx, input: AddAbsentDayPunchesInput) => {
+    const { employeeId: supervisorId, tenantId } = ctx;
+    const { timesheetId, exceptionId, inTime, outTime, reason } = addAbsentDayPunchesSchema.parse(input);
+    const inAt = new Date(inTime);
+    const outAt = new Date(outTime);
+    if (outAt <= inAt) throw new Error("The clock out must be after the clock in.");
+    if (outAt.getTime() - inAt.getTime() > 16 * 60 * 60 * 1000) throw new Error("A shift can be up to 16 hours. Check the AM and PM.");
+    const sheet = await timesheetInScope(ctx, timesheetId, "PUNCH_EDIT_ANY");
+    if (sheet.employeeId === supervisorId) throw new Error("You can't change your own punches");
+    assertEditable(sheet.status);
+
+    const absence = await db.exception.findFirst({
+      where: { id: exceptionId, timesheetId, exceptionType: "ABSENT", resolvedAt: null },
+      select: { id: true },
+    });
+    if (!absence) throw new Error("This absence has already been resolved, or is not on this timecard. Reload the page and try again.");
+
+    const timesheet = await db.timesheet.findUniqueOrThrow({
+      where: { id: timesheetId },
+      include: {
+        employee: {
+          include: {
+            ruleSet: true,
+            shift: { select: { startTime: true, endTime: true, workDays: true } },
+            site: { select: { timezone: true } },
+          },
+        },
+      },
+    });
+    const { ruleSet, shift } = timesheet.employee;
+    const tz = personTimeZone(timesheet.employee, "UTC");
+    const fixOnly = await fixesMissedPunchesOnly();
+    if (fixOnly) {
+      await assertMissedPunchFix(timesheetId, tz, [
+        { punchType: "CLOCK_IN", at: inAt },
+        { punchType: "CLOCK_OUT", at: outAt },
+      ]);
+    }
+
+    await db.$transaction(async (tx) => {
+      for (const [punchType, punchTime] of [["CLOCK_IN", inAt], ["CLOCK_OUT", outAt]] as const) {
+        await tx.punch.create({
+          data: {
+            employeeId: timesheet.employeeId,
+            timesheetId,
+            punchType,
+            punchTime,
+            roundedTime: computeRoundedTime(punchTime, punchType, ruleSet, shift, tz),
+            source: "MANUAL",
+            stateBefore: punchType === "CLOCK_IN" ? "OUT" : "WORK",
+            stateAfter: STATE_AFTER[punchType] ?? "OUT",
+            isApproved: true,
+            approvedById: supervisorId,
+            approvedAt: new Date(),
+            note: reason,
+            ...(fixOnly && punchType === "CLOCK_IN" ? { payCodeId: ruleSet.defaultPayCodeId ?? null } : {}),
+          },
+        });
+      }
+      await tx.exception.updateMany({
+        where: { id: exceptionId, timesheetId },
+        data: { resolvedAt: new Date(), resolvedById: supervisorId, resolution: reason },
+      });
+      await writeAuditLog({
+        tenantId,
+        actorId: supervisorId,
+        action: "PUNCH_ADDED",
+        entityType: "PUNCH",
+        entityId: timesheetId,
+        changes: { after: { punchType: "CLOCK_IN", punchTime: inTime, clockOut: outTime, reason } },
       });
     });
 

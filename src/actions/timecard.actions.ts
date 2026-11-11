@@ -8,6 +8,7 @@ import { timecardList } from "@/lib/timecards/timecard-list";
 import { directReportsOf } from "@/lib/get-subordinate-ids";
 import { endedOn, startedOn } from "@/lib/engines/segment-builder";
 import { ownCompany } from "@/lib/rbac/company";
+import { fixesMissedPunchesOnly } from "@/lib/timecards/missed-punch-fix";
 
 // ─── Employee list (employee-centric timecard) ───────────────────────────────
 
@@ -177,7 +178,7 @@ export const getTimecardByEmployeeAndPeriod = withRBAC(
         punches: {
           where: { isApproved: true, correctedById: null },
           orderBy: { roundedTime: "asc" },
-          select: { id: true, punchType: true, roundedTime: true, source: true, payCodeId: true, hoursOnly: true },
+          select: { id: true, punchType: true, roundedTime: true, source: true, payCodeId: true, hoursOnly: true, approvedById: true },
         },
         segments: {
           orderBy: { startTime: "asc" },
@@ -243,15 +244,23 @@ export const getTimecardByEmployeeAndPeriod = withRBAC(
 // ─── Create or retrieve a timesheet for an employee+period ───────────────────
 
 export const ensureTimesheet = withRBAC(
-  ["TIMECARD_EDIT_TEAM", "TIMECARD_EDIT_ANY"],
+  // A supervisor who fixes missed punches makes it too (11/11): someone with
+  // no timecard yet was Read only to them, their Absent days included. Only
+  // for their own team, never themselves, in an open period; the punches they
+  // save on it are held to their rule (assertMissedPunchFix).
+  ["TIMECARD_EDIT_TEAM", "TIMECARD_EDIT_ANY", "PUNCH_FIX_MISSED_TEAM"],
   async (ctx, input: { employeeId: string; periodId: string }) => {
     const { employeeId, periodId } = z.object({
       employeeId: z.string(),
       periodId: z.string(),
     }).parse(input);
     await assertEmployeeInScope(ctx, employeeId, ["TIMECARD_EDIT_ANY"]);
-    const period = await db.payPeriod.findFirst({ where: { id: periodId, tenantId: ctx.tenantId ?? "" }, select: { id: true } });
+    const period = await db.payPeriod.findFirst({ where: { id: periodId, tenantId: ctx.tenantId ?? "" }, select: { id: true, status: true } });
     if (!period) throw new Error("This pay period isn't available. Reload the page and try again.");
+    if (await fixesMissedPunchesOnly()) {
+      if (employeeId === ctx.employeeId) throw new Error("You can't change your own timecard");
+      if (period.status !== "OPEN") throw new Error("This pay period is closed. Ask HR or payroll for this timecard.");
+    }
 
     const ts = await db.timesheet.upsert({
       where: { employeeId_payPeriodId: { employeeId, payPeriodId: periodId } },
@@ -365,7 +374,7 @@ export const getTimecardDetail = withRBAC(
         punches: {
           where: { isApproved: true, correctedById: null },
           orderBy: { roundedTime: "asc" },
-          select: { id: true, punchType: true, roundedTime: true, source: true, payCodeId: true, hoursOnly: true },
+          select: { id: true, punchType: true, roundedTime: true, source: true, payCodeId: true, hoursOnly: true, approvedById: true },
         },
         segments: {
           orderBy: { startTime: "asc" },

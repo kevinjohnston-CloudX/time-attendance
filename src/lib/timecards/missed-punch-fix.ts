@@ -4,6 +4,7 @@ import { TIMECARD_EDITORS } from "@/lib/rbac/permissions";
 import { dayAt } from "@/lib/timecards/change-note";
 import { endedOn, startedOn } from "@/lib/engines/segment-builder";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { fixerPunchChangeRefusal, isRegularCode } from "@/lib/timecards/fixer-punch-change";
 
 /**
  * A missed punch fixed by somebody allowed nothing else on a timecard
@@ -39,10 +40,7 @@ export type AddedPunch = { punchType: "CLOCK_IN" | "CLOCK_OUT"; at: Date };
 /** `payCodeId` on a clock in is its shift's pay code. */
 export type TimecardPunch = { punchType: string; roundedTime: Date; payCodeId?: string | null };
 
-/** A code that is regular hours: none, or the rule set's own. */
-export function isRegularCode(payCodeId: string | null | undefined, regularCodeId: string | null): boolean {
-  return !payCodeId || payCodeId === regularCodeId;
-}
+export { isRegularCode };
 
 function shiftDay(day: string, by: number): string {
   const d = new Date(day + "T12:00:00.000Z");
@@ -187,6 +185,45 @@ export async function assertMissedPunchFix(timesheetId: string, timeZone: string
   };
   const absentDays = new Set(added.map((p) => dayAt(p.at, timeZone)).filter((d) => isAbsentDay(d, absent)));
   const refusal = missedPunchRefusal(added, existing, missedDays, timeZone, absentDays, sheet.employee.ruleSet.defaultPayCodeId ?? null);
+  if (refusal) throw new Error(refusal);
+}
+
+/**
+ * Throws unless a missed punch fixer may change this saved punch to `newTime`,
+ * or remove it when null (fixer-punch-change has the rule): on a day marked
+ * Missed punch, or a punch they entered themselves, on a row of regular hours.
+ */
+export async function assertFixerMayChangePunch(punchId: string, newTime: Date | null, actorId: string): Promise<void> {
+  const punch = await db.punch.findUniqueOrThrow({
+    where: { id: punchId },
+    select: {
+      id: true, punchType: true, roundedTime: true, payCodeId: true, source: true, approvedById: true, timesheetId: true,
+      employee: { select: { timeZone: true, site: { select: { timezone: true } }, ruleSet: { select: { defaultPayCodeId: true } } } },
+    },
+  });
+  if (!punch.timesheetId) throw new Error(MISSED_PUNCH_ONLY_ERROR);
+  const [punches, open] = await Promise.all([
+    db.punch.findMany({
+      where: { timesheetId: punch.timesheetId, isApproved: true, correctedById: null },
+      select: { id: true, punchType: true, roundedTime: true, payCodeId: true },
+    }),
+    db.exception.findMany({
+      where: { timesheetId: punch.timesheetId, exceptionType: "MISSING_PUNCH", resolvedAt: null },
+      select: { occurredAt: true },
+    }),
+  ]);
+  const timeZone = personTimeZone(punch.employee, "UTC");
+  const dayOf = (at: Date) => dayAt(at, timeZone);
+  const refusal = fixerPunchChangeRefusal({
+    punch: { ...punch, mine: punch.source === "MANUAL" && punch.approvedById === actorId },
+    newTime,
+    punches,
+    regularCodeId: punch.employee.ruleSet.defaultPayCodeId ?? null,
+    // Marked at noon UTC on the day (segment-builder), so its day reads the same anywhere.
+    missedDays: new Set(open.map((e) => dayOf(e.occurredAt))),
+    today: dayOf(new Date()),
+    dayOf,
+  });
   if (refusal) throw new Error(refusal);
 }
 

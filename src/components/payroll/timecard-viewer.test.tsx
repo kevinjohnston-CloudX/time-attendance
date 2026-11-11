@@ -308,6 +308,91 @@ describe("a supervisor allowed only to fix missed punches", () => {
     vi.useRealTimers();
   });
 
+  // 11/11: someone with no timecard yet was Read only to a supervisor (Mario
+  // Robles); the first save makes the timecard, as it does for HR.
+  it("fills an Absent day for someone with no timecard yet", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-15T16:00:00Z"));
+    ensureTimesheet.mockClear();
+    addManualPunches.mockClear();
+    const props = (status: string) => ({
+      payPeriods: [{ id: "p1", startDate: "2026-10-11T00:00:00.000Z", endDate: "2026-10-25T00:00:00.000Z", status }],
+      selectedPeriodId: "p1",
+      employees: [{ employeeId: "e1", name: "Test Person", employeeCode: "T1", wmsId: "639094", department: "Inventory", siteId: "s1", siteName: "Site", isActive: true, payType: "HOURLY" }],
+      selectedEmployeeId: "e1", timecard: null, payFrequency: "BIWEEKLY" as const, payCodes: [], reasonCodes: [], sites: [], selectedSiteId: null,
+      departments: [], selectedDepartmentId: null, userRole: "SUPERVISOR", missedPunchesOnly: true, siteTimezone: "America/New_York",
+    });
+    // A closed period stays Read only.
+    const closed = render(<TimecardViewer {...(props("LOCKED") as unknown as React.ComponentProps<typeof TimecardViewer>)} />);
+    expect(screen.getByText("Read only")).not.toBeNull();
+    closed.unmount();
+
+    render(<TimecardViewer {...(props("OPEN") as unknown as React.ComponentProps<typeof TimecardViewer>)} />);
+    expect(screen.getByText("Missed punches only")).not.toBeNull();
+    const wednesday = () => screen.getAllByRole("row").find((r) => /Wed, Oct 14/.test(r.textContent ?? ""))!;
+    const type = (value: string) => {
+      fireEvent.click([...wednesday().querySelectorAll("button")].filter((b) => b.textContent === "—")[0]!);
+      const input = wednesday().querySelector("input")!;
+      fireEvent.change(input, { target: { value } });
+      fireEvent.blur(input);
+    };
+    type("8:00");
+    type("4:30");
+    fireEvent.click(screen.getByText("Save changes"));
+    await vi.waitFor(() => expect(addManualPunches).toHaveBeenCalledTimes(1));
+    expect(ensureTimesheet).toHaveBeenCalledWith({ employeeId: "e1", periodId: "p1" });
+    const [{ timesheetId, punches }] = addManualPunches.mock.calls[0] as unknown as [{ timesheetId: string; punches: { punchType: string }[] }];
+    expect(timesheetId).toBe("t1");
+    expect(punches.map((p) => p.punchType)).toEqual(["CLOCK_IN", "CLOCK_OUT"]);
+    vi.useRealTimers();
+  });
+
+  // 11/11, Heliana Salazar: a missed lunch clock out turns every punch after
+  // it around, so the day is put right by changing its times, not only by
+  // adding the clock out that shows Missing.
+  it("puts a missed lunch right on a day marked Missed punch", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-15T16:00:00Z"));
+    const { correctPunch } = await import("@/actions/punch.actions");
+    (correctPunch as unknown as { mockClear: () => void }).mockClear();
+    addManualPunches.mockClear();
+    // Monday (EDT): in 8:00 AM, out 3:11 PM, in 5:16 PM, the clock out missing.
+    // Tuesday from the clock, nothing missed; Wednesday one they typed in.
+    renderFixer({ punches: [
+      punch("i1", "CLOCK_IN", "2026-10-12T12:00:00.000Z"),
+      punch("o1", "CLOCK_OUT", "2026-10-12T19:11:00.000Z"),
+      punch("i3", "CLOCK_IN", "2026-10-12T21:16:00.000Z"),
+      punch("i2", "CLOCK_IN", "2026-10-13T12:00:00.000Z"),
+      punch("o2", "CLOCK_OUT", "2026-10-13T20:30:00.000Z"),
+      { ...punch("i4", "CLOCK_IN", "2026-10-14T12:00:00.000Z"), source: "MANUAL", enteredByYou: true },
+      { ...punch("o4", "CLOCK_OUT", "2026-10-14T20:30:00.000Z"), source: "MANUAL", enteredByYou: true },
+    ] });
+    // A time on a day's own row, or, with no day given, the one button showing it.
+    const timeButton = (text: string, day?: RegExp) => [...screen.getAllByRole("row")].filter((r) => !day || day.test(r.textContent ?? ""))
+      .flatMap((r) => [...r.querySelectorAll("button")]).find((b) => b.textContent === text)!;
+    expect(timeButton("8:00 AM", /Tue, Oct 13/).hasAttribute("disabled")).toBe(true);
+    expect(timeButton("8:00 AM", /Wed, Oct 14/).hasAttribute("disabled")).toBe(false);
+
+    const type = (button: HTMLElement, value: string) => {
+      const tr = button.closest("tr")!;
+      fireEvent.click(button);
+      const input = tr.querySelector("input")!;
+      fireEvent.change(input, { target: { value } });
+      fireEvent.blur(input);
+    };
+    type(timeButton("3:11 PM"), "2:11");
+    type(timeButton("5:16 PM"), "3:11");
+    type([...document.querySelectorAll("button")].find((b) => b.textContent === "Missing") as HTMLElement, "5:16");
+    fireEvent.change(screen.getByLabelText("Reason for the changed or removed punches"), { target: { value: "Missed the lunch clock out" } });
+    fireEvent.click(screen.getByText("Save changes"));
+    await vi.waitFor(() => expect(addManualPunches).toHaveBeenCalledTimes(1));
+    expect(correctPunch).toHaveBeenCalledWith({ originalPunchId: "o1", newPunchTime: "2026-10-12T18:11:00.000Z", reason: "Missed the lunch clock out" });
+    expect(correctPunch).toHaveBeenCalledWith({ originalPunchId: "i3", newPunchTime: "2026-10-12T19:11:00.000Z", reason: "Missed the lunch clock out" });
+    const [{ punches }] = addManualPunches.mock.calls[0] as unknown as [{ punches: { punchType: string; punchTime: string }[] }];
+    expect(punches).toEqual([{ punchType: "CLOCK_OUT", punchTime: "2026-10-12T21:16:00.000Z" }]);
+    vi.useRealTimers();
+  });
+
   it("adds a note of their own to a day", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-15T16:00:00Z"));

@@ -23,6 +23,16 @@ export const correctAndResolveSchema = z.object({
   exceptionId: z.string().min(1),
 });
 
+/** An Absent day's shift from the Exceptions page: its clock in and clock out together. */
+export const addAbsentDayPunchesSchema = z.object({
+  timesheetId: z.string().min(1),
+  exceptionId: z.string().min(1),
+  inTime: z.string().datetime(),
+  outTime: z.string().datetime(),
+  reason: z.string().min(1, "Reason is required"),
+});
+
+export type AddAbsentDayPunchesInput = z.infer<typeof addAbsentDayPunchesSchema>;
 export type ResolveExceptionInput = z.infer<typeof resolveExceptionSchema>;
 export type AddMissingPunchInput = z.infer<typeof addMissingPunchSchema>;
 export type CorrectAndResolveInput = z.infer<typeof correctAndResolveSchema>;
