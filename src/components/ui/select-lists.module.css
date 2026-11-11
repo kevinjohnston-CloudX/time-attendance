@@ -1,0 +1,50 @@
+/* A dropdown's list on a computer (select-lists.tsx), on the shared menu's
+   look: fixed to the window above every window and pop over, under or over
+   its select, scrolling inside itself when long. */
+
+.list {
+  position: fixed;
+  z-index: 90;
+  max-width: min(420px, calc(100vw - 16px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  animation: drop 120ms ease-out;
+}
+/* Over the select: the list's foot sits on the top it was given. */
+.list[data-up] {
+  transform: translateY(-100%);
+  animation-name: rise;
+}
+.list [aria-disabled] {
+  color: var(--text-disabled);
+  cursor: default;
+}
+.list [aria-disabled][aria-selected="true"] {
+  background: transparent;
+}
+
+.text {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes drop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-100% + 4px));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .list {
+    animation: none;
+  }
+}
