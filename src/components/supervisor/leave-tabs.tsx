@@ -41,6 +41,7 @@ import { getTeamMembersForLeave, getLeaveTypesForEmployee, createLeaveRequestFor
 import { LeaveDayPicker, type DaySelection, type ShiftInfo } from "@/components/leave/leave-day-picker";
 import { shiftMeal } from "@/lib/shift-meal";
 import { Window, WindowBlock, WindowCard } from "@/components/ui/window";
+import { menuStyles } from "@/components/ui/menu";
 
 /**
  * Team Leave, as the portal design lays it out: the list screen's header,
@@ -1411,15 +1412,9 @@ export function LeaveTabs({
       {tooltip && (
         <div
           style={{ position: "fixed", top: tooltip.top, left: tooltip.left, zIndex: 100 }}
-          className="ta-desktop-tip ta-modal pointer-events-none flex min-w-[9rem] max-w-[14rem] flex-col gap-2 rounded-xl p-3"
+          className={`ta-desktop-tip pointer-events-none flex min-w-[10rem] max-w-[15rem] flex-col gap-2.5 px-3 pb-3 pt-2.5 ${menuStyles.panel}`}
         >
-          <p
-            style={{
-              margin: 0,
-              font: "var(--type-overline)",
-              color: "var(--text-tertiary)",
-            }}
-          >
+          <p style={{ margin: 0, font: "var(--weight-semibold) 13px/18px var(--font-sans)", color: "var(--text-primary)" }}>
             {format(tooltip.date, "EEEE, MMM d")}
           </p>
           {tooltip.approved.length > 0 && (
@@ -1477,12 +1472,17 @@ function TooltipGroup({
   entries: { name: string; leaveType: string }[];
 }) {
   return (
-    <div className="flex flex-col gap-1">
-      <span style={{ font: "var(--type-button2)", color }}>{label}</span>
+    <div className="flex flex-col gap-1.5">
+      {/* The group's colour on a dot, the label itself quiet, as the
+          calendar's legend draws it. */}
+      <span className="inline-flex items-center gap-1.5" style={{ font: "var(--weight-semibold) 12px/16px var(--font-sans)", color: "var(--text-secondary)" }}>
+        <span aria-hidden="true" style={{ width: 7, height: 7, flex: "none", borderRadius: 999, background: color }} />
+        {label}
+      </span>
       {entries.map((e, i) => (
-        <div key={i} className="flex flex-col">
-          <span style={{ font: "var(--type-body1)", color: "var(--text-primary)" }}>{e.name}</span>
-          <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+        <div key={i} className="flex min-w-0 flex-col pl-3">
+          <span className="truncate" style={{ font: "var(--weight-medium) 14px/20px var(--font-sans)", color: "var(--text-primary)" }}>{e.name}</span>
+          <span className="truncate" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
             {e.leaveType}
           </span>
         </div>

@@ -113,6 +113,9 @@ export function Window({
     const onKey = (e: KeyboardEvent) => {
       if (stack[stack.length - 1] !== id) return;
       if (e.key === "Escape") {
+        // A menu or list open inside the window closes first, on its own.
+        const t = e.target as HTMLElement | null;
+        if (t?.getAttribute?.("aria-expanded") === "true" || t?.closest?.('[role="menu"], [role="listbox"]')) return;
         e.stopPropagation();
         if (!busyRef.current) closeRef.current();
         return;

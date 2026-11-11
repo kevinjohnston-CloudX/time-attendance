@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, useTransition, type CSSProperties, type FormEvent } from "react";
+import { useCallback, useEffect, useId, useRef, useState, useTransition, type CSSProperties, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarClock, Check, Copy, EllipsisVertical, KeyRound, Users } from "lucide-react";
+import { Ban, CalendarClock, CalendarX, Check, Copy, EllipsisVertical, KeyRound, RefreshCw, Users, UserX } from "lucide-react";
+import { MenuDivider, MenuItem, MenuPanel, useMenuDismiss } from "@/components/ui/menu";
 import { format } from "date-fns";
 import { createApiKey, revokeApiKey, regenerateApiKey, setApiKeyScopes } from "@/actions/api-key.actions";
 import { SCOPE_LABEL } from "@/lib/api/scopes";
@@ -80,17 +81,11 @@ function RowMenu({
   disabled: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open]);
-  const item = "ta-hoverable flex h-8 w-full items-center whitespace-nowrap px-2.5 text-left";
+  const wrapRef = useRef<HTMLSpanElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  useMenuDismiss(open, close, wrapRef);
   return (
-    <span className="relative flex justify-end">
-      {/* eslint-disable-next-line no-restricted-syntax -- a transparent click catcher for the dropdown beside it; it has to stay in the dropdown's layer, under the menu */}
-      {open && <span className="fixed inset-0 z-40" onClick={() => setOpen(false)} />}
+    <span ref={wrapRef} className="relative flex justify-end">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -105,48 +100,24 @@ function RowMenu({
         <EllipsisVertical className="h-4 w-4" />
       </button>
       {open && (
-        <div
-          role="menu"
-          className={`absolute right-0 top-[calc(100%+4px)] z-50 w-[230px] p-1.5 ${styles.menu}`}
-          style={{ borderRadius: 12, background: "var(--surface-card)", boxShadow: "var(--ta-menu-shadow)" }}
-        >
-          <button
-            type="button"
-            role="menuitem"
-            className={item}
-            style={{ border: 0, borderRadius: 8, background: "transparent", cursor: "pointer", font: "var(--type-body2)", color: "var(--text-primary)" }}
+        <MenuPanel role="menu" aria-label="Key actions" className={`absolute right-0 top-[calc(100%+4px)] z-50 w-[250px] ${styles.menu}`}>
+          <MenuItem
+            icon={timeOff ? <CalendarX /> : <CalendarClock />}
             onClick={() => { setOpen(false); onTimeOff(); }}
           >
             {timeOff ? "Remove time off requests" : "Allow time off requests"}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className={item}
-            style={{ border: 0, borderRadius: 8, background: "transparent", cursor: "pointer", font: "var(--type-body2)", color: "var(--text-primary)" }}
-            onClick={() => { setOpen(false); onDirectory(); }}
-          >
+          </MenuItem>
+          <MenuItem icon={directory ? <UserX /> : <Users />} onClick={() => { setOpen(false); onDirectory(); }}>
             {directory ? "Remove directory access" : "Allow directory access"}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className={item}
-            style={{ border: 0, borderRadius: 8, background: "transparent", cursor: "pointer", font: "var(--type-body2)", color: "var(--text-primary)" }}
-            onClick={() => { setOpen(false); onRegenerate(); }}
-          >
+          </MenuItem>
+          <MenuItem icon={<RefreshCw />} onClick={() => { setOpen(false); onRegenerate(); }}>
             Regenerate
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className={item}
-            style={{ border: 0, borderRadius: 8, background: "transparent", cursor: "pointer", font: "var(--type-body2)", color: "var(--text-error)" }}
-            onClick={() => { setOpen(false); onRevoke(); }}
-          >
+          </MenuItem>
+          <MenuDivider />
+          <MenuItem icon={<Ban />} tone="danger" onClick={() => { setOpen(false); onRevoke(); }}>
             Revoke
-          </button>
-        </div>
+          </MenuItem>
+        </MenuPanel>
       )}
     </span>
   );
