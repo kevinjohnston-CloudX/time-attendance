@@ -31,11 +31,11 @@ import { codeOf } from "@/lib/action-errors";
  * with Escape or a click outside. A card nobody touches for 45 seconds steps
  * aside on its own, on this screen only, and comes back if they try again.
  *
- * <p>Drawn from the page's own pieces: the photo, the soft amber chip the
- * rows use for a warning, and the employee panel's day at a glance strip.
- * Built to be noticed from across the room: an amber header, a pulsing icon
- * and a slow amber glow around the card for as long as it waits. The time
- * left is a small ring beside the countdown, not a bar along the edge.
+ * <p>On the shared window frame (the Export window's): a grey frame, a raised
+ * glyph tile, and the person and their details in one white card. Built to
+ * be noticed from across the room: the title in amber, rings pulsing from the
+ * glyph and a slow amber glow around the frame for as long as it waits, and
+ * two large answers. The time left is a small ring beside the countdown.
  *
  * <p>Loads the moment the page's 2 second check sees today's refusals here
  * change (a new try, or a dismissal on another screen), every 15 seconds
@@ -387,7 +387,7 @@ export function GateRefusalAlert({
               Entry refused
             </span>
             <span className={styles.gaHeadSub} title={card.device ?? undefined}>
-              {card.device ?? "Security gate"} · {fmtTime(card.lastAt, tz)}
+              {card.device ?? "Security gate"} at {fmtTime(card.lastAt, tz)}
             </span>
           </span>
           {open > 1 && (
@@ -403,6 +403,7 @@ export function GateRefusalAlert({
         </div>
 
         <div className={styles.gaBody}>
+        <section className={styles.gaPanel}>
         <div className={styles.gaHero}>
           <span className={styles.gaPhoto}>
             <span className={styles.initials} style={{ fontSize: 56 }} aria-hidden="true">
@@ -469,6 +470,7 @@ export function GateRefusalAlert({
 
         {!visitor && !ended && !live && <p className={styles.gaNote}>Adding to the schedule turns on once the gates check CloudTime&apos;s schedule.</p>}
         {visitor && !visitorSite && <p className={styles.gaNote}>Renewing a visitor needs the Visitors permission.</p>}
+        </section>
         {error && <p className={styles.peError}>{error}</p>}
 
         {visitor ? (

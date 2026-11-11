@@ -4152,11 +4152,11 @@
 }
 
 /* ── Gate alert ─────────────────────────────────────────────────────────────
-   Somebody the gate just turned away, made from the page's own pieces: the
-   photo, the reason as the soft amber chip the rows use for a warning, and
-   the details as the employee panel's day at a glance strip. Big, calm and white, so it reads
-   from across the room without shouting. Above every layer on the page but
-   the photo viewer. */
+   Somebody the gate just turned away, on the shared window frame: a grey
+   frame, a raised glyph tile, and the person with their details in one white
+   card, the reason as the soft amber chip the rows use for a warning. Larger
+   than any other window and glowing, so it reads from across the room.
+   Above every layer on the page but the photo viewer. */
 
 .gaScrim {
   position: fixed;
@@ -4182,8 +4182,8 @@
      under the timer as a grey strip. */
   overflow-x: hidden;
   overflow-y: auto;
-  border-radius: 24px;
-  background: var(--surface-card);
+  border-radius: 22px;
+  background: var(--ta-canvas);
   box-shadow: var(--shadow-modal);
   outline: none;
   animation:
@@ -4211,30 +4211,30 @@
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 20px 28px;
-  background: var(--surface-warning);
-  border-bottom: 1px solid var(--stroke-warning);
+  padding: 22px 26px 18px;
 }
 
+/* The frame's raised glyph tile, larger, the icon in the card's colour. */
 .gaHeadIcon {
   position: relative;
   flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 999px;
-  background: var(--fill-warning);
-  color: var(--text-on-accent);
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: var(--surface-card);
+  box-shadow: var(--ta-raised);
+  color: var(--icon-warning);
 }
 
-/* The page's live dot, in amber and larger: rings keep leaving the icon. */
+/* The page's live dot, in amber and larger: rings keep leaving the tile. */
 .gaHeadIcon::after {
   content: "";
   position: absolute;
   inset: -5px;
-  border-radius: 999px;
+  border-radius: 19px;
   border: 3px solid var(--fill-warning);
   opacity: 0;
   animation: ping 1.6s ease-out infinite;
@@ -4287,8 +4287,19 @@
 .gaBody {
   display: flex;
   flex-direction: column;
-  gap: 26px;
-  padding: 28px 28px 22px;
+  gap: 18px;
+  padding: 0 20px 20px;
+}
+
+/* The person and their details: one white card on the grey, split by rules. */
+.gaPanel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--surface-card);
+  box-shadow: var(--ta-raised);
 }
 
 .gaHero {
@@ -4296,6 +4307,7 @@
   align-items: center;
   gap: 28px;
   min-width: 0;
+  padding: 22px;
 }
 
 .gaPhoto {
@@ -4376,9 +4388,7 @@
 .gaGlance {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 0.8fr);
-  border: 1px solid var(--stroke-secondary);
-  border-radius: 16px;
-  overflow: hidden;
+  border-top: 1px solid var(--stroke-divider);
 }
 
 .gaCell {
@@ -4386,7 +4396,7 @@
   flex-direction: column;
   gap: 4px;
   min-width: 0;
-  padding: 16px 18px 17px;
+  padding: 16px 22px 17px;
 }
 
 .gaCell + .gaCell {
@@ -4409,7 +4419,9 @@
 }
 
 .gaNote {
-  margin: -8px 0 0;
+  margin: 0;
+  padding: 12px 22px 14px;
+  border-top: 1px solid var(--stroke-divider);
   font: var(--type-body2);
   color: var(--text-tertiary);
 }
@@ -4421,7 +4433,7 @@
 }
 
 .gaCountdown {
-  margin: -12px 0 0;
+  margin: -6px 0 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4477,11 +4489,9 @@
       var(--shadow-modal);
   }
 }
-.gaCard[data-tone="ended"] .gaHead {
-  background: var(--surface-error);
-  border-bottom-color: var(--stroke-error);
+.gaCard[data-tone="ended"] .gaHeadIcon {
+  color: var(--icon-error);
 }
-.gaCard[data-tone="ended"] .gaHeadIcon,
 .gaCard[data-tone="ended"] .gaQueueCount {
   background: var(--fill-error);
 }
@@ -4500,31 +4510,86 @@
   box-shadow: 0 0 0 1px var(--stroke-error);
 }
 
+/* On a phone: the photo beside the name rather than above it, and the
+   details as short rows, so both answers are in reach without scrolling. */
 @media (max-width: 560px) {
   .gaHead {
-    padding: 16px 20px;
+    padding: 18px 16px 14px;
+  }
+  .gaHeadIcon {
+    width: 44px;
+    height: 44px;
+  }
+  .gaHeadTitle {
+    font-size: 21px;
+    line-height: 26px;
   }
 
   .gaBody {
-    padding: 20px;
-    gap: 20px;
-  }
-
-  .gaName {
-    font-size: 30px;
-    line-height: 36px;
+    padding: 0 16px 16px;
+    gap: 14px;
   }
 
   .gaHero {
-    flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
     gap: 16px;
+    padding: 16px;
+  }
+  .gaPhoto {
+    width: 96px;
+    height: 112px;
+    border-radius: 14px;
+  }
+  .gaPhoto > span:first-child {
+    font-size: 32px !important;
+  }
+  .gaWho {
+    gap: 2px;
+  }
+  .gaName {
+    font-size: 24px;
+    line-height: 30px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .gaRole {
+    font-size: 15px;
+    line-height: 22px;
+  }
+  .gaStatus {
+    margin-top: 8px;
+    height: 34px;
+    padding: 0 14px 0 11px;
+    font-size: 14px;
   }
 
   .gaGlance {
     grid-template-columns: minmax(0, 1fr);
   }
-
+  /* A row each: the label on the left, the value and its line on the right. */
+  .gaCell {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 12px;
+    align-items: baseline;
+    padding: 11px 16px;
+  }
+  .gaCell > :first-child {
+    grid-row: 1 / span 2;
+  }
+  .gaCellValue {
+    font-size: 16px;
+    line-height: 22px;
+    text-align: right;
+  }
+  .gaCell > :last-child {
+    grid-column: 2;
+    min-height: 0;
+    text-align: right;
+  }
+  .gaCell > :last-child:empty {
+    display: none;
+  }
   .gaCell + .gaCell {
     border-left: 0;
     border-top: 1px solid var(--stroke-divider);
@@ -4532,6 +4597,7 @@
 
   .gaActions {
     grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
   }
 }
 
