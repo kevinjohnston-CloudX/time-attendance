@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { SESSION_ENDED_HREF } from "@/lib/constants";
 import { notePulse } from "./screen-watch";
+import { APP_BUILD_HEADER, reportBuild } from "@/lib/app-build";
 
 /**
  * How often an open Live Attendance page asks whether anything happened at
@@ -42,6 +43,9 @@ export function useSitePulse(siteId: string | null, alerts: boolean): SitePulse 
           signal: controller.signal,
         });
         if (stopped) return;
+        // Which build answered, whatever the answer: a deploy is news even
+        // when this ask failed (lib/app-build.ts, the new version banner).
+        reportBuild(res.headers?.get(APP_BUILD_HEADER));
         // The sign in has ended (12 hours, a password reset): the proxy
         // answers with the sign in page, the full check with a 401. Treated as
         // a missed ask, a screen left open at a desk kept its last numbers and

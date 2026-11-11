@@ -75,8 +75,18 @@ const securityHeaders = [
   { key: "Content-Security-Policy-Report-Only", value: reportOnlyPolicy },
 ];
 
+/**
+ * Which build this is, baked into the app so an open tab knows the code it is
+ * running, and answered live by /api/app-build so it can tell when a newer
+ * build has been deployed (the new version banner). The same expression as
+ * buildKey() in scripts/build-page-map.mjs, which names this build's page
+ * fingerprints after it. "local" on a laptop.
+ */
+const appBuild = (process.env.VERCEL_GIT_COMMIT_SHA || process.env.VERCEL_DEPLOYMENT_ID || "local").slice(0, 40);
+
 const nextConfig: NextConfig = {
   allowedDevOrigins: localDevHosts,
+  env: { NEXT_PUBLIC_APP_BUILD: appBuild },
   serverExternalPackages: unbundled,
   poweredByHeader: false,
   async headers() {

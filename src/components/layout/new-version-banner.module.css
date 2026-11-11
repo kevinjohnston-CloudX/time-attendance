@@ -1,0 +1,174 @@
+/* The new version banner (new-version-banner.tsx): a raised white card that
+   rises from the bottom of the page area. It carries the window header's
+   glyph tile, so it reads as CloudTime speaking, not as a browser message.
+   One moment of motion: the card arrives and its arrow turns once. */
+
+.banner {
+  position: fixed;
+  /* Above the page, Live Attendance's full screen (45) and toasts (40);
+     below a window's scrim (50), so an open window is finished first. */
+  z-index: 46;
+  bottom: 20px;
+  left: var(--nvb-center, 50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: min(600px, calc(100vw - 32px));
+  padding: 10px 10px 10px 12px;
+  border-radius: 14px;
+  background: var(--surface-card);
+  box-shadow: var(--ta-menu-shadow);
+  transform: translateX(-50%);
+  animation: nvbIn 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.banner[data-leaving] {
+  animation: nvbOut 180ms ease-in both;
+}
+
+.glyph {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--surface-info);
+  color: var(--icon-accent);
+}
+.glyph svg {
+  width: 18px;
+  height: 18px;
+  animation: nvbTurn 700ms cubic-bezier(0.65, 0, 0.35, 1) 260ms both;
+}
+
+.text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.title {
+  font: var(--weight-semibold) 14px/20px var(--font-sans);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.line {
+  font: var(--type-body2);
+  color: var(--text-secondary);
+}
+
+.actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  margin-left: 12px;
+}
+.narrow {
+  display: none;
+}
+
+@keyframes nvbIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+@keyframes nvbOut {
+  to {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+}
+@keyframes nvbTurn {
+  from {
+    transform: rotate(-180deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+/* Phones: the width of the screen, just above the bottom bar. The same query
+   as the phone frame (globals.css), so the two always agree. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .banner {
+    right: 12px;
+    bottom: calc(56px + env(safe-area-inset-bottom) + 12px);
+    left: 12px;
+    width: auto;
+    max-width: none;
+    gap: 10px;
+    transform: none;
+    animation-name: nvbInPhone;
+  }
+  .banner[data-leaving] {
+    animation-name: nvbOutPhone;
+  }
+  .actions {
+    margin-left: auto;
+  }
+  .wide {
+    display: none;
+  }
+  .narrow {
+    display: inline;
+  }
+  /* One row: the title says it, the button says what to do. */
+  .glyph,
+  .line {
+    display: none;
+  }
+  .banner {
+    padding-left: 16px;
+  }
+  .title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+@keyframes nvbInPhone {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes nvbOutPhone {
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banner,
+  .banner[data-leaving] {
+    animation-name: nvbFade;
+    animation-duration: 200ms;
+  }
+  .banner[data-leaving] {
+    animation-direction: reverse;
+  }
+  .glyph svg {
+    animation: none;
+  }
+}
+@keyframes nvbFade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media print {
+  .banner {
+    display: none;
+  }
+}

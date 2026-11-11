@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "node scripts/check-company-scope.mjs && prisma migrate deploy && prisma generate && next build",
+    "postbuild": "node scripts/build-page-map.mjs",
     "check:security": "node scripts/check-company-scope.mjs",
     "start": "next start",
     "postinstall": "prisma generate",

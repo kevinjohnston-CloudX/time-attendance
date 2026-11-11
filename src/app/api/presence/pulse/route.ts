@@ -4,6 +4,8 @@ import { withRBAC } from "@/lib/rbac/guard";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { canViewSite, getSitePulse, type SitePulse } from "@/lib/presence/pulse.service";
 import { codeOf } from "@/lib/action-errors";
+import { APP_BUILD_HEADER } from "@/lib/app-build";
+import { servedBuild } from "@/lib/app-build.server";
 
 /**
  * GET /api/presence/pulse?site=<id>[&alerts=1]
@@ -42,7 +44,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const siteId = (req.nextUrl.searchParams.get("site") ?? "").trim();
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(siteId)) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const res = await pulse({ siteId, alerts: req.nextUrl.searchParams.get("alerts") === "1" });
-  const headers = { "Cache-Control": "no-store" };
+  // Which build answered: an open Live Attendance learns of a deploy within
+  // one pulse (lib/app-build.ts, the new version banner).
+  const headers = { "Cache-Control": "no-store", [APP_BUILD_HEADER]: await servedBuild() };
   if (res.success) return NextResponse.json(res.data, { headers });
   const status = codeOf(res) === "UNAUTHENTICATED" ? 401 : codeOf(res) === "FORBIDDEN" || codeOf(res) === "NOT_FOUND" ? 404 : 500;
   const error = status === 401 ? "Unauthorized" : status === 404 ? "Not found" : res.error;
