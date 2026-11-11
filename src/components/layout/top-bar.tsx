@@ -9,15 +9,15 @@ import { ThemeToggle } from "./theme-toggle";
 import { KeyboardShortcuts } from "./keyboard-shortcuts";
 import { NotificationBell } from "./notification-bell";
 import { HelpButton } from "@/components/support/help-button";
-import { SegmentedControl } from "@/components/ui";
-import { navModeStore, useNavMode, collapseStore, useSidebarCollapsed, type NavMode } from "./nav-mode";
+import { NavLayoutMenu } from "./nav-layout-menu";
+import { useNavMode, collapseStore, useSidebarCollapsed } from "./nav-mode";
 import type { WaitingItem } from "@/lib/dashboard/dashboard-data";
 
 /**
  * The bar above the content, from the Layout handoff: 36px with no rule under
  * it, sitting on the canvas. A glass pill on the left holds the sidebar toggle
- * and the breadcrumb; on the right the Nav switch, then one pill holding the
- * theme, the shortcuts and the bell.
+ * and the breadcrumb; on the right one pill holding the navigation layout,
+ * the theme, the shortcuts and the bell.
  *
  * <p>It exists for the breadcrumb. The admin area is three levels deep in
  * places, a site inside Sites inside Administration, and the trail is built
@@ -137,34 +137,11 @@ export function TopBar({
 
       <div className="flex-1" />
 
-      {/* The navigation layout switch: a label and a small segmented control.
-          Under 1024px the label goes and the switch stays, so the bell never
-          gets pushed off the edge. */}
-      <span
-        className="hidden flex-none whitespace-nowrap uppercase lg:inline"
-        style={{
-          font: "var(--weight-semibold) 10px/1 var(--font-sans)",
-          letterSpacing: "0.08em",
-          color: "var(--text-tertiary)",
-        }}
-      >
-        Nav
-      </span>
-      <SegmentedControl
-        size="sm"
-        ariaLabel="Navigation layout"
-        value={navMode}
-        onChange={(next) => navModeStore.set(next as NavMode)}
-        items={[
-          { value: "grouped", label: "Grouped" },
-          { value: "rail", label: "Rail" },
-        ]}
-      />
-
       <div
         className="relative flex h-[34px] flex-none items-center gap-0.5 rounded-full px-[3px]"
         style={{ background: "var(--surface-card)", boxShadow: "var(--ta-pill-shadow)" }}
       >
+        <NavLayoutMenu />
         <ThemeToggle />
         {helpOffered && <HelpButton variant="pill" photo={userPhoto} />}
         <KeyboardShortcuts reachableHrefs={reachableHrefs} />
