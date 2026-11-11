@@ -231,6 +231,7 @@ function LeaveTypeDialog({
   return (
     <SetupDialog
       title={lt ? lt.name : "Add leave type"}
+      icon={<Palmtree />}
       subtitle={lt ? "Edit leave type" : undefined}
       submitLabel={lt ? "Save changes" : "Add leave type"}
       pending={pending}

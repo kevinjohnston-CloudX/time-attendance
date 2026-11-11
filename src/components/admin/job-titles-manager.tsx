@@ -164,6 +164,7 @@ function JobTitleDialog({
   return (
     <SetupDialog
       title={j ? j.name : "Add job title"}
+      icon={<Briefcase />}
       subtitle={j ? `${people.toLocaleString()} ${people === 1 ? "employee has" : "employees have"} this job title` : undefined}
       submitLabel={j ? "Save changes" : "Add job title"}
       pending={pending}

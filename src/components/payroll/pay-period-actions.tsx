@@ -218,8 +218,8 @@ export function PayPeriodActions({ payPeriodId, label, status, isPast, canRunPay
               <Button hierarchy="secondary" onClick={() => setReopen(false)} disabled={isPending}>
                 Cancel
               </Button>
-              <Button tone="warning" onClick={handleReopen} disabled={isPending || !reason.trim()}>
-                {isPending ? (status === "LOCKED" ? "Unlocking…" : "Reopening…") : reopenWord}
+              <Button tone="warning" pending={isPending} onClick={handleReopen} disabled={isPending || !reason.trim()}>
+                {isPending ? (status === "LOCKED" ? "Unlocking…" : "Reopening…") : `${reopenWord} pay period`}
               </Button>
             </>
           }

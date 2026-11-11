@@ -89,7 +89,7 @@ export function TimecardLockControl({
                 Cancel
               </Button>
               <Button pending={isPending} tone="warning" onClick={run} disabled={isPending || !reason.trim()}>
-                {isPending ? "Unlocking…" : "Unlock"}
+                {isPending ? "Unlocking…" : "Unlock timecard"}
               </Button>
             </>
           }

@@ -79,6 +79,7 @@
 }
 .subtitle {
   font: var(--type-body2);
+  font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
   text-wrap: pretty;
 }
@@ -113,6 +114,14 @@
   flex: 1;
   flex-direction: column;
   padding: 0 16px;
+}
+
+/* A form window: the form takes the body's place in the column. */
+.form {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
 }
 
 /* ---- Footer: one quiet line, the buttons on the right ---- */
@@ -228,6 +237,9 @@
   .footHint {
     flex-basis: 100%;
     margin: 0 0 4px;
+  }
+  .footHint:empty {
+    display: none;
   }
   .actions {
     flex: 1 1 100%;

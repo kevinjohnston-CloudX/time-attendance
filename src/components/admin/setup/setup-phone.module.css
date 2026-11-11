@@ -303,20 +303,7 @@
   }
 
   /* ---- The edit window ---- */
-  /* Delete (or why it cannot be) on a line of its own, then Cancel and Save
-     sharing the width. */
-  .dialogFoot {
-    flex-wrap: wrap;
-  }
-  .dialogFoot > span:first-child {
-    flex-basis: 100%;
-  }
-  .dialogFoot > span:first-child:empty {
-    display: none;
-  }
-  .dialogFoot > :global(.wms-btn) {
-    flex: 1 1 0;
-  }
+  /* Delete's question wraps onto a line of its own. */
   .deleteAsk {
     flex-wrap: wrap;
   }

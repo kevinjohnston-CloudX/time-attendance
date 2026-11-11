@@ -1,17 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ListFilter } from "lucide-react";
-import { Button, Checkbox } from "@/components/ui";
+import { Check, ListFilter } from "lucide-react";
+import { Button, SearchInput } from "@/components/ui";
+import { Window, WindowCard } from "@/components/ui/window";
 import styles from "./run-payroll.module.css";
-import { PpDialog } from "@/components/payroll/pp-dialog";
+import own from "./multi-select-filter.module.css";
 
 type Option = { id: string; name: string };
 
+/** More than this many and the window offers a search. */
+const SEARCH_FROM = 8;
+
 /**
- * A filter that takes several values, picked the way NovaTime does it: a
- * window with Available and Selected lists and buttons to move items between
- * them. An empty Selected list means all.
+ * A filter that takes several values: a window with one list, a tick on each
+ * row, and Select all and Clear. Nothing ticked means all are included. The
+ * choice is a draft until Apply filter, so Cancel leaves the filter as it was.
  */
 export function MultiSelectFilter({
   label,
@@ -26,41 +30,29 @@ export function MultiSelectFilter({
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<string[]>(value);
-  const [pickLeft, setPickLeft] = useState<string[]>([]);
-  const [pickRight, setPickRight] = useState<string[]>([]);
+  const [q, setQ] = useState("");
 
   const names = options.filter((o) => value.includes(o.id)).map((o) => o.name);
   const summary = names.length === 0 ? "All" : names.length <= 2 ? names.join(", ") : `${names.length} selected`;
 
   const chosen = new Set(draft);
-  const available = options.filter((o) => !chosen.has(o.id));
-  const selected = options.filter((o) => chosen.has(o.id));
+  const needle = q.trim().toLowerCase();
+  const shown = needle ? options.filter((o) => o.name.toLowerCase().includes(needle)) : options;
+  const shownIds = shown.map((o) => o.id);
 
   function openDialog() {
     setDraft(value);
-    setPickLeft([]);
-    setPickRight([]);
+    setQ("");
     setOpen(true);
   }
-  const add = (ids: string[]) => { setDraft((d) => [...new Set([...d, ...ids])]); setPickLeft([]); };
-  const remove = (ids: string[]) => { setDraft((d) => d.filter((x) => !ids.includes(x))); setPickRight([]); };
-  const picked = (e: React.ChangeEvent<HTMLSelectElement>) => [...e.target.selectedOptions].map((o) => o.value);
+  const toggle = (id: string, on: boolean) => setDraft((d) => (on ? [...d, id] : d.filter((x) => x !== id)));
+  const selectShown = () => setDraft((d) => [...new Set([...d, ...shownIds])]);
+  const clearShown = () => setDraft((d) => d.filter((x) => !shownIds.includes(x)));
 
-  const listStyle: React.CSSProperties = {
-    width: "100%",
-    height: 260,
-    border: "1px solid var(--stroke-default)",
-    borderRadius: 8,
-    background: "var(--surface-card)",
-    color: "var(--text-primary)",
-    font: "var(--type-body2)",
-    padding: 4,
-  };
-  const heading = (text: string, n: number) => (
-    <span style={{ font: "var(--type-button2)", color: "var(--text-secondary)" }}>
-      {text} <span style={{ color: "var(--text-tertiary)" }}>({n})</span>
-    </span>
-  );
+  const count =
+    draft.length === 0
+      ? `None ticked, so all ${options.length.toLocaleString("en-US")} are included`
+      : `${draft.length.toLocaleString("en-US")} of ${options.length.toLocaleString("en-US")} selected`;
 
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
@@ -82,94 +74,66 @@ export function MultiSelectFilter({
       </button>
 
       {open && (
-        <PpDialog
-          icon={<ListFilter className="h-[18px] w-[18px]" aria-hidden />}
-          title={`${label} filter`}
-          subtitle={
-            <>
-              <span className="ta-desktop-only">Move items to Selected to filter by them. Leave Selected empty to include all.</span>
-              <span className="ta-phone-only">Tick the ones to filter by. Leave all unticked to include everyone.</span>
-            </>
-          }
-          width={680}
+        <Window
+          icon={<ListFilter />}
+          title={label}
+          subtitle="Tick the ones to include. With none ticked, all are included."
+          size="sm"
+          foot={count}
           onClose={() => setOpen(false)}
-          footer={
+          actions={
             <>
-              <Button hierarchy="secondary" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button onClick={() => { onChange(draft); setOpen(false); }}>OK</Button>
+              <Button hierarchy="secondary" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  onChange(options.filter((o) => chosen.has(o.id)).map((o) => o.id));
+                  setOpen(false);
+                }}
+              >
+                Apply filter
+              </Button>
             </>
           }
         >
-          {/* Two lists and arrows on a computer. A phone draws a multiple
-              select as one picker button and has no Ctrl, Shift or double
-              click, so there it is one list of ticks over the same draft. */}
-          <div className="ta-phone-only">
-            <div className={styles.choiceTools}>
-              {heading("Selected", selected.length)}
-              <span className="flex gap-1">
-                <Button size="sm" hierarchy="link" disabled={!available.length} onClick={() => add(available.map((o) => o.id))}>
+          <WindowCard>
+            <div className={own.tools}>
+              {options.length > SEARCH_FROM ? (
+                <SearchInput value={q} onValueChange={setQ} placeholder={`Search ${label.toLowerCase()}`} width={400} />
+              ) : (
+                <span className={own.toolsLabel}>{options.length.toLocaleString("en-US")} to choose from</span>
+              )}
+              <span className={own.toolsActions}>
+                <Button size="sm" hierarchy="link" disabled={!shown.length || shown.every((o) => chosen.has(o.id))} onClick={selectShown}>
                   Select all
                 </Button>
-                <Button size="sm" hierarchy="link" disabled={!selected.length} onClick={() => remove(selected.map((o) => o.id))}>
+                <Button size="sm" hierarchy="link" disabled={!shown.some((o) => chosen.has(o.id))} onClick={clearShown}>
                   Clear
                 </Button>
               </span>
             </div>
-            <div className={styles.choices} role="group" aria-label={label}>
-              {options.map((o) => (
-                <div key={o.id} className={styles.choice}>
-                  <Checkbox
-                    checked={chosen.has(o.id)}
-                    onChange={(on) => (on ? add([o.id]) : remove([o.id]))}
-                    label={o.name}
-                  />
-                </div>
-              ))}
+            <div className={`${own.list} ta-scroll`} data-search={options.length > SEARCH_FROM || undefined} role="group" aria-label={label}>
+              {shown.map((o) => {
+                const on = chosen.has(o.id);
+                return (
+                  <label key={o.id} className={own.row} data-on={on}>
+                    <input type="checkbox" className="sr-only" checked={on} onChange={(e) => toggle(o.id, e.target.checked)} />
+                    <span className={own.mark} aria-hidden="true">
+                      {on && <Check />}
+                    </span>
+                    <span className={own.name} title={o.name}>
+                      {o.name}
+                    </span>
+                  </label>
+                );
+              })}
+              {shown.length === 0 && (
+                <p className={own.empty}>{options.length ? "Nothing matches that search." : "Nothing to filter by yet."}</p>
+              )}
             </div>
-          </div>
-
-          <div className="ta-desktop-only">
-          <div className="grid items-center gap-3" style={{ gridTemplateColumns: "minmax(0,1fr) auto minmax(0,1fr)" }}>
-            <label className="flex min-w-0 flex-col gap-1.5">
-              {heading("Available", available.length)}
-              <select
-                multiple
-                value={pickLeft}
-                onChange={(e) => setPickLeft(picked(e))}
-                onDoubleClick={(e) => { const v = (e.target as HTMLOptionElement).value; if (v) add([v]); }}
-                style={listStyle}
-                aria-label={`Available ${label}`}
-              >
-                {available.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-              </select>
-            </label>
-
-            <div className="flex flex-col gap-2 pt-6">
-              <Button size="sm" hierarchy="secondary" iconOnly aria-label="Add the highlighted items" title="Add highlighted" disabled={!pickLeft.length} onClick={() => add(pickLeft)} leadingIcon={<ChevronRight className="h-4 w-4" />} />
-              <Button size="sm" hierarchy="secondary" iconOnly aria-label="Add all" title="Add all" disabled={!available.length} onClick={() => add(available.map((o) => o.id))} leadingIcon={<ChevronsRight className="h-4 w-4" />} />
-              <Button size="sm" hierarchy="secondary" iconOnly aria-label="Remove the highlighted items" title="Remove highlighted" disabled={!pickRight.length} onClick={() => remove(pickRight)} leadingIcon={<ChevronLeft className="h-4 w-4" />} />
-              <Button size="sm" hierarchy="secondary" iconOnly aria-label="Remove all" title="Remove all" disabled={!selected.length} onClick={() => remove(selected.map((o) => o.id))} leadingIcon={<ChevronsLeft className="h-4 w-4" />} />
-            </div>
-
-            <label className="flex min-w-0 flex-col gap-1.5">
-              {heading("Selected", selected.length)}
-              <select
-                multiple
-                value={pickRight}
-                onChange={(e) => setPickRight(picked(e))}
-                onDoubleClick={(e) => { const v = (e.target as HTMLOptionElement).value; if (v) remove([v]); }}
-                style={listStyle}
-                aria-label={`Selected ${label}`}
-              >
-                {selected.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-              </select>
-            </label>
-          </div>
-          <p className="m-0 mt-2" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
-            Ctrl or Shift click to highlight several. Double-click an item to move it.
-          </p>
-          </div>
-        </PpDialog>
+          </WindowCard>
+        </Window>
       )}
     </div>
   );

@@ -171,6 +171,7 @@ function PayTypeDialog({
   return (
     <SetupDialog
       title={p ? `${p.number} ${p.description ?? ""}`.trim() : "Add pay type"}
+      icon={<Tag />}
       subtitle={p ? `${people.toLocaleString()} ${people === 1 ? "employee has" : "employees have"} this pay type` : undefined}
       submitLabel={p ? "Save changes" : "Add pay type"}
       pending={pending}

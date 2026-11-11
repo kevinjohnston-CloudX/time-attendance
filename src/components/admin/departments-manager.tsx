@@ -203,6 +203,7 @@ function DepartmentDialog({
   return (
     <SetupDialog
       title={department ? department.name : "Add department"}
+      icon={<FolderOpen />}
       subtitle={department ? "Edit department" : undefined}
       submitLabel={department ? "Save changes" : "Add department"}
       pending={pending}

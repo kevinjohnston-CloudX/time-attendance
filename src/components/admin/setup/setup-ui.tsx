@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent, type ReactNode, type SelectHTMLAttributes } from "react";
-import { X } from "lucide-react";
 import { Badge, Banner, Button, Checkbox, SearchInput, SegmentedControl, Select, statusTone } from "@/components/ui";
 import phone from "./setup-phone.module.css";
-import { Overlay } from "@/components/ui/overlay";
+import { Window, WindowCard } from "@/components/ui/window";
 import { useViewOnly } from "./view-only";
 
 /**
@@ -318,13 +317,11 @@ export function Muted({ children = "None" }: { children?: ReactNode }) {
 export const FIELD_GRID = "grid gap-x-4 gap-y-3.5 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,46%)),1fr))]";
 
 /**
- * Add or edit one record: its name, the fields, then Cancel and Save at the
- * foot, with Delete on the left when the area allows it. Escape, the X and the
- * scrim close it; nothing is saved until Save.
- *
- * <p>With an icon, the header is the product's form window header (the Pay
- * Periods handoff's): the area's glyph on a tile, the title at the design
- * system's modal size, and one line under it saying what the record is.
+ * Add or edit one record, on the shared window frame: the area's glyph, the
+ * record's name and one line, the fields in one white card, then Delete on
+ * the left of the foot (when the area allows it) and Cancel and Save on the
+ * right. Escape, the X and the scrim close it, except while it saves;
+ * nothing is saved until Save.
  */
 export function SetupDialog({
   title,
@@ -341,8 +338,8 @@ export function SetupDialog({
 }: {
   title: string;
   subtitle?: string;
-  /** The area's glyph, 18px, the same one its empty state draws. */
-  icon?: ReactNode;
+  /** The area's glyph, the same one its empty state draws. */
+  icon: ReactNode;
   submitLabel: string;
   pending: boolean;
   error: string | null;
@@ -353,114 +350,58 @@ export function SetupDialog({
   width?: number;
   children: ReactNode;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const closeRef = useRef(onClose);
-  useEffect(() => {
-    closeRef.current = onClose;
-  }, [onClose]);
+  const fieldsRef = useRef<HTMLDivElement>(null);
   // Looking only: the fields are switched off, and Close replaces Cancel and Save.
   const viewOnly = useViewOnly();
 
+  // The first field, once the window has taken focus for itself.
   useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    ref.current?.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea")?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      closeRef.current();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      window.removeEventListener("keydown", onKey, true);
-      opener?.focus?.();
-    };
-  }, []);
+    if (!viewOnly) fieldsRef.current?.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea")?.focus();
+  }, [viewOnly]);
 
   return (
-    <Overlay
-      className="ta-sheet-scrim z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(3, 7, 18, 0.5)" }}
-      onClick={(e) => e.target === e.currentTarget && !pending && onClose()}
-    >
-      <div
-        ref={ref}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="setup-dialog-title"
-        className="ta-sheet ta-modal flex max-h-[calc(100dvh-2rem)] w-full flex-col"
-        style={{ maxWidth: width, borderRadius: "var(--radius-l)" }}
-      >
-        <header
-          className={`flex flex-none items-start gap-3 px-5 ${icon ? "pb-4 pt-5" : "pb-3.5 pt-4"}`}
-          style={{ borderBottom: "1px solid var(--stroke-divider)" }}
-        >
-          {icon && (
-            <span
-              className="grid h-[38px] w-[38px] flex-none place-items-center"
-              style={{ borderRadius: 11, background: "var(--ta-well)", boxShadow: "inset 0 0 0 1px var(--ta-well-ring)", color: "var(--icon-tertiary)" }}
-              aria-hidden="true"
-            >
-              {icon}
-            </span>
-          )}
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <h2
-              id="setup-dialog-title"
-              className="truncate"
-              style={{ margin: 0, font: icon ? "var(--type-h3)" : "var(--type-h4)", color: "var(--text-primary)" }}
-            >
-              {title}
-            </h2>
-            {subtitle && (
-              <span style={{ font: "var(--type-body2)", color: icon ? "var(--text-secondary)" : "var(--text-tertiary)" }}>{subtitle}</span>
-            )}
-          </span>
-          <Button hierarchy="tertiary" size="sm" iconOnly onClick={onClose} disabled={pending} aria-label="Close">
-            <X className="h-4 w-4" />
+    <Window
+      icon={icon}
+      title={title}
+      subtitle={subtitle}
+      width={width}
+      busy={pending}
+      onClose={onClose}
+      onSubmit={(e: FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        if (!pending && !viewOnly) onSubmit(new FormData(e.currentTarget));
+      }}
+      foot={viewOnly ? "View only" : danger}
+      actions={
+        viewOnly ? (
+          <Button type="button" hierarchy="secondary" onClick={onClose}>
+            Close
           </Button>
-        </header>
-        <form
-          className="flex min-h-0 flex-1 flex-col"
-          onSubmit={(e: FormEvent<HTMLFormElement>) => {
-            e.preventDefault();
-            if (!pending && !viewOnly) onSubmit(new FormData(e.currentTarget));
-          }}
-        >
-          <div className="ta-scroll flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
-            {error && <Banner tone="error" title="Not saved" body={error} />}
-            {viewOnly ? (
-              <fieldset disabled className="contents">
-                {children}
-              </fieldset>
-            ) : (
-              children
-            )}
-          </div>
-          <footer className={`${phone.dialogFoot} flex flex-none items-center gap-2 px-5 py-3`} style={{ borderTop: "1px solid var(--stroke-divider)" }}>
-            {viewOnly ? (
-              <>
-                <span className="flex min-w-0 flex-1 items-center" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-                  View only
-                </span>
-                <Button type="button" hierarchy="secondary" onClick={onClose}>
-                  Close
-                </Button>
-              </>
-            ) : (
-              <>
-                <span className="flex min-w-0 flex-1 items-center">{danger}</span>
-                <Button type="button" hierarchy="secondary" onClick={onClose} disabled={pending}>
-                  Cancel
-                </Button>
-                <Button pending={pending} type="submit" disabled={pending}>
-                  {pending ? "Saving…" : submitLabel}
-                </Button>
-              </>
-            )}
-          </footer>
-        </form>
-      </div>
-    </Overlay>
+        ) : (
+          <>
+            <Button type="button" hierarchy="secondary" onClick={onClose} disabled={pending}>
+              Cancel
+            </Button>
+            <Button pending={pending} type="submit" disabled={pending}>
+              {pending ? "Saving…" : submitLabel}
+            </Button>
+          </>
+        )
+      }
+    >
+      {error && <Banner tone="error" title="Not saved" body={error} />}
+      <WindowCard padded>
+        <div ref={fieldsRef} className="flex flex-col gap-4">
+          {viewOnly ? (
+            <fieldset disabled className="contents">
+              {children}
+            </fieldset>
+          ) : (
+            children
+          )}
+        </div>
+      </WindowCard>
+    </Window>
   );
 }
 

@@ -205,6 +205,7 @@ function AgencyDialog({
   return (
     <SetupDialog
       title={a ? `${a.code} ${a.description}` : "Add agency"}
+      icon={<Users />}
       subtitle={a ? `${people.toLocaleString()} ${people === 1 ? "employee is" : "employees are"} in this agency` : undefined}
       submitLabel={a ? "Save changes" : "Add agency"}
       pending={pending}

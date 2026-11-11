@@ -240,6 +240,7 @@ function ReasonCodeDialog({
   return (
     <SetupDialog
       title={rc ? `${rc.code} ${rc.label}` : "Add reason code"}
+      icon={<MessageSquare />}
       subtitle={rc ? `On ${used.toLocaleString()} timecard ${used === 1 ? "day" : "days"}` : undefined}
       submitLabel={rc ? "Save changes" : "Add reason code"}
       pending={pending}

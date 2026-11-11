@@ -257,6 +257,7 @@ function HolidayDialog({
   return (
     <SetupDialog
       title={holiday ? holiday.name : "Add holiday"}
+      icon={<CalendarDays />}
       subtitle={holiday ? format(localDay(holiday.date), "EEEE, MMMM d, yyyy") : undefined}
       submitLabel={holiday ? "Save changes" : "Add holiday"}
       pending={pending}

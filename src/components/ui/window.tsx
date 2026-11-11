@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { Button } from "./button";
 import { Overlay } from "./overlay";
@@ -43,6 +43,7 @@ export function Window({
   flush = false,
   closeOnScrim = true,
   alert = false,
+  onSubmit,
   bodyClassName,
   className,
   onClose,
@@ -68,6 +69,9 @@ export function Window({
   closeOnScrim?: boolean;
   /** A confirmation: read out as an alert, and always above whatever opened it. */
   alert?: boolean;
+  /** A form window: the body and the footer are one form, so Enter in a
+   *  field and a submit button in the actions both send it. */
+  onSubmit?: (e: FormEvent<HTMLFormElement>) => void;
   bodyClassName?: string;
   className?: string;
   onClose: () => void;
@@ -132,6 +136,24 @@ export function Window({
     if (!busy) onClose();
   };
 
+  const body = (
+    <div className={`${flush ? styles.flush : `ta-scroll ${styles.body}`}${bodyClassName ? ` ${bodyClassName}` : ""}`}>{children}</div>
+  );
+  const footer = (
+    <footer className={styles.foot}>
+      <span className={styles.footHint} data-tone={footTone} aria-live="polite">
+        {foot}
+      </span>
+      <span className={`${styles.actions} ta-sheet-actions`}>
+        {actions ?? (
+          <Button hierarchy="secondary" onClick={close} disabled={busy}>
+            Close
+          </Button>
+        )}
+      </span>
+    </footer>
+  );
+
   return (
     <Overlay
       className={`${styles.scrim} ta-sheet-scrim`}
@@ -164,20 +186,17 @@ export function Window({
           </Button>
         </header>
 
-        <div className={`${flush ? styles.flush : `ta-scroll ${styles.body}`}${bodyClassName ? ` ${bodyClassName}` : ""}`}>{children}</div>
-
-        <footer className={styles.foot}>
-          <span className={styles.footHint} data-tone={footTone} aria-live="polite">
-            {foot}
-          </span>
-          <span className={`${styles.actions} ta-sheet-actions`}>
-            {actions ?? (
-              <Button hierarchy="secondary" onClick={close} disabled={busy}>
-                Close
-              </Button>
-            )}
-          </span>
-        </footer>
+        {onSubmit ? (
+          <form className={styles.form} onSubmit={onSubmit}>
+            {body}
+            {footer}
+          </form>
+        ) : (
+          <>
+            {body}
+            {footer}
+          </>
+        )}
       </div>
     </Overlay>
   );

@@ -257,6 +257,7 @@ function CategoryDialog({
   return (
     <SetupDialog
       title={c ? `${c.number} ${c.description ?? ""}`.trim() : "Add pay category"}
+      icon={<Layers />}
       subtitle={c ? `${people.toLocaleString()} ${people === 1 ? "employee" : "employees"} in this category` : undefined}
       submitLabel={c ? "Save changes" : "Add pay category"}
       pending={pending}
