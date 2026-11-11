@@ -55,7 +55,7 @@ const CONFIRM: Record<Confirm, { title: string; text: string; label: string; pen
   lock: {
     title: "Lock pay period?",
     text: "Every timesheet in this period is locked, and the period's accruals and approved leave are posted.",
-    label: "Lock Pay Period",
+    label: "Lock pay period",
     pending: "Locking…",
     tone: "warning",
   },

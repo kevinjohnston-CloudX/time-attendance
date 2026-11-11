@@ -83,6 +83,13 @@
   text-wrap: pretty;
 }
 
+/* A confirmation's title is the question itself, so it wraps rather than
+   cut a name off halfway. */
+.window[data-alert] .title {
+  white-space: normal;
+  text-wrap: balance;
+}
+
 /* ---- Body: the caller's white cards, on the grey ---- */
 .body {
   display: flex;

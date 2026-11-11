@@ -1779,6 +1779,7 @@ export function EditEmployeeForm({
           title="Discard your changes?"
           tone="warning"
           confirmLabel="Discard changes"
+          cancelLabel="Keep editing"
           onCancel={() => setAskingDiscard(false)}
           onConfirm={discard}
         >

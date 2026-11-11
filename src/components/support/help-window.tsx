@@ -553,7 +553,8 @@ export function HelpWindow({ onClose, photo = null }: { onClose: () => void; pho
       {confirmDiscard && (
         <ConfirmDialog
           title="Discard this request?"
-          confirmLabel="Discard"
+          confirmLabel="Discard request"
+          cancelLabel="Keep editing"
           tone="warning"
           onConfirm={onClose}
           onCancel={() => setConfirmDiscard(false)}

@@ -42,6 +42,7 @@ export function Window({
   busy = false,
   flush = false,
   closeOnScrim = true,
+  alert = false,
   bodyClassName,
   className,
   onClose,
@@ -65,6 +66,8 @@ export function Window({
   /** The body draws its own panes edge to edge, with no scroll of its own. */
   flush?: boolean;
   closeOnScrim?: boolean;
+  /** A confirmation: read out as an alert, and always above whatever opened it. */
+  alert?: boolean;
   bodyClassName?: string;
   className?: string;
   onClose: () => void;
@@ -85,8 +88,7 @@ export function Window({
   useEffect(() => {
     stack.push(id);
     // Counted once, on open: a window opened over another sits above it.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setDepth(stack.length > 1 ? 2 : 1);
+    setDepth(alert || stack.length > 1 ? 2 : 1);
     const opener = document.activeElement as HTMLElement | null;
     ref.current?.focus({ preventScroll: true });
 
@@ -122,6 +124,8 @@ export function Window({
       if (at >= 0) stack.splice(at, 1);
       opener?.focus?.({ preventScroll: true });
     };
+    // Depth is set once, on open; alert never changes while a window is open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const close = () => {
@@ -137,10 +141,11 @@ export function Window({
       <div
         ref={ref}
         tabIndex={-1}
-        role="dialog"
+        role={alert ? "alertdialog" : "dialog"}
         aria-modal="true"
         aria-labelledby={titleId}
         aria-busy={busy || undefined}
+        data-alert={alert || undefined}
         className={`${styles.window} ta-sheet${className ? ` ${className}` : ""}`}
         style={{ maxWidth: width ?? SIZES[size] }}
       >

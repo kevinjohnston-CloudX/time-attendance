@@ -727,6 +727,7 @@ function InlinePunchEdit({
           <ConfirmDialog
             title="Remove this punch?"
             confirmLabel="Remove punch"
+            hint="This cannot be undone."
             confirmDisabled={!deleteReason.trim()}
             onCancel={() => { setAskingDelete(false); setDeleteReason(""); }}
             onConfirm={() => {
@@ -737,19 +738,17 @@ function InlinePunchEdit({
               onDelete(reason);
             }}
           >
-            The punch is taken off this timecard and the hours are worked out again. This cannot be undone.
-            <span className="mt-3 block text-left">
-              <Textarea
-                label="Reason"
-                required
-                rows={2}
-                maxLength={500}
-                value={deleteReason}
-                onChange={(e) => setDeleteReason(e.target.value)}
-                placeholder="For example: badge scanned twice"
-                hint="Kept with the punch history."
-              />
-            </span>
+            <p>The punch is taken off this timecard and the hours are worked out again.</p>
+            <Textarea
+              label="Reason"
+              required
+              rows={2}
+              maxLength={500}
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              placeholder="For example: badge scanned twice"
+              hint="Kept with the punch history."
+            />
           </ConfirmDialog>,
           document.body
         )}

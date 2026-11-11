@@ -60,12 +60,13 @@ export function DeleteDocumentButton({ documentId }: Props) {
           title="Delete this document?"
           confirmLabel="Delete document"
           pendingLabel="Deleting…"
+          hint="This cannot be undone."
           pending={isPending}
           error={error}
           onConfirm={handleDelete}
           onCancel={() => setConfirming(false)}
         >
-          The file is removed for good and the employee can no longer download it. This cannot be undone.
+          The file is removed for good and the employee can no longer download it.
         </ConfirmDialog>
       )}
     </>

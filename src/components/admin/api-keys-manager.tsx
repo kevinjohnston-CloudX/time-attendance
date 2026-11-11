@@ -354,50 +354,51 @@ function RevealDialog({ name, fullKey, onClose }: { name: string; fullKey: strin
   );
 }
 
-const CONFIRM_COPY: Record<Confirm["kind"], { title: string; tone: "danger" | "warning"; confirm: string; pending: string; body: (name: string) => string }> = {
+const CONFIRM_COPY: Record<Confirm["kind"], { title: string; tone: "danger" | "warning"; confirm: string; pending: string; body: string; hint?: string }> = {
   revoke: {
-    title: "Revoke key?",
+    title: "Revoke this key?",
     tone: "danger",
-    confirm: "Revoke",
+    confirm: "Revoke key",
     pending: "Revoking…",
-    body: (n) => `Revoke key "${n}"? Any integration using it will immediately lose access.`,
+    body: "Any integration using it loses access immediately.",
+    hint: "This cannot be undone.",
   },
   regen: {
-    title: "Regenerate key?",
+    title: "Regenerate this key?",
     tone: "warning",
-    confirm: "Regenerate",
+    confirm: "Regenerate key",
     pending: "Regenerating…",
-    body: (n) => `Regenerate key "${n}"? The existing key will stop working immediately.`,
+    body: "The current key stops working immediately. Anything using it needs the new one.",
   },
   allowDirectory: {
     title: "Allow directory access?",
     tone: "warning",
     confirm: "Allow access",
     pending: "Allowing…",
-    body: (n) =>
-      `Anything holding "${n}" will be able to read every employee in this company: names, usernames, work and personal emails, phone numbers, badge IDs, site, department and supervisor. Pay, address and date of birth are never included.`,
+    body:
+      "Anything holding this key will be able to read every employee in this company: names, usernames, work and personal emails, phone numbers, badge IDs, site, department and supervisor. Pay, address and date of birth are never included.",
   },
   removeDirectory: {
     title: "Remove directory access?",
     tone: "danger",
     confirm: "Remove access",
     pending: "Removing…",
-    body: (n) => `"${n}" will stop reading the employee directory right away. Its other access is unchanged.`,
+    body: "This key stops reading the employee directory right away. Its other access is unchanged.",
   },
   allowTimeOff: {
     title: "Allow time off requests?",
     tone: "warning",
     confirm: "Allow requests",
     pending: "Allowing…",
-    body: (n) =>
-      `Anything holding "${n}" will be able to read this company's leave types and send a time off request for any employee. Each request waits for approval like any other.`,
+    body:
+      "Anything holding this key will be able to read this company's leave types and send a time off request for any employee. Each request waits for approval like any other.",
   },
   removeTimeOff: {
     title: "Remove time off requests?",
     tone: "danger",
     confirm: "Remove access",
     pending: "Removing…",
-    body: (n) => `"${n}" will stop sending time off requests right away. Its other access is unchanged.`,
+    body: "This key stops sending time off requests right away. Its other access is unchanged.",
   },
 };
 
@@ -619,6 +620,8 @@ export function ApiKeysManager({
       {confirm && (
         <ConfirmDialog
           title={CONFIRM_COPY[confirm.kind].title}
+          subtitle={confirm.name}
+          hint={CONFIRM_COPY[confirm.kind].hint}
           tone={CONFIRM_COPY[confirm.kind].tone}
           confirmLabel={CONFIRM_COPY[confirm.kind].confirm}
           pendingLabel={CONFIRM_COPY[confirm.kind].pending}
@@ -627,7 +630,7 @@ export function ApiKeysManager({
           onConfirm={doConfirm}
           onCancel={() => setConfirm(null)}
         >
-          {CONFIRM_COPY[confirm.kind].body(confirm.name)}
+          {CONFIRM_COPY[confirm.kind].body}
         </ConfirmDialog>
       )}
 

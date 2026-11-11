@@ -809,26 +809,28 @@ export function RoleEditor({
       )}
       {askingDelete && role && (
         <ConfirmDialog
-          title={`Delete ${role.name}?`}
+          title="Delete this role?"
+          subtitle={role.name}
           confirmLabel="Delete role"
+          hint="This cannot be undone."
           onConfirm={() => void handleDelete()}
           onCancel={() => setAskingDelete(false)}
         >
-          This cannot be undone.
+          Its permissions and settings are deleted with it. A role can only be deleted once nobody has it.
         </ConfirmDialog>
       )}
       {copyName !== null && role && (
         <ConfirmDialog
           title="Duplicate this role"
+          subtitle={role.name}
           tone="info"
           confirmLabel="Duplicate role"
+          confirmDisabled={!copyName.trim()}
           onConfirm={() => void handleDuplicate()}
           onCancel={() => setCopyName(null)}
         >
-          <span className="flex flex-col gap-2 text-left">
-            <span>The copy starts with the same permissions and settings.</span>
-            <Input label="Name for the copy" value={copyName} onChange={(e) => setCopyName(e.target.value)} />
-          </span>
+          <p>The copy starts with the same permissions and settings.</p>
+          <Input label="Name for the copy" value={copyName} onChange={(e) => setCopyName(e.target.value)} />
         </ConfirmDialog>
       )}
     </Overlay>

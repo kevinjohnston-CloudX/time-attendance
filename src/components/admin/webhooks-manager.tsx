@@ -435,27 +435,28 @@ function RowMenu({
   );
 }
 
-const CONFIRM_COPY: Record<Confirm["kind"], { title: string; tone: "danger" | "warning"; confirm: string; pending: string; body: (n: string) => string }> = {
+const CONFIRM_COPY: Record<Confirm["kind"], { title: string; tone: "danger" | "warning"; confirm: string; pending: string; body: string; hint?: string }> = {
   pause: {
-    title: "Pause webhook?",
+    title: "Pause this webhook?",
     tone: "warning",
-    confirm: "Pause",
+    confirm: "Pause webhook",
     pending: "Pausing…",
-    body: (n) => `"${n}" stops being told about terminations and rehires until you resume it. Nothing that happens while it is paused is sent later.`,
+    body: "It stops being told about terminations and rehires until you resume it. Nothing that happens while it is paused is sent later.",
   },
   secret: {
     title: "Make a new secret?",
     tone: "warning",
     confirm: "Make new secret",
     pending: "Making…",
-    body: (n) => `The current secret stops working right away, so "${n}" will refuse CloudTime's messages until it is given the new one.`,
+    body: "The current secret stops working right away. The other system refuses CloudTime's messages until it is given the new one.",
   },
   remove: {
-    title: "Remove webhook?",
+    title: "Remove this webhook?",
     tone: "danger",
-    confirm: "Remove",
+    confirm: "Remove webhook",
     pending: "Removing…",
-    body: (n) => `"${n}" is removed with its delivery history, and the other system stops hearing from CloudTime. This can't be undone.`,
+    body: "It is removed with its delivery history, and the other system stops hearing from CloudTime.",
+    hint: "This cannot be undone.",
   },
 };
 
@@ -656,6 +657,8 @@ export function WebhooksManager({
       {confirm && (
         <ConfirmDialog
           title={CONFIRM_COPY[confirm.kind].title}
+          subtitle={confirm.name}
+          hint={CONFIRM_COPY[confirm.kind].hint}
           tone={CONFIRM_COPY[confirm.kind].tone}
           confirmLabel={CONFIRM_COPY[confirm.kind].confirm}
           pendingLabel={CONFIRM_COPY[confirm.kind].pending}
@@ -664,7 +667,7 @@ export function WebhooksManager({
           onConfirm={doConfirm}
           onCancel={() => setConfirm(null)}
         >
-          {CONFIRM_COPY[confirm.kind].body(confirm.name)}
+          {CONFIRM_COPY[confirm.kind].body}
         </ConfirmDialog>
       )}
 

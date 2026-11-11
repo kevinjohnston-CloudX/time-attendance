@@ -56,6 +56,7 @@ export function CancelLeaveButton({ leaveRequestId }: Props) {
         <ConfirmDialog
           title="Cancel this leave request?"
           confirmLabel="Cancel request"
+          cancelLabel="Keep request"
           pendingLabel="Cancelling…"
           pending={isPending}
           error={error}
