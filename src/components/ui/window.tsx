@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
 import { X } from "lucide-react";
 import { Button } from "./button";
 import { Overlay } from "./overlay";
@@ -46,6 +46,7 @@ export function Window({
   alert = false,
   side = false,
   onSubmit,
+  initialFocus,
   bodyClassName,
   className,
   onClose,
@@ -80,6 +81,9 @@ export function Window({
   /** A form window: the body and the footer are one form, so Enter in a
    *  field and a submit button in the actions both send it. */
   onSubmit?: (e: FormEvent<HTMLFormElement>) => void;
+  /** The field to start in, or a box holding it, when typing is the reason
+   *  the window opened. */
+  initialFocus?: RefObject<HTMLElement | null>;
   bodyClassName?: string;
   className?: string;
   onClose: () => void;
@@ -102,7 +106,9 @@ export function Window({
     // Counted once, on open: a window opened over another sits above it.
     setDepth(alert || stack.length > 1 ? 2 : 1);
     const opener = document.activeElement as HTMLElement | null;
-    ref.current?.focus({ preventScroll: true });
+    const start = initialFocus?.current;
+    const field = start && !start.matches("input, textarea, select") ? start.querySelector<HTMLElement>("input, textarea, select") : start;
+    (field ?? ref.current)?.focus({ preventScroll: true });
 
     const onKey = (e: KeyboardEvent) => {
       if (stack[stack.length - 1] !== id) return;
@@ -220,7 +226,7 @@ export function WindowCard({
   className,
   children,
   ...rest
-}: { padded?: boolean; className?: string; children: ReactNode } & Omit<React.HTMLAttributes<HTMLElement>, "className" | "children">) {
+}: { padded?: boolean; className?: string; children: ReactNode; ref?: React.Ref<HTMLElement> } & Omit<React.HTMLAttributes<HTMLElement>, "className" | "children">) {
   return (
     <section {...rest} className={`${styles.card}${className ? ` ${className}` : ""}`} data-padded={padded || undefined}>
       {children}

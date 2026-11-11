@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 
 const { fn, addManualPunches, ensureTimesheet } = vi.hoisted(() => ({
   fn: () => vi.fn(async () => ({ success: true, data: {} })),
@@ -234,8 +234,8 @@ describe("a supervisor allowed only to fix missed punches", () => {
     renderFixer();
     const monday = screen.getAllByRole("row").find((r) => /Mon, Oct 12/.test(r.textContent ?? ""))!;
     fireEvent.click(monday.querySelector("button[title=\"Add note\"]")!);
-    fireEvent.change(screen.getByPlaceholderText("Add a note…"), { target: { value: "Forgot to clock out, confirmed with lead" } });
-    fireEvent.click(screen.getByText("Add note"));
+    fireEvent.change(screen.getByLabelText("New note"), { target: { value: "Forgot to clock out, confirmed with lead" } });
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Notes" })).getByRole("button", { name: "Add note" }));
     const { saveTimesheetNote } = await import("@/actions/timecard-entry.actions");
     await vi.waitFor(() => expect(saveTimesheetNote).toHaveBeenCalledWith({ timesheetId: "t1", noteDate: "2026-10-12", note: "Forgot to clock out, confirmed with lead" }));
     vi.useRealTimers();
