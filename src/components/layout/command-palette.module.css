@@ -1,10 +1,122 @@
-/* Search pages on a phone (command-palette.tsx).
+/* Search pages (command-palette.tsx): the shared window's materials at the
+   top of the screen. A grey frame holding the search field and the results
+   as white raised cards, and the keys along the bottom on the grey.
 
-   It stays at the top rather than becoming a bottom sheet: the keyboard
-   opens as soon as it does, and a sheet at the bottom would sit under it.
-   The keyboard's own hints (esc, the Enter arrow) mean nothing on a phone,
-   so a Cancel button takes their place, the rows are a thumb tall, and the
-   list stops short of where the keyboard covers the screen. */
+   On a phone it stays at the top rather than becoming a bottom sheet: the
+   keyboard opens as soon as it does, and a sheet at the bottom would sit
+   under it. The keyboard's own hints mean nothing there, so a Cancel button
+   takes their place, the rows are a thumb tall, and the list stops short of
+   where the keyboard covers the screen. */
+
+.scrim {
+  background: var(--wms-overlay-modal);
+}
+
+.frame {
+  display: flex;
+  width: 100%;
+  max-width: 560px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border-radius: var(--radius-l);
+  background: var(--ta-canvas);
+  box-shadow: var(--shadow-modal);
+}
+
+.field {
+  display: flex;
+  height: 48px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: var(--surface-card);
+  box-shadow: var(--ta-raised);
+}
+.field:focus-within {
+  box-shadow: var(--ta-raised), 0 0 0 2px var(--stroke-accent-focus);
+}
+
+/* One fixed height, so the window never jumps while the list narrows. */
+.list {
+  height: 336px;
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 14px;
+  background: var(--surface-card);
+  box-shadow: var(--ta-raised);
+}
+.empty {
+  margin: 0;
+  padding: 28px 16px;
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.row {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+.row[data-on] {
+  background: var(--ta-choice-on);
+  box-shadow: inset 0 0 0 1px var(--stroke-accent);
+  color: var(--text-accent);
+}
+.rowLabel {
+  font: var(--type-button1);
+}
+.rowDetail {
+  overflow: hidden;
+  font: var(--type-caption1);
+  color: var(--text-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rowGroup {
+  flex: none;
+  font: var(--type-caption1);
+  color: var(--text-tertiary);
+}
+.enter {
+  color: var(--icon-accent);
+  visibility: hidden;
+}
+.row[data-on] .enter {
+  visibility: visible;
+}
+
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 4px 8px 2px;
+  font: var(--type-body2);
+  color: var(--text-secondary);
+}
+.foot kbd {
+  display: inline-block;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--surface-card);
+  box-shadow: var(--ta-raised);
+  font: var(--weight-medium) 12px/18px var(--font-sans);
+  color: var(--text-secondary);
+  text-align: center;
+}
 
 .cancel {
   display: none;
@@ -14,16 +126,13 @@
   .scrim {
     padding: calc(env(safe-area-inset-top) + 8px) 8px 0 !important;
   }
-  .panel {
-    max-width: none !important;
-    border-radius: 16px !important;
+  .frame {
+    max-width: none;
+    border-radius: 18px;
   }
-  .inputRow {
-    height: 52px !important;
-    padding-right: 4px !important;
-  }
-  .keyHint {
-    display: none;
+  .field {
+    height: 52px;
+    padding-right: 4px;
   }
   .cancel {
     display: inline-flex;
@@ -43,9 +152,14 @@
     background: var(--ta-row-hover);
   }
   .list {
-    max-height: 45dvh !important;
+    height: auto;
+    max-height: 45dvh;
   }
   .row {
     min-height: 48px;
+  }
+  .enter,
+  .foot {
+    display: none;
   }
 }

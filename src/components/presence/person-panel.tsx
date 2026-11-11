@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { CalendarPlus, Camera, ChevronLeft, ChevronRight, Clock, Coffee, DoorClosed, DoorOpen, ImageOff, UserCircle, X } from "lucide-react";
+import { CalendarPlus, Camera, ChevronLeft, ChevronRight, Clock, Coffee, DoorClosed, DoorOpen, ImageOff, UserCircle, UserRound, X } from "lucide-react";
 import { Badge, Button } from "@/components/ui";
 import { getOnSitePerson } from "@/actions/presence.actions";
 import { addDays, dayLabel, DAYS_BACK } from "@/lib/presence/days";
@@ -23,6 +23,7 @@ import {
   statusLabel,
 } from "./presence-meta";
 import styles from "./on-site.module.css";
+import frame from "@/components/ui/window.module.css";
 import { usePhoneBack } from "@/components/layout/phone-back";
 import { usePhoneLayout } from "@/lib/phone";
 import { usePhoto, ZoomableFace } from "./face";
@@ -243,15 +244,25 @@ export function PersonPanel({
         aria-modal={phone ? undefined : true}
         aria-label={name || "Employee"}
       >
-        <div ref={headRef} className={styles.panelHead}>
-          <span className={styles.ppEyebrow}>Employee</span>
+        {/* The shared window's header: the raised glyph, the title and one
+            line, then close. A phone hides it; its top bar leads back. */}
+        <div ref={headRef} className={`${frame.head} ${styles.panelHead}`}>
+          <span className={frame.glyph} aria-hidden="true">
+            <UserRound />
+          </span>
+          <span className={frame.titles}>
+            <h2 className={frame.title}>Employee</h2>
+            <span className={`${frame.subtitle} truncate`}>Where they are, their day and every scan</span>
+          </span>
           <Button hierarchy="tertiary" size="sm" iconOnly aria-label="Close" onClick={onClose}>
             <X className="h-4 w-4" />
           </Button>
         </div>
 
         <div className={styles.panelBody}>
-          {/* ── Who ── */}
+          {/* ── Who: one white card on a computer; on a phone its parts
+                 stand as groups of their own. ── */}
+          <section className={styles.ppCard} aria-label="Who">
           <div className={styles.ppProfile}>
             <span className={styles.ppPortrait}>
               <span className={styles.initials} style={{ fontSize: 30 }} aria-hidden="true">
@@ -268,7 +279,7 @@ export function PersonPanel({
                       name,
                       detail: [person?.employeeCode ?? detail?.employeeCode, person?.department ?? detail?.department]
                         .filter(Boolean)
-                        .join(" · "),
+                        .join(", "),
                     }))
                 }
               />
@@ -299,9 +310,9 @@ export function PersonPanel({
             </span>
             <div className={styles.ppWho}>
               {name ? (
-                <h2 className={styles.ppName} title={name}>
+                <p className={styles.ppName} title={name}>
                   {name}
-                </h2>
+                </p>
               ) : (
                 <span className={styles.skeleton} style={{ width: 180, height: 26 }} />
               )}
@@ -339,6 +350,7 @@ export function PersonPanel({
             <Fact label="Shift" value={detail ? detail.shift : person ? person.shift : undefined} />
             <Fact label="Supervisor" value={detail ? detail.supervisor ?? "None assigned" : undefined} />
           </dl>
+          </section>
 
           {/* ── The day ── */}
           <section className={styles.ppSection}>
@@ -598,7 +610,7 @@ export function PersonPanel({
           name={name}
           detail={[person?.employeeCode ?? detail?.employeeCode, person?.jobTitle ?? detail?.jobTitle ?? person?.department ?? detail?.department]
             .filter(Boolean)
-            .join(" · ")}
+            .join(", ")}
           currentSrc={currentPhoto}
           onClose={() => setEditingPhoto(false)}
           onSaved={(url) => {
