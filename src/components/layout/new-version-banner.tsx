@@ -133,16 +133,18 @@ export function NewVersionBanner() {
       </span>
       <span className={styles.text}>
         <span className={styles.title}>CloudTime has been updated</span>
-        <span className={styles.line}>Refresh to see the latest version of this page.</span>
+        <span className={styles.line}>
+          {verdict?.value === "yes" ? "This page changed since you opened it." : "A newer version is ready."}
+        </span>
       </span>
       <span className={styles.actions}>
         <Button onClick={() => window.location.reload()}>
           <span className={styles.wide}>Refresh page</span>
           <span className={styles.narrow}>Refresh</span>
         </Button>
-        <Button hierarchy="tertiary" iconOnly onClick={notNow} aria-label="Not now" title="Not now">
-          <X className="h-4 w-4" />
-        </Button>
+        <button type="button" className={styles.close} onClick={notNow} aria-label="Not now" title="Not now">
+          <X aria-hidden="true" />
+        </button>
       </span>
     </div>,
     document.body,
