@@ -3892,19 +3892,21 @@
 
 
 
+/* The frame edge to edge in the card, the ways to a photo under it. */
 .peBody {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  padding: 20px;
+  padding: 8px 8px 12px;
 }
 
 .peFrame {
   position: relative;
   flex: none;
   max-width: 100%;
-  border-radius: 14px;
+  /* The card's 14 less its 8px of padding, so the corners run parallel. */
+  border-radius: 8px;
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -3943,7 +3945,7 @@
   justify-content: center;
   gap: 8px;
   border: 2px dashed var(--stroke-accent);
-  border-radius: 14px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--surface-card) 88%, transparent);
   color: var(--text-accent);
   font: var(--type-button1);
@@ -3990,28 +3992,32 @@
   white-space: nowrap;
 }
 
+/* Zoom, on the photo's foot beside the tag, in the same dark pill. */
 .peZoom {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
   display: flex;
   align-items: center;
-  gap: 12px;
-  width: 360px;
-  max-width: 100%;
-  font: var(--type-body2);
-  color: var(--text-secondary);
+  gap: 8px;
+  width: 168px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-inverse) 72%, transparent);
+  color: var(--ta-text-on-inverse);
+  font: var(--type-caption1);
+  cursor: default;
 }
 
 .peZoom input {
   flex: 1;
   min-width: 0;
+  height: 16px;
   accent-color: var(--fill-accent);
+  cursor: pointer;
 }
 
-.peHint {
-  margin: 0;
-  font: var(--type-body2);
-  color: var(--text-tertiary);
-  text-align: center;
-}
 
 .peSources {
   display: flex;

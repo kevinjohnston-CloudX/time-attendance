@@ -1728,7 +1728,6 @@ export function EditEmployeeForm({
           siteId={employee.siteId}
           employeeId={employee.id}
           name={employee.user.name ?? employee.employeeCode}
-          detail={[employee.wmsId ?? employee.employeeCode, jobTitleName(saved) || employee.department.name].filter(Boolean).join(", ")}
           currentSrc={photo}
           onClose={() => setEditingPhoto(false)}
           onSaved={(url) => {

@@ -608,9 +608,6 @@ export function PersonPanel({
           siteId={siteId}
           employeeId={employeeId}
           name={name}
-          detail={[person?.employeeCode ?? detail?.employeeCode, person?.jobTitle ?? detail?.jobTitle ?? person?.department ?? detail?.department]
-            .filter(Boolean)
-            .join(", ")}
           currentSrc={currentPhoto}
           onClose={() => setEditingPhoto(false)}
           onSaved={(url) => {

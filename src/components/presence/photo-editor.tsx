@@ -58,7 +58,6 @@ export function PhotoEditor({
   siteId,
   employeeId,
   name,
-  detail,
   currentSrc,
   onClose,
   onSaved,
@@ -67,7 +66,6 @@ export function PhotoEditor({
   siteId: string;
   employeeId: string;
   name: string;
-  detail: string;
   currentSrc: string | null | undefined;
   onClose: () => void;
   /** The new photo's link, to draw at once everywhere on the page. */
@@ -327,21 +325,25 @@ export function PhotoEditor({
 
   return (
     <Window
-      size="sm"
+      // The frame's width plus the card's padding and the window's edge.
+      width={FRAME_W + 48}
       icon={<Camera />}
       title="Update photo"
-      subtitle={[name, detail].filter(Boolean).join(", ")}
+      subtitle={name}
       busy={saving}
-      foot={error ?? "The photo it replaces is kept."}
+      // Remove sits on the left, apart from Cancel and Save; an error takes its place.
+      foot={
+        error ??
+        (onRemove && mode === "current" ? (
+          <Button hierarchy="tertiary" tone="error" size="sm" onClick={onRemove} disabled={saving}>
+            Remove photo
+          </Button>
+        ) : undefined)
+      }
       footTone={error ? "error" : undefined}
       onClose={onClose}
       actions={
         <>
-          {onRemove && mode === "current" && (
-            <Button hierarchy="secondary" tone="error" onClick={onRemove} disabled={saving}>
-              Remove photo
-            </Button>
-          )}
           <Button hierarchy="secondary" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
@@ -443,7 +445,24 @@ export function PhotoEditor({
               />
             )}
             {mode === "frame" && (
-              <span className={styles.peGuide} aria-hidden="true" />
+              <>
+                <span className={styles.peGuide} aria-hidden="true" />
+                <span className={styles.peFrameTag}>Drag to move</span>
+                {/* On the photo, so the window keeps one size; its own
+                    drag must not move the picture under it. */}
+                <label className={styles.peZoom} onPointerDown={(e) => e.stopPropagation()}>
+                  <span>Zoom</span>
+                  <input
+                    type="range"
+                    min={1}
+                    max={MAX_ZOOM}
+                    step={0.01}
+                    value={zoom}
+                    onChange={(e) => changeZoom(Number(e.target.value))}
+                    aria-label="Zoom"
+                  />
+                </label>
+              </>
             )}
             {dragOver && (
               <span className={styles.peDrop} aria-hidden="true">
@@ -453,27 +472,6 @@ export function PhotoEditor({
             )}
           </div>
 
-          {mode === "frame" && (
-            <label className={styles.peZoom}>
-              <span>Zoom</span>
-              <input
-                type="range"
-                min={1}
-                max={MAX_ZOOM}
-                step={0.01}
-                value={zoom}
-                onChange={(e) => changeZoom(Number(e.target.value))}
-                aria-label="Zoom"
-              />
-            </label>
-          )}
-          <p className={styles.peHint}>
-            {mode === "camera"
-              ? "Face the camera, then take the photo."
-              : mode === "frame"
-                ? "Saved as shown. To frame the face closer, zoom in and drag."
-                : "Drag a photo here, choose one, or use the camera. You can frame it before saving."}
-          </p>
 
           <div className={styles.peSources}>
             {mode === "camera" ? (
