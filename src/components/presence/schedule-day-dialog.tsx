@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { useRef, useState } from "react";
+import { CalendarPlus } from "lucide-react";
 import { Button, Input, Select } from "@/components/ui";
+import { Window, WindowCard } from "@/components/ui/window";
 import { addToTodaysSchedule } from "@/actions/presence.actions";
 import { parseTimeOfDay, toHHmm, type Meridiem } from "@/lib/utils/time-of-day";
 import { formatTimeOfDay } from "@/lib/utils/date";
@@ -15,9 +16,10 @@ import { codeOf } from "@/lib/action-errors";
  * <p>Start and end each carry their own AM or PM, set by hand rather than
  * guessed, because 8:00 AM and 8:00 PM are a whole shift apart. An end before
  * the start is an overnight shift and is said so under the fields rather than
- * refused. Nothing is saved until Add to schedule, and Escape closes this
- * without closing the panel underneath. Opened from the gate alert, it starts
- * filled in with the hours of the shift on their record.
+ * refused. Nothing is saved until Add to schedule. It is a window on the
+ * shared frame, so Escape closes this and not the panel or alert under it.
+ * Opened from the gate alert, it starts filled in with the hours of the
+ * shift on their record.
  */
 
 const SAVE_ERRORS: Record<string, string> = {
@@ -71,27 +73,7 @@ export function ScheduleDayDialog({
   const [meal, setMeal] = useState("30");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const closeRef = useRef(onClose);
-  useEffect(() => {
-    closeRef.current = onClose;
-  }, [onClose]);
-
-  // Escape closes this, not the panel; focus comes in and goes back out.
-  useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    dialogRef.current?.querySelector<HTMLElement>("input")?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      closeRef.current();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      window.removeEventListener("keydown", onKey, true);
-      opener?.focus?.();
-    };
-  }, []);
+  const fieldsRef = useRef<HTMLElement>(null);
 
   const from = start.trim() ? parseTimeOfDay(start, startHalf) : null;
   const to = end.trim() ? parseTimeOfDay(end, endHalf) : null;
@@ -123,94 +105,75 @@ export function ScheduleDayDialog({
   }
 
   return (
-    <div className={`${styles.peScrim} ta-sheet-scrim`} onClick={saving ? undefined : onClose}>
-      <div
-        ref={dialogRef}
-        className={`${styles.peDialog} ta-sheet`}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="sd-title"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className={styles.peHead}>
-          <div className="flex min-w-0 flex-col">
-            <h2 id="sd-title" className={styles.peTitle}>
-              Add to schedule
-            </h2>
-            <span className={styles.peSub} title={`${name} · ${dayLabel}`}>
-              {[name, dayLabel].filter(Boolean).join(" · ")}
-            </span>
-          </div>
-          <Button hierarchy="tertiary" size="sm" iconOnly aria-label="Close" onClick={onClose} disabled={saving}>
-            <X className="h-4 w-4" />
+    <Window
+      size="sm"
+      icon={<CalendarPlus />}
+      title="Add to schedule"
+      subtitle={dayLabel ? `${name}, ${dayLabel === "Today" ? "today" : dayLabel}` : name}
+      busy={saving}
+      initialFocus={fieldsRef}
+      foot={error ?? "Saved in CloudTime only."}
+      footTone={error ? "error" : undefined}
+      onClose={onClose}
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save();
+      }}
+      actions={
+        <>
+          <Button hierarchy="secondary" onClick={onClose} disabled={saving}>
+            Cancel
           </Button>
+          <Button type="submit" pending={saving} disabled={!ready || saving}>
+            {saving ? "Saving…" : "Add to schedule"}
+          </Button>
+        </>
+      }
+    >
+      <WindowCard padded ref={fieldsRef}>
+        <div className={styles.sdRow}>
+          <TimeField
+            id="sd-start"
+            label="Start"
+            value={start}
+            meridiem={startHalf}
+            placeholder="8:00"
+            invalid={startBad}
+            onChange={setStart}
+            onMeridiemChange={setStartHalf}
+          />
+          <TimeField
+            id="sd-end"
+            label="End"
+            value={end}
+            meridiem={endHalf}
+            placeholder="4:30"
+            invalid={endBad}
+            onChange={setEnd}
+            onMeridiemChange={setEndHalf}
+          />
         </div>
-
-        <form
-          className={styles.sdBody}
-          onSubmit={(e) => {
-            e.preventDefault();
-            void save();
-          }}
-        >
-          <div className={styles.sdRow}>
-            <TimeField
-              id="sd-start"
-              label="Start"
-              value={start}
-              meridiem={startHalf}
-              placeholder="8:00"
-              invalid={startBad}
-              onChange={setStart}
-              onMeridiemChange={setStartHalf}
-            />
-            <TimeField
-              id="sd-end"
-              label="End"
-              value={end}
-              meridiem={endHalf}
-              placeholder="4:30"
-              invalid={endBad}
-              onChange={setEnd}
-              onMeridiemChange={setEndHalf}
-            />
-          </div>
-          <label className={styles.sdField} htmlFor="sd-meal">
-            <span className={styles.sdLabel}>Meal</span>
-            <Select id="sd-meal" value={meal} onChange={(e) => setMeal(e.target.value)}>
-              {MEALS.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <p className={styles.sdHint} aria-live="polite">
-            {startBad || endBad
-              ? "Enter times like 8:00 or 4:30."
-              : same
-                ? "The start and the end are the same time."
-                : from && to
-                  ? `${formatTimeOfDay(toHHmm(from))} to ${formatTimeOfDay(toHHmm(to))}${overnight ? ", ending the next day" : ""}`
-                  : "Today only. Their schedule from WMS is not changed."}
-          </p>
-          {error && <p className={styles.peError}>{error}</p>}
-          <button type="submit" hidden />
-        </form>
-
-        <div className={styles.peFoot}>
-          <span className={styles.peNote}>Saved in CloudTime only</span>
-          <span className="flex gap-2">
-            <Button hierarchy="secondary" onClick={onClose} disabled={saving}>
-              Cancel
-            </Button>
-            <Button pending={saving} onClick={() => void save()} disabled={!ready || saving}>
-              {saving ? "Saving…" : "Add to schedule"}
-            </Button>
-          </span>
-        </div>
-      </div>
-    </div>
+        <label className={styles.sdField} htmlFor="sd-meal">
+          <span className={styles.sdLabel}>Meal</span>
+          <Select id="sd-meal" value={meal} onChange={(e) => setMeal(e.target.value)}>
+            {MEALS.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <p className={styles.sdHint} aria-live="polite">
+          {startBad || endBad
+            ? "Enter times like 8:00 or 4:30."
+            : same
+              ? "The start and the end are the same time."
+              : from && to
+                ? `${formatTimeOfDay(toHHmm(from))} to ${formatTimeOfDay(toHHmm(to))}${overnight ? ", ending the next day" : ""}`
+                : "Today only. Their schedule from WMS is not changed."}
+        </p>
+      </WindowCard>
+    </Window>
   );
 }
 

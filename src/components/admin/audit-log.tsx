@@ -4,14 +4,14 @@ import { useEffect, useRef, useState, useSyncExternalStore, useTransition, type 
 import { useRouter } from "@/components/layout/navigation-progress";
 import { useSearchBox } from "@/hooks/use-search-box";
 import { format, isToday, isYesterday } from "date-fns";
-import { ArrowLeft, ArrowRight, Bot, Check, ChevronDown, ChevronRight, ChevronUp, Copy, FileSearch, Lock, Search, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bot, Check, ChevronDown, ChevronRight, ChevronUp, Copy, FileSearch, Lock, ScrollText, Search, X } from "lucide-react";
 import type { AuditEntityType } from "@prisma/client";
 import { Badge, Button, LinkButton, PageHeader, PinnedBar, SegmentedControl } from "@/components/ui";
 import { useCondensingBar } from "@/components/layout/use-condensing-bar";
 import { ENTITY_LABEL, ENTITY_TYPES, actionLabel, isGateAlertSwitch } from "@/lib/audit/labels";
 import { parseUtcDate } from "@/lib/utils/date";
 import phone from "./audit.module.css";
-import { Overlay } from "@/components/ui/overlay";
+import { Window, WindowCard } from "@/components/ui/window";
 
 /**
  * The Audit Log, from the Audit Log handoff: search and three filters in one
@@ -52,6 +52,11 @@ const OVERLINE: CSSProperties = {
   font: "var(--weight-semibold) 11px/14px var(--font-sans)",
   letterSpacing: ".07em",
   textTransform: "uppercase",
+  color: "var(--text-tertiary)",
+};
+/** The column names over a change, in sentence case, quiet. */
+const DIFF_HEAD: CSSProperties = {
+  font: "var(--weight-semibold) 12px/16px var(--font-sans)",
   color: "var(--text-tertiary)",
 };
 const PANEL: CSSProperties = { background: "var(--surface-card)", borderRadius: 18, boxShadow: "var(--ta-shell-shadow)" };
@@ -574,149 +579,135 @@ function EntryPanel({
   canPrev: boolean;
   canNext: boolean;
 }) {
-  const closeRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    closeRef.current?.focus({ preventScroll: true });
-  }, []);
-
   const diff = diffOf(row.changes);
   const raw = JSON.stringify(row.changes ?? null, null, 2);
   const cols = diff.hasBefore ? "120px minmax(0,1fr) minmax(0,1fr)" : "130px minmax(0,1fr)";
   const when = new Date(row.createdAt);
 
   const meta: { k: string; v: ReactNode; copy?: string; mono?: boolean; muted?: boolean }[] = [
-    { k: "When", v: `${format(when, "EEE, MMM d, yyyy")} at ${format(when, "h:mm:ss a")}` },
     { k: "Actor", v: actorOf(row) },
     { k: "Record", v: `${ENTITY_LABEL[row.entityType] ?? row.entityType}` },
     { k: "Record ID", v: row.entityId, copy: row.entityId, mono: true },
+    { k: "Action code", v: row.action, copy: row.action, mono: true },
     { k: "IP address", v: row.ipAddress ?? "Not recorded", copy: row.ipAddress ?? undefined, mono: !!row.ipAddress, muted: !row.ipAddress },
     { k: "User agent", v: row.userAgent ?? "Not recorded", muted: !row.userAgent },
   ];
 
   return (
-    <Overlay className="z-50">
-      <div aria-hidden className="absolute inset-0" style={{ background: "var(--ta-scrim)" }} onClick={onClose} />
-      <aside
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="audit-entry-title"
-        className={`${phone.drawer} fixed bottom-3 right-3 top-3 z-[55] flex w-[440px] max-w-[calc(100vw-24px)] flex-col overflow-hidden`}
-        style={{ borderRadius: 18, background: "var(--surface-card)", boxShadow: "var(--ta-drop-shadow)" }}
-      >
-        <div className="flex flex-none items-start gap-3 pb-3.5 pl-5 pr-4 pt-[18px]">
-          <span className="flex min-w-0 flex-1 flex-col gap-1">
-            <h2 id="audit-entry-title" style={{ margin: 0, font: "var(--weight-semibold) 17px/24px var(--font-sans)", letterSpacing: "-0.01em", color: "var(--text-primary)" }}>
-              {actionLabel(row.action, row.entityType)}
-            </h2>
-            <code style={{ fontFamily: MONO, fontSize: 12, color: "var(--text-tertiary)", overflowWrap: "anywhere" }}>{row.action}</code>
+    <Window
+      side
+      width={460}
+      icon={<ScrollText />}
+      title={actionLabel(row.action, row.entityType)}
+      subtitle={`${format(when, "EEE, MMM d, yyyy")} at ${format(when, "h:mm:ss a")}`}
+      onClose={onClose}
+      foot={
+        row.href ? (
+          <LinkButton href={row.href} size="sm" trailingIcon={<ArrowRight className="h-3.5 w-3.5" />}>
+            {openLabel(row)}
+          </LinkButton>
+        ) : null
+      }
+      actions={
+        <>
+          <span className={`${phone.drawerPos} tabular`} style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+            {pos}
           </span>
-          <button ref={closeRef} type="button" onClick={onClose} aria-label="Close" title="Close" className="ta-icon-btn h-8 w-8" style={{ borderRadius: 9 }}>
-            <X className="h-[18px] w-[18px]" />
-          </button>
-        </div>
-
-        <div className="ta-scroll flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto px-5 pb-5">
-          <div style={{ borderRadius: 14, background: "var(--ta-well)", boxShadow: "inset 0 0 0 1px var(--ta-well-ring)" }}>
-            {meta.map((m, i) => (
-              <div
-                key={m.k}
-                className="grid min-h-10 items-center gap-2.5 py-1 pl-3.5 pr-2 [grid-template-columns:96px_minmax(0,1fr)_auto]"
-                style={{ boxShadow: i < meta.length - 1 ? "inset 0 -1px 0 var(--ta-well-ring)" : "none" }}
-              >
-                <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>{m.k}</span>
-                <span
-                  className="min-w-0"
-                  style={{
-                    font: "var(--type-body2)",
-                    fontFamily: m.mono ? MONO : undefined,
-                    fontSize: m.mono || m.k === "User agent" ? 12 : 13,
-                    color: m.muted ? "var(--text-tertiary)" : m.k === "User agent" ? "var(--text-secondary)" : "var(--text-primary)",
-                    overflowWrap: "anywhere",
-                  }}
-                >
-                  {m.v}
-                </span>
-                {m.copy ? <CopyButton text={m.copy} label={m.k} /> : <span />}
-              </div>
-            ))}
-          </div>
-
-          <div>
-            <div className="mb-2 flex items-center gap-2">
-              <span className="flex-1" style={OVERLINE}>Changes</span>
-              <SegmentedControl
-                size="sm"
-                ariaLabel="Show changes as"
-                items={[
-                  { value: "fields", label: "Fields" },
-                  { value: "json", label: "JSON" },
-                ]}
-                value={view}
-                onChange={setView}
-              />
-            </div>
-            {view === "fields" ? (
-              <div className="overflow-hidden" style={{ borderRadius: 14, boxShadow: "inset 0 0 0 1px var(--ta-well-ring)" }}>
-                <div className={`${phone.diffHead} grid gap-2.5 px-3.5 py-2`} style={{ ...OVERLINE, gridTemplateColumns: cols, background: "var(--ta-well)" }}>
-                  <span>Field</span>
-                  {diff.hasBefore && <span>Before</span>}
-                  <span>{diff.hasBefore ? "After" : "Recorded"}</span>
-                </div>
-                {diff.rows.length === 0 ? (
-                  <div className="px-3.5 py-2.5" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)", boxShadow: "inset 0 1px 0 var(--stroke-divider)" }}>
-                    No field changes were recorded for this entry.
-                  </div>
-                ) : (
-                  diff.rows.map((d, i) => (
-                    <div
-                      key={i}
-                      className={`${phone.diffRow} grid items-baseline gap-2.5 px-3.5 py-[9px]`}
-                      data-before={diff.hasBefore ? "true" : undefined}
-                      style={{ gridTemplateColumns: cols, boxShadow: "inset 0 1px 0 var(--stroke-divider)" }}
-                    >
-                      <code style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, color: "var(--text-primary)", overflowWrap: "anywhere" }}>{d.field}</code>
-                      {diff.hasBefore && (
-                        <span style={{ font: "var(--type-body2)", color: "var(--text-error)", textDecoration: "line-through", textDecorationColor: "color-mix(in srgb, var(--text-error) 35%, transparent)", overflowWrap: "anywhere" }}>
-                          {d.before}
-                        </span>
-                      )}
-                      <span style={{ font: "var(--type-body2)", color: d.removed ? "var(--text-tertiary)" : diff.hasBefore ? "var(--text-success)" : "var(--text-primary)", overflowWrap: "anywhere" }}>
-                        {d.after}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </div>
-            ) : (
-              <div className="overflow-hidden" style={{ borderRadius: 12, background: "var(--ta-code-bg)" }}>
-                <div className="flex h-[34px] items-center justify-between pl-3.5 pr-2" style={{ boxShadow: "inset 0 -1px 0 var(--ta-code-rule)" }}>
-                  <span style={{ font: "var(--weight-medium) 11px/1 var(--font-sans)", letterSpacing: ".04em", color: "var(--ta-code-muted)" }}>json</span>
-                  <CopyButton text={raw} label="JSON" dark />
-                </div>
-                <pre className="m-0 overflow-x-auto whitespace-pre px-3.5 pb-3.5 pt-3" style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.7, color: "var(--ta-code-fg)" }}>
-                  {raw}
-                </pre>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className={`${phone.drawerFoot} flex flex-none items-center gap-2 pb-3.5 pl-5 pr-4 pt-3`} style={{ boxShadow: "inset 0 1px 0 var(--stroke-divider)" }}>
-          {row.href && (
-            <LinkButton href={row.href} size="sm" trailingIcon={<ArrowRight className="h-3.5 w-3.5" />}>
-              {openLabel(row)}
-            </LinkButton>
-          )}
-          <span className="tabular flex-1 text-right" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>{pos}</span>
           <Button hierarchy="secondary" size="sm" iconOnly aria-label="Previous entry" title="Previous entry" disabled={!canPrev} onClick={() => onMove(-1)}>
             <ChevronUp className="h-4 w-4" />
           </Button>
           <Button hierarchy="secondary" size="sm" iconOnly aria-label="Next entry" title="Next entry" disabled={!canNext} onClick={() => onMove(1)}>
             <ChevronDown className="h-4 w-4" />
           </Button>
+        </>
+      }
+    >
+      <WindowCard>
+        {meta.map((m, i) => (
+          <div
+            key={m.k}
+            className="grid min-h-10 items-center gap-2.5 py-1 pl-4 pr-2 [grid-template-columns:96px_minmax(0,1fr)_auto]"
+            style={{ boxShadow: i < meta.length - 1 ? "inset 0 -1px 0 var(--stroke-divider)" : "none" }}
+          >
+            <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>{m.k}</span>
+            <span
+              className="min-w-0"
+              style={{
+                font: "var(--type-body2)",
+                fontFamily: m.mono ? MONO : undefined,
+                fontSize: m.mono || m.k === "User agent" ? 12 : 13,
+                color: m.muted ? "var(--text-tertiary)" : m.k === "User agent" ? "var(--text-secondary)" : "var(--text-primary)",
+                overflowWrap: "anywhere",
+              }}
+            >
+              {m.v}
+            </span>
+            {m.copy ? <CopyButton text={m.copy} label={m.k} /> : <span />}
+          </div>
+        ))}
+      </WindowCard>
+
+      <WindowCard>
+        <div className="flex items-center gap-2 py-2.5 pl-4 pr-2.5">
+          <h3 className="m-0 flex-1" style={{ font: "var(--weight-semibold) 14px/20px var(--font-sans)", color: "var(--text-primary)" }}>
+            Changes
+          </h3>
+          <SegmentedControl
+            size="sm"
+            ariaLabel="Show changes as"
+            items={[
+              { value: "fields", label: "Fields" },
+              { value: "json", label: "JSON" },
+            ]}
+            value={view}
+            onChange={setView}
+          />
         </div>
-      </aside>
-    </Overlay>
+        {view === "fields" ? (
+          <div style={{ boxShadow: "inset 0 1px 0 var(--stroke-divider)" }}>
+            <div className={`${phone.diffHead} grid gap-2.5 px-4 py-2`} style={{ ...DIFF_HEAD, gridTemplateColumns: cols }}>
+              <span>Field</span>
+              {diff.hasBefore && <span>Before</span>}
+              <span>{diff.hasBefore ? "After" : "Recorded"}</span>
+            </div>
+            {diff.rows.length === 0 ? (
+              <div className="px-4 py-3" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)", boxShadow: "inset 0 1px 0 var(--stroke-divider)" }}>
+                No field changes were recorded for this entry.
+              </div>
+            ) : (
+              diff.rows.map((d, i) => (
+                <div
+                  key={i}
+                  className={`${phone.diffRow} grid items-baseline gap-2.5 px-4 py-[9px]`}
+                  data-before={diff.hasBefore ? "true" : undefined}
+                  style={{ gridTemplateColumns: cols, boxShadow: "inset 0 1px 0 var(--stroke-divider)" }}
+                >
+                  <code style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, color: "var(--text-primary)", overflowWrap: "anywhere" }}>{d.field}</code>
+                  {diff.hasBefore && (
+                    <span style={{ font: "var(--type-body2)", color: "var(--text-error)", textDecoration: "line-through", textDecorationColor: "color-mix(in srgb, var(--text-error) 35%, transparent)", overflowWrap: "anywhere" }}>
+                      {d.before}
+                    </span>
+                  )}
+                  <span style={{ font: "var(--type-body2)", color: d.removed ? "var(--text-tertiary)" : diff.hasBefore ? "var(--text-success)" : "var(--text-primary)", overflowWrap: "anywhere" }}>
+                    {d.after}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        ) : (
+          <div className="mx-2.5 mb-2.5 overflow-hidden" style={{ borderRadius: 10, background: "var(--ta-code-bg)" }}>
+            <div className="flex h-[34px] items-center justify-between pl-3.5 pr-2" style={{ boxShadow: "inset 0 -1px 0 var(--ta-code-rule)" }}>
+              <span style={{ font: "var(--weight-medium) 12px/1 var(--font-sans)", color: "var(--ta-code-muted)" }}>JSON</span>
+              <CopyButton text={raw} label="JSON" dark />
+            </div>
+            <pre className="m-0 overflow-x-auto whitespace-pre px-3.5 pb-3.5 pt-3" style={{ fontFamily: MONO, fontSize: 12, lineHeight: 1.7, color: "var(--ta-code-fg)" }}>
+              {raw}
+            </pre>
+          </div>
+        )}
+      </WindowCard>
+    </Window>
   );
 }
 

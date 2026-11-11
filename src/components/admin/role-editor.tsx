@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { createRole, updateRole, deleteRole, duplicateRole } from "@/actions/role.actions";
 import { RESOURCES, ACTIONS, SCOPES, type PermissionEntry } from "@/lib/validators/role.schema";
 import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
-import { Trash2, Copy, Save, X, CopyCheck, Info } from "lucide-react";
+import { Trash2, Copy, Save, CopyCheck, Info, ShieldCheck } from "lucide-react";
 import phone from "./roles-phone.module.css";
 import {
   Badge,
@@ -23,7 +23,7 @@ import {
   THead,
   TR,
 } from "@/components/ui";
-import { Overlay } from "@/components/ui/overlay";
+import { Window, WindowBlock, WindowCard } from "@/components/ui/window";
 
 /**
  * The role editor, as the portal design's document template lays it out:
@@ -238,6 +238,8 @@ const FIELD_GRID =
 
 /** Matrix cells are on a 9-column grid, so they take less side padding than a list table's. */
 const MATRIX_CELL = { padding: "0 8px" } as const;
+/** The table's column names in sentence case, never the table's capitals. */
+const HEAD = { textTransform: "none", letterSpacing: "normal", font: "var(--weight-semibold) 13px/18px var(--font-sans)", color: "var(--text-secondary)" } as const;
 
 function permKey(resource: string, action: string, scope: string) {
   return `${resource}:${action}:${scope}`;
@@ -414,39 +416,55 @@ export function RoleEditor({
   }
 
   return (
-    // The scrim stays a literal black wash in both themes: it is the absence
-    // of the page rather than a surface, and a token that lightened in dark
-    // mode would stop the dialog reading as modal.
-    <Overlay className="ta-sheet-scrim z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-[5vh]">
-      <div className={`${phone.editorSheet} ta-sheet ta-modal w-full max-w-4xl rounded-xl`}>
-        <header
-          className={`${phone.editorHead} flex items-center justify-between gap-3 px-6 py-4`}
-          style={{ borderBottom: "1px solid var(--stroke-divider)" }}
-        >
-          <div className="flex min-w-0 items-center gap-2.5">
-            <h2 className="wms-card-title truncate">
-              {isEditing ? `Edit Role: ${role.name}` : "Create New Role"}
-            </h2>
-            {isSystem && (
-              <Badge tone="info" size="sm">
-                System
-              </Badge>
+    <Window
+      icon={<ShieldCheck />}
+      title={isEditing ? role.name : "New role"}
+      subtitle={
+        isEditing
+          ? isSystem
+            ? "A built-in role. Its name is fixed, its permissions can change."
+            : "What people with this role can see and do."
+          : "Name it, then pick what people with this role can see and do."
+      }
+      width={920}
+      busy={saving}
+      onClose={onClose}
+      foot={
+        isEditing ? (
+          <span className="flex flex-wrap gap-2">
+            {!isSystem && (
+              <Button hierarchy="secondary" size="sm" tone="error" onClick={() => setAskingDelete(true)} leadingIcon={<Trash2 className="h-4 w-4" />}>
+                Delete
+              </Button>
             )}
-          </div>
-          <Button hierarchy="tertiary" iconOnly onClick={onClose} aria-label="Close">
-            <X className="h-5 w-5" />
+            <Button hierarchy="secondary" size="sm" onClick={() => setCopyName(`${role.name} (Copy)`)} leadingIcon={<Copy className="h-4 w-4" />}>
+              Duplicate
+            </Button>
+          </span>
+        ) : null
+      }
+      actions={
+        <>
+          <Button hierarchy="secondary" onClick={onClose} disabled={saving}>
+            Cancel
           </Button>
-        </header>
-
-        <div className={`${phone.editorBody} flex flex-col gap-5 px-6 py-5`}>
+          <Button pending={saving} onClick={handleSave} disabled={saving || !name.trim()} leadingIcon={<Save className="h-4 w-4" />}>
+            {saving ? "Saving…" : isEditing ? "Save changes" : "Create role"}
+          </Button>
+        </>
+      }
+    >
+      {error && <Banner tone="error" body={error} />}
+      <WindowCard>
+        <WindowBlock label="Details">
           <div className={FIELD_GRID}>
             <Input
               label="Name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               disabled={isSystem}
-              hint={isSystem ? "System roles cannot be renamed" : undefined}
-              placeholder="e.g. Shift Lead"
+              hint={isSystem ? "Built-in roles cannot be renamed." : undefined}
+              placeholder="For example: Shift lead"
             />
             <Input
               label="Rank"
@@ -463,18 +481,20 @@ export function RoleEditor({
             label="Description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Brief description of this role"
+            placeholder="What this role is for"
           />
+        </WindowBlock>
+
+        <WindowBlock label="Access">
 
           <div
             className={`${phone.switchRow} flex flex-wrap items-center justify-between gap-3 rounded-lg px-4 py-3`}
             style={{ border: "1px solid var(--stroke-secondary)" }}
           >
             <div className="flex min-w-[240px] flex-1 flex-col gap-0.5">
-              <span className="wms-label">Allow View As</span>
+              <span className="wms-label">Allow View as</span>
               <span style={{ font: "var(--type-body2)", color: "var(--text-tertiary)", textWrap: "pretty" }}>
-                Users with this role can simulate other roles with a lower rank to preview their
-                experience.
+                People with this role can look at CloudTime as a lower ranked role sees it.
               </span>
             </div>
             <Switch checked={canViewAs && !liveAttendanceOnly} onChange={setCanViewAs} disabled={liveAttendanceOnly} />
@@ -508,7 +528,7 @@ export function RoleEditor({
                 background: "var(--surface-secondary)",
               }}
             >
-              <span className="wms-label">Load permissions from a built-in role</span>
+              <span className="wms-label">Start from a built-in role</span>
               <div className="flex flex-wrap items-center gap-2">
                 <Select
                   value={selectedBuiltinKey}
@@ -526,18 +546,21 @@ export function RoleEditor({
                   disabled={!selectedBuiltinKey}
                   leadingIcon={<CopyCheck className="h-4 w-4" />}
                 >
-                  Apply
+                  Load permissions
                 </Button>
               </div>
               <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
-                This will replace the current permission selection with the chosen built-in
-                role&apos;s permissions.
+                Every box ticked below is replaced with that role&apos;s permissions.
               </span>
             </div>
           )}
 
+        </WindowBlock>
+      </WindowCard>
+
+      <WindowCard>
+        <WindowBlock label="Permissions" note="Own is the person's own records, Team is the people they supervise, All is everyone. Greyed boxes are not enforced yet.">
           <div className="flex flex-col gap-2">
-            <span className="wms-label">Permissions</span>
             {/* On a phone, one card per resource: its name, then Read, Write
                 and Execute, each with Own, Team and All. The grid below needs
                 about 500px, and swiping it to reach Write took the names off
@@ -545,7 +568,6 @@ export function RoleEditor({
                 be ticked and the same higher scopes follow. */}
             <div className="ta-phone-only">
               <div className={phone.perms}>
-                <p className={phone.permsNote}>Greyed boxes are not enforced yet: nothing in the system checks them.</p>
                 {RESOURCES.map((resource) => {
                   const info = RESOURCE_INFO[resource];
                   const isExpanded = expandedResource === resource;
@@ -599,13 +621,13 @@ export function RoleEditor({
               <Table>
                 <THead>
                   <TR>
-                    <TH>Resource</TH>
+                    <TH style={HEAD}>Resource</TH>
                     {ACTIONS.map((action) => (
                       <TH
                         key={action}
                         colSpan={SCOPES.length}
                         align="center"
-                        style={{ ...MATRIX_CELL, borderLeft: "1px solid var(--stroke-secondary)" }}
+                        style={{ ...MATRIX_CELL, ...HEAD, borderLeft: "1px solid var(--stroke-secondary)" }}
                       >
                         {ACTION_LABELS[action]}
                       </TH>
@@ -750,50 +772,8 @@ export function RoleEditor({
             </div>
             </div>
           </div>
-
-          {error && <Banner tone="error" body={error} />}
-        </div>
-
-        <footer
-          className={`${phone.editorFoot} flex flex-wrap items-center justify-between gap-2 px-6 py-4`}
-          style={{ borderTop: "1px solid var(--stroke-divider)" }}
-        >
-          <div className="flex gap-2">
-            {isEditing && !isSystem && (
-              <Button
-                hierarchy="secondary"
-                tone="error"
-                onClick={() => setAskingDelete(true)}
-                leadingIcon={<Trash2 className="h-4 w-4" />}
-              >
-                Delete
-              </Button>
-            )}
-            {isEditing && (
-              <Button
-                hierarchy="secondary"
-                onClick={() => setCopyName(`${role.name} (Copy)`)}
-                leadingIcon={<Copy className="h-4 w-4" />}
-              >
-                Duplicate
-              </Button>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <Button hierarchy="secondary" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button
-              pending={saving}
-              onClick={handleSave}
-              disabled={saving || !name.trim()}
-              leadingIcon={<Save className="h-4 w-4" />}
-            >
-              {saving ? "Saving…" : isEditing ? "Update Role" : "Create Role"}
-            </Button>
-          </div>
-        </footer>
-      </div>
+        </WindowBlock>
+      </WindowCard>
 
       {askingReplace && (
         <ConfirmDialog
@@ -809,28 +789,30 @@ export function RoleEditor({
       )}
       {askingDelete && role && (
         <ConfirmDialog
-          title={`Delete ${role.name}?`}
+          title="Delete this role?"
+          subtitle={role.name}
           confirmLabel="Delete role"
+          hint="This cannot be undone."
           onConfirm={() => void handleDelete()}
           onCancel={() => setAskingDelete(false)}
         >
-          This cannot be undone.
+          Its permissions and settings are deleted with it. A role can only be deleted once nobody has it.
         </ConfirmDialog>
       )}
       {copyName !== null && role && (
         <ConfirmDialog
           title="Duplicate this role"
+          subtitle={role.name}
           tone="info"
           confirmLabel="Duplicate role"
+          confirmDisabled={!copyName.trim()}
           onConfirm={() => void handleDuplicate()}
           onCancel={() => setCopyName(null)}
         >
-          <span className="flex flex-col gap-2 text-left">
-            <span>The copy starts with the same permissions and settings.</span>
-            <Input label="Name for the copy" value={copyName} onChange={(e) => setCopyName(e.target.value)} />
-          </span>
+          <p>The copy starts with the same permissions and settings.</p>
+          <Input label="Name for the copy" value={copyName} onChange={(e) => setCopyName(e.target.value)} />
         </ConfirmDialog>
       )}
-    </Overlay>
+    </Window>
   );
 }

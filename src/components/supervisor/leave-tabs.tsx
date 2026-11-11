@@ -16,10 +16,9 @@ import {
   subMonths,
 } from "date-fns";
 import { leaveDayKeys } from "@/lib/leave-days";
-import { AlertTriangle, CalendarOff, CheckCircle2, ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
+import { AlertTriangle, CalendarOff, CalendarPlus, CheckCircle2, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import {
   Badge,
-  Banner,
   Button,
   Card,
   FilterSelectChip,
@@ -41,7 +40,8 @@ import { LEAVE_STATUS_LABEL, type LeaveRequestStatusValue } from "@/lib/state-ma
 import { getTeamMembersForLeave, getLeaveTypesForEmployee, createLeaveRequestForEmployee } from "@/actions/leave.actions";
 import { LeaveDayPicker, type DaySelection, type ShiftInfo } from "@/components/leave/leave-day-picker";
 import { shiftMeal } from "@/lib/shift-meal";
-import { Overlay } from "@/components/ui/overlay";
+import { Window, WindowBlock, WindowCard } from "@/components/ui/window";
+import { menuStyles } from "@/components/ui/menu";
 
 /**
  * Team Leave, as the portal design lays it out: the list screen's header,
@@ -287,7 +287,6 @@ export function LeaveTabs({
 
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitSuccess, setSubmitSuccess] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [teamEmployees, setTeamEmployees] = useState<TeamEmployee[]>([]);
   const [leaveTypes, setLeaveTypes] = useState<{ id: string; name: string; noNote?: boolean }[]>([]);
@@ -315,7 +314,6 @@ export function LeaveTabs({
   async function openSubmitModal() {
     setShowSubmitModal(true);
     setSubmitError(null);
-    setSubmitSuccess(false);
     if (teamEmployees.length === 0) {
       setLoadingTeam(true);
       try {
@@ -333,7 +331,6 @@ export function LeaveTabs({
   function closeModal() {
     setShowSubmitModal(false);
     setSubmitError(null);
-    setSubmitSuccess(false);
     setSelectedDays([]);
     setNote("");
   }
@@ -366,9 +363,8 @@ export function LeaveTabs({
           note: leaveTypes.find((t) => t.id === leaveTypeId)?.noNote ? undefined : note || undefined,
         });
         if (result.success) {
-          setSubmitSuccess(true);
-          setSelectedDays([]);
-          setNote("");
+          closeModal();
+          flash("Leave request submitted. It is now in HR review.");
           router.refresh();
         } else {
           setSubmitError(result.error);
@@ -722,7 +718,7 @@ export function LeaveTabs({
             </Button>
             {canSubmitLeave && (
               <Button className="ta-leave-submit" onClick={openSubmitModal} leadingIcon={<Plus className="h-4 w-4" />}>
-                Submit Leave
+                Submit leave
               </Button>
             )}
           </div>
@@ -1321,51 +1317,43 @@ export function LeaveTabs({
       <Toast message={toast} />
 
       {showSubmitModal && (
-        <Overlay className="ta-sheet-scrim z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="ta-sheet ta-modal max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl">
-            <div
-              className="sticky top-0 z-10 flex items-center justify-between gap-3 px-6 py-4"
-              style={{
-                background: "var(--surface-card)",
-                borderBottom: "1px solid var(--stroke-divider)",
-              }}
-            >
-              <h2 style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
-                Submit Leave for Employee
-              </h2>
-              <Button hierarchy="tertiary" size="sm" iconOnly aria-label="Close" onClick={closeModal}>
-                <X className="h-4 w-4" />
+        <Window
+          width={560}
+          icon={<CalendarPlus />}
+          title="New leave request"
+          subtitle="On behalf of an employee."
+          busy={isPending}
+          foot={submitError ?? "It goes to HR review once submitted."}
+          footTone={submitError ? "error" : undefined}
+          onClose={closeModal}
+          onSubmit={handleSubmit}
+          actions={
+            <>
+              <Button hierarchy="secondary" onClick={closeModal} disabled={isPending}>
+                Cancel
               </Button>
-            </div>
-
-            {submitSuccess ? (
-              <div className="flex flex-col gap-4 px-6 py-5">
-                <Banner
-                  tone="success"
-                  title="Leave request submitted"
-                  body="It is now in the HR Review queue."
-                />
-                <div className="flex justify-end">
-                  <Button onClick={closeModal}>Close</Button>
-                </div>
-              </div>
-            ) : loadingTeam ? (
-              <p
-                className="px-6 py-8 text-center"
-                style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-tertiary)" }}
+              <Button
+                pending={isPending}
+                type="submit"
+                disabled={isPending || loadingTeam || !targetEmployeeId || !leaveTypeId || selectedDays.length === 0}
               >
-                Loading team members…
-              </p>
-            ) : (
-              <form onSubmit={handleSubmit} className="flex flex-col gap-4 px-6 py-5">
+                {isPending ? "Submitting…" : "Submit request"}
+              </Button>
+            </>
+          }
+        >
+          <WindowCard>
+            <WindowBlock>
+              <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr))]">
                 <Field label="Employee">
                   <Select
                     value={targetEmployeeId}
                     onChange={(e) => handleEmployeeChange(e.target.value)}
                     required
+                    disabled={loadingTeam}
                     style={{ width: "100%" }}
                   >
-                    <option value="">Select employee…</option>
+                    <option value="">{loadingTeam ? "Loading people…" : "Select employee…"}</option>
                     {teamEmployees.map((emp) => (
                       <option key={emp.id} value={emp.id}>
                         {emp.user?.name ?? emp.wmsId ?? emp.id}
@@ -1373,12 +1361,12 @@ export function LeaveTabs({
                     ))}
                   </Select>
                 </Field>
-
-                <Field label="Leave Type">
+                <Field label="Leave type">
                   <Select
                     value={leaveTypeId}
                     onChange={(e) => setLeaveTypeId(e.target.value)}
                     required
+                    disabled={loadingTeam}
                     style={{ width: "100%" }}
                   >
                     <option value="">Select type…</option>
@@ -1387,65 +1375,46 @@ export function LeaveTabs({
                     ))}
                   </Select>
                 </Field>
+              </div>
+            </WindowBlock>
 
-                {/* Day picker — same as My Leave */}
-                <FieldGroup label="Select Days">
-                  <div
-                    className="rounded-lg p-3"
-                    style={{ border: "1px solid var(--stroke-secondary)" }}
-                  >
-                    <LeaveDayPicker value={selectedDays} onChange={setSelectedDays} shift={shift} />
-                  </div>
-                </FieldGroup>
+            {/* The same day picker as a person's own request. Not wrapped in a
+                <label>: a click on the space around the month would be passed
+                to the first day inside it. */}
+            <WindowBlock label="Days">
+              <div role="group" aria-label="Days">
+                <LeaveDayPicker value={selectedDays} onChange={setSelectedDays} shift={shift} />
+              </div>
+            </WindowBlock>
 
-                {leaveTypes.find((t) => t.id === leaveTypeId)?.noNote ? (
-                  <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-                    No note for this leave. Do not record medical details. Only the dates are needed.
-                  </p>
-                ) : (
-                  <Textarea
-                    label="Note"
-                    hint="Optional. The employee can see this note."
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                    rows={2}
-                    placeholder="Reason or additional context…"
-                  />
-                )}
-
-                {submitError && <Banner tone="error" body={submitError} />}
-
-                <div className="flex justify-end gap-2">
-                  <Button hierarchy="tertiary" onClick={closeModal}>
-                    Cancel
-                  </Button>
-                  <Button
-                    pending={isPending}
-                    type="submit"
-                    disabled={isPending || !targetEmployeeId || !leaveTypeId || selectedDays.length === 0}
-                  >
-                    {isPending ? "Submitting…" : "Submit Request"}
-                  </Button>
-                </div>
-              </form>
+            {leaveTypes.find((t) => t.id === leaveTypeId)?.noNote ? (
+              <WindowBlock label="Note" note="Not taken for this leave.">
+                <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                  Do not record medical details. Only the dates are needed.
+                </p>
+              </WindowBlock>
+            ) : (
+              <WindowBlock label="Note" note="Optional. The employee can see this note.">
+                <Textarea
+                  aria-label="Note"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  rows={2}
+                  placeholder="Reason or additional context…"
+                />
+              </WindowBlock>
             )}
-          </div>
-        </Overlay>
+          </WindowCard>
+        </Window>
       )}
 
       {/* Hover tooltip */}
       {tooltip && (
         <div
           style={{ position: "fixed", top: tooltip.top, left: tooltip.left, zIndex: 100 }}
-          className="ta-desktop-tip ta-modal pointer-events-none flex min-w-[9rem] max-w-[14rem] flex-col gap-2 rounded-xl p-3"
+          className={`ta-desktop-tip pointer-events-none flex min-w-[10rem] max-w-[15rem] flex-col gap-2.5 px-3 pb-3 pt-2.5 ${menuStyles.panel}`}
         >
-          <p
-            style={{
-              margin: 0,
-              font: "var(--type-overline)",
-              color: "var(--text-tertiary)",
-            }}
-          >
+          <p style={{ margin: 0, font: "var(--weight-semibold) 13px/18px var(--font-sans)", color: "var(--text-primary)" }}>
             {format(tooltip.date, "EEEE, MMM d")}
           </p>
           {tooltip.approved.length > 0 && (
@@ -1471,23 +1440,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       <FieldLabel>{label}</FieldLabel>
       {children}
     </label>
-  );
-}
-
-/**
- * The same stack around something that is not one control.
- *
- * <p>The day picker is a month of buttons with hidden inputs behind them, and
- * a <label> wrapping that does real damage: a click on the padding around the
- * grid gets forwarded to the first labelable descendant, so tapping empty
- * space inside the box would toggle a day nobody chose.
- */
-function FieldGroup({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex w-full flex-col gap-1.5" role="group" aria-label={label}>
-      <FieldLabel>{label}</FieldLabel>
-      {children}
-    </div>
   );
 }
 
@@ -1520,12 +1472,17 @@ function TooltipGroup({
   entries: { name: string; leaveType: string }[];
 }) {
   return (
-    <div className="flex flex-col gap-1">
-      <span style={{ font: "var(--type-button2)", color }}>{label}</span>
+    <div className="flex flex-col gap-1.5">
+      {/* The group's colour on a dot, the label itself quiet, as the
+          calendar's legend draws it. */}
+      <span className="inline-flex items-center gap-1.5" style={{ font: "var(--weight-semibold) 12px/16px var(--font-sans)", color: "var(--text-secondary)" }}>
+        <span aria-hidden="true" style={{ width: 7, height: 7, flex: "none", borderRadius: 999, background: color }} />
+        {label}
+      </span>
       {entries.map((e, i) => (
-        <div key={i} className="flex flex-col">
-          <span style={{ font: "var(--type-body1)", color: "var(--text-primary)" }}>{e.name}</span>
-          <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+        <div key={i} className="flex min-w-0 flex-col pl-3">
+          <span className="truncate" style={{ font: "var(--weight-medium) 14px/20px var(--font-sans)", color: "var(--text-primary)" }}>{e.name}</span>
+          <span className="truncate" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
             {e.leaveType}
           </span>
         </div>

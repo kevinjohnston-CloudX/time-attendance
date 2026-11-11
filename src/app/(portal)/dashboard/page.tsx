@@ -12,12 +12,18 @@ import {
 } from "@/components/ui";
 import { db } from "@/lib/db";
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { CalendarClock, CalendarDays, ChevronRight, ClockAlert, FilePen } from "lucide-react";
 import { format, addDays } from "date-fns";
 import { formatMinutes } from "@/lib/utils/duration";
 import { formatTimeOfDay, parseUtcDate, toSiteClock } from "@/lib/utils/date";
 import { hasOwnTime, userHasPermission } from "@/lib/rbac/check-permission";
-import { OverviewPeriodFilter } from "@/components/dashboard/overview-period-filter";
+import { BuildingFilter, OverviewPeriodFilter } from "@/components/dashboard/overview-period-filter";
+import { WorkQueueList, type WorkQueueRow } from "@/components/supervisor/work-queue";
+import { countMissedPunchRequests, getTeamQueues, getTimeOffAhead } from "@/lib/team/team-overview";
+import { TimeOffAheadCard } from "@/components/supervisor/time-off-ahead-card";
+import { getViewableSites } from "@/lib/presence/on-site.service";
+import { ownCompany } from "@/lib/rbac/company";
+import { Prisma } from "@prisma/client";
 import { TodayPunchActions } from "@/components/dashboard/today-punch-actions";
 import { BadgeShortcut } from "@/components/badge/badge-shortcut";
 import {
@@ -71,19 +77,19 @@ const CARD_GRID =
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ overviewPeriodId?: string }>;
+  searchParams: Promise<{ overviewPeriodId?: string; site?: string }>;
 }) {
   const session = await auth();
   const employeeId = session?.user?.employeeId ?? null;
   const tenantId = (session?.user as { tenantId?: string } | undefined)?.tenantId;
   const now = new Date();
   const year = now.getFullYear();
-  const { overviewPeriodId } = (await searchParams) ?? {};
+  const { overviewPeriodId, site } = (await searchParams) ?? {};
 
   // Three rounds, each waiting only on what it needs: what is open now and who
   // this is, then everything that hangs off the open period, then the counts
   // for the period the overview is showing.
-  const [anyOpenPeriod, allLeaveBalances, myLeaveRequests, me, hasPayrollAccess, canApproveTeam, canPunch, canRequestLeave, ownTime, canSeeTeamPeople, canSeeTeamTimecards, canSeeTeamPunches] = await Promise.all([
+  const [anyOpenPeriod, allLeaveBalances, myLeaveRequests, me, hasPayrollAccess, canApproveTeam, canPunch, canRequestLeave, ownTime, canSeeTeamPeople, canSeeTeamTimecards, canSeeTeamPunches, canApproveHr] = await Promise.all([
     // Only for a login with no employee record of its own (see payPeriod).
     tenantId && !employeeId
       ? db.payPeriod.findFirst({
@@ -121,7 +127,7 @@ export default async function DashboardPage({
     employeeId
       ? db.employee.findUnique({
           where: { id: employeeId },
-          select: { timeZone: true, webPunchEnabled: true, ruleSetId: true, site: { select: { name: true, timezone: true } } },
+          select: { timeZone: true, webPunchEnabled: true, ruleSetId: true, siteId: true, site: { select: { name: true, timezone: true } } },
         })
       : null,
 
@@ -138,6 +144,8 @@ export default async function DashboardPage({
     session?.user ? userHasPermission(session.user, "EMPLOYEE_VIEW_TEAM") : false,
     session?.user ? userHasPermission(session.user, "TIMECARD_VIEW_TEAM") : false,
     session?.user ? userHasPermission(session.user, "PUNCH_VIEW_TEAM") : false,
+    // HR's own step: leave a supervisor approved, waiting on HR.
+    session?.user ? userHasPermission(session.user, "LEAVE_APPROVE_ANY") : false,
   ]);
 
   // The building's own clock, for the dates and times this page prints. The
@@ -156,8 +164,33 @@ export default async function DashboardPage({
     ? await findOpenPayPeriod(tenantId, me.ruleSetId, { timezone: siteZone })
     : anyOpenPeriod;
 
+  // ── The building the company-wide cards count ─────────────────────────────
+  // Payroll, HR and the admins see the whole company, so Team Presence, the
+  // exception counts and the overview follow one building picker. It opens on
+  // your own building; "All buildings" is every building you may see. Team
+  // Presence used to count the whole company under your own building's name.
+  const viewableSites =
+    hasPayrollAccess && tenantId
+      ? await getViewableSites(tenantId, { employeeId: employeeId ?? "", role: session?.user?.role ?? "" })
+      : [];
+  const siteChoice =
+    site === "all" ? null : (viewableSites.find((s) => s.id === (site ?? me?.siteId))?.id ?? null);
+  // "All" is null (no filter) unless this person is held to some buildings.
+  const heldToSome =
+    viewableSites.length > 0 &&
+    viewableSites.length < (await db.site.count({ where: { tenantId: ownCompany(tenantId), isActive: true } }));
+  const siteIds = siteChoice ? [siteChoice] : heldToSome ? viewableSites.map((s) => s.id) : null;
+  const siteLabel = siteChoice ? (viewableSites.find((s) => s.id === siteChoice)?.name ?? null) : "All buildings";
+  const siteOptions = [
+    { id: "all", label: "All buildings" },
+    ...viewableSites.map((s) => ({ id: s.id, label: s.name })),
+  ];
+  const siteQs = siteChoice ? `&siteId=${siteChoice}` : "";
+  const siteSql = siteIds ? Prisma.sql`AND emp."siteId" IN (${Prisma.join(siteIds.length ? siteIds : ["-"])})` : Prisma.empty;
+  const siteWhere = siteIds ? { siteId: { in: siteIds } } : {};
+
   // ── The cards, and the periods either side of this one ────────────────────
-  const [currentTimesheet, today, exceptionsFeed, presence, upcoming, prevPP, nextPP] = await Promise.all([
+  const [currentTimesheet, today, exceptionsFeed, presence, upcoming, prevPP, nextPP, companyExceptions, queues, missedPunchRequests, unsentLeave, timeOffAhead] = await Promise.all([
     payPeriod && employeeId
       ? db.timesheet.findFirst({
           where: { employeeId, payPeriodId: payPeriod.id },
@@ -165,28 +198,70 @@ export default async function DashboardPage({
         })
       : null,
     employeeId && ownTime ? getToday(employeeId, now, siteZone) : null,
-    canApproveTeam && tenantId
-      ? getExceptionsFeed(employeeId, tenantId, hasPayrollAccess, payPeriod?.id ?? null)
+    // A supervisor's own people, by name. Company wide the newest five names
+    // said nothing (3,856 open on live), so payroll gets counts by type.
+    // Every open one, not only this period's: a team with exceptions left in
+    // last period read "Every timecard in range is clean."
+    canApproveTeam && tenantId && !hasPayrollAccess
+      ? getExceptionsFeed(employeeId, tenantId, false, null)
       : null,
     canApproveTeam && tenantId
-      ? getPresence(tenantId, hasPayrollAccess ? null : employeeId)
-      : null,
+      ? getPresence(tenantId, hasPayrollAccess ? null : employeeId, now, hasPayrollAccess ? siteIds : null)
+      : // A view-only login (an agency viewer) sees who of its people is in,
+        // read only, as their punches already are to it.
+        !ownTime && canSeeTeamPunches && tenantId && employeeId
+        ? getPresence(tenantId, employeeId, now)
+        : null,
     tenantId
-      ? getUpcoming(employeeId, tenantId, now, payPeriod ? parseUtcDate(payPeriod.endDate) : null, siteZone)
+      ? getUpcoming(
+          employeeId,
+          tenantId,
+          now,
+          payPeriod ? parseUtcDate(payPeriod.endDate) : null,
+          siteZone,
+          // Approvals are due only from someone who approves; a login with no
+          // time of its own and none to approve has no pay period to close.
+          canApproveTeam ? "Pay period closes, approvals due" : ownTime ? "Pay period closes" : null,
+        )
       : [],
     hasPayrollAccess && tenantId && payPeriod
       ? db.payPeriod.findFirst({
-          where: { tenantId, ruleSetId: payPeriod.ruleSetId, endDate: { lt: payPeriod.startDate } },
-          orderBy: { endDate: "desc" },
+          // By start date: a period's end is stored as the next one's start,
+          // so "ends before this starts" skipped the period just before.
+          where: { tenantId, ruleSetId: payPeriod.ruleSetId, startDate: { lt: payPeriod.startDate } },
+          orderBy: { startDate: "desc" },
           select: { id: true, startDate: true, endDate: true },
         })
       : null,
     hasPayrollAccess && tenantId && payPeriod
       ? db.payPeriod.findFirst({
-          where: { tenantId, ruleSetId: payPeriod.ruleSetId, startDate: { gt: payPeriod.endDate } },
+          where: { tenantId, ruleSetId: payPeriod.ruleSetId, startDate: { gt: payPeriod.startDate } },
           orderBy: { startDate: "asc" },
           select: { id: true, startDate: true, endDate: true },
         })
+      : null,    // Every open exception in the building, by type, as the Exceptions page
+    // counts them with no pay period chosen, so each line opens that list.
+    hasPayrollAccess && canApproveTeam && tenantId
+      ? db.exception.groupBy({
+          by: ["exceptionType"],
+          where: {
+            resolvedAt: null,
+            exceptionType: { not: "SCAN_DISCREPANCY" },
+            timesheet: { employee: { tenantId: ownCompany(tenantId), ...siteWhere } },
+          },
+          _count: { _all: true },
+        })
+      : null,
+    // ── Waiting on you: the decisions, as the Approvals screen counts them ──
+    canApproveTeam && tenantId ? getTeamQueues(tenantId, employeeId, hasPayrollAccess, now) : null,
+    canApproveTeam && tenantId ? countMissedPunchRequests(tenantId, employeeId, hasPayrollAccess) : 0,
+    // Your own: a leave request saved but never sent.
+    employeeId ? db.leaveRequest.count({ where: { employeeId, status: "DRAFT" } }) : 0,
+    // Who on a supervisor's team is off in the next two weeks, as Team
+    // Overview shows it. Company wide it would be every absence; Team
+    // Calendar is the place for that.
+    canApproveTeam && !hasPayrollAccess && tenantId
+      ? getTimeOffAhead(tenantId, employeeId, false, now)
       : null,
   ]);
 
@@ -237,6 +312,7 @@ export default async function DashboardPage({
             AND pp."tenantId"    = ${tenantId}
             AND pp."startDate"   = ${selectedPeriod.startDate}
             AND emp."tenantId"   = ${tenantId}
+            ${siteSql}
             AND e."exceptionType" != 'SCAN_DISCREPANCY'
           GROUP BY e."exceptionType"
         `.then((rows) =>
@@ -245,7 +321,7 @@ export default async function DashboardPage({
         db.leaveRequest.groupBy({
           by: ["status"],
           where: {
-            employee: { tenantId },
+            employee: { tenantId, ...siteWhere },
             startDate: { gte: selectedPeriod.startDate, lte: selectedPeriod.endDate },
           },
           _count: { _all: true },
@@ -254,7 +330,7 @@ export default async function DashboardPage({
           by: ["status"],
           where: {
             payPeriod: { tenantId, startDate: selectedPeriod.startDate },
-            employee:  { tenantId },
+            employee:  { tenantId, ...siteWhere },
           },
           _count: { _all: true },
         }),
@@ -281,9 +357,20 @@ export default async function DashboardPage({
       label: EXCEPTION_LABEL[ec.exceptionType] ?? ec.exceptionType,
       count: ec._count._all,
       color: TONE_DOT[exceptionTone(ec.exceptionType)],
-      href: `/supervisor/exceptions?exceptionType=${ec.exceptionType}${periodQs}`,
+      href: `/supervisor/exceptions?exceptionType=${ec.exceptionType}${periodQs}${siteQs}`,
     }));
   const exceptionTotal = exceptionRows.reduce((n, r) => n + r.count, 0);
+
+  const companyExceptionRows: OverviewRow[] = (companyExceptions ?? [])
+    .map((g) => ({
+      key: g.exceptionType,
+      label: EXCEPTION_LABEL[g.exceptionType] ?? g.exceptionType,
+      count: g._count._all,
+      color: TONE_DOT[exceptionTone(g.exceptionType)],
+      href: `/supervisor/exceptions?exceptionType=${g.exceptionType}${siteQs}`,
+    }))
+    .sort((a, b) => b.count - a.count);
+  const companyExceptionTotal = companyExceptionRows.reduce((n, r) => n + r.count, 0);
 
   // The two waiting steps always show, so "nothing waiting" reads as an
   // answer. The rest only when something is in them.
@@ -319,6 +406,73 @@ export default async function DashboardPage({
     { key: "open", label: "Open", count: timesheetTotal - timesheetLocked, color: "var(--icon-tertiary)", hint: "Editable until the period is locked" },
     { key: "locked", label: "Locked", count: timesheetLocked, color: "var(--fill-success)" },
   ];
+
+  // ── Waiting on you ────────────────────────────────────────────────────────
+  // The bell is a dot now, so the counts live here. Exceptions have their own
+  // card below and are left out; there is no timesheet approval step in use.
+  const waitingRows: WorkQueueRow[] = [
+    ...(queues
+      ? [
+          {
+            key: "leave",
+            icon: <CalendarClock className="h-[17px] w-[17px]" />,
+            label: "Leave requests to decide",
+            detail: hasPayrollAccess ? "Waiting on a supervisor's decision" : "Time off your team has asked for",
+            phoneLabel: "Leave to decide",
+            phoneDetail: hasPayrollAccess ? "Waiting on a supervisor" : "Time off your team asked for",
+            count: queues.leavePending,
+            href: "/supervisor/leave?tab=pending",
+            actionable: true,
+            tone: "warning" as const,
+          },
+          ...(canApproveHr
+            ? [
+                {
+                  key: "hr",
+                  icon: <CalendarDays className="h-[17px] w-[17px]" />,
+                  label: "Leave awaiting HR approval",
+                  detail: "Approved by a supervisor and waiting on the HR decision",
+                  phoneLabel: "Leave waiting on HR",
+                  phoneDetail: "Approved by a supervisor",
+                  count: queues.leaveWithHr,
+                  href: "/supervisor/leave?tab=hr-pending",
+                  actionable: true,
+                  tone: "warning" as const,
+                },
+              ]
+            : []),
+          {
+            key: "missed",
+            icon: <ClockAlert className="h-[17px] w-[17px]" />,
+            label: "Missed punch requests",
+            detail: "Punches people say they missed, to approve or reject",
+            phoneLabel: "Missed punch requests",
+            phoneDetail: "To approve or reject",
+            count: missedPunchRequests,
+            href: "/supervisor/exceptions?exceptionType=MISSING_PUNCH",
+            actionable: true,
+            tone: "warning" as const,
+          },
+        ]
+      : []),
+    ...(unsentLeave > 0
+      ? [
+          {
+            key: "drafts",
+            icon: <FilePen className="h-[17px] w-[17px]" />,
+            label: "Unsent leave requests",
+            detail: "Saved but never sent to your supervisor",
+            phoneLabel: "Unsent leave requests",
+            phoneDetail: "Saved but never sent",
+            count: unsentLeave,
+            href: "/leave",
+            actionable: true,
+            tone: "warning" as const,
+          },
+        ]
+      : []),
+  ];
+  const waitingTotal = waitingRows.reduce((n, r) => n + r.count, 0);
 
   // ── Header line ───────────────────────────────────────────────────────────
   const periodLabel = payPeriod
@@ -363,6 +517,94 @@ export default async function DashboardPage({
       )
     : 0;
 
+  // Team Presence: beside your own day's cards, or for a login with no time of
+  // its own, beside the card listing its people.
+  const presenceCard = presence && (
+    <Card
+      title="Team Presence"
+      subtitle={`Live · ${format(siteNow, "MMM d, h:mm a")} · ${hasPayrollAccess ? siteLabel : canApproveTeam ? "Your team" : "Your people"}`}
+    >
+      <div className="flex flex-col gap-3">
+        <div className="ta-dash-presence grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(126px,1fr))]">
+          {[
+            { label: "On the clock", value: presence.onClock, bg: "var(--surface-success)", color: "var(--text-success)" },
+            { label: "On meal", value: presence.onMeal, bg: "var(--surface-warning)", color: "var(--text-warning)" },
+            { label: "Not in", value: presence.notIn, bg: "var(--surface-card)", color: "var(--text-primary)" },
+            { label: "On leave", value: presence.onLeave, bg: "var(--surface-info)", color: "var(--text-accent)" },
+          ].map((p) => (
+            <div
+              key={p.label}
+              className="ta-dash-stat flex flex-col gap-0.5 rounded-lg px-3 py-2.5"
+              style={{ border: "1px solid var(--stroke-divider)", background: p.bg }}
+            >
+              <span className="wms-overline">{p.label}</span>
+              <span
+                className="tabular"
+                style={{
+                  font: "var(--weight-semibold) 22px/28px var(--font-sans)",
+                  color: p.color,
+                }}
+              >
+                {p.value}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex flex-col">
+          {presence.byDept.map((d) => {
+            const inPct = d.total ? (d.inCount / d.total) * 100 : 0;
+            const mealPct = d.total ? (d.mealCount / d.total) * 100 : 0;
+            return (
+              <div
+                key={d.dept}
+                className="flex items-center gap-3 py-2"
+                style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+              >
+                <span
+                  className="w-[82px] flex-none truncate"
+                  style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)" }}
+                  title={d.dept}
+                >
+                  {d.dept}
+                </span>
+                <div
+                  className="flex h-2 flex-1 overflow-hidden rounded-full"
+                  style={{ background: "var(--ta-track)" }}
+                >
+                  <div style={{ width: `${inPct}%`, background: "var(--fill-success)" }} />
+                  <div style={{ width: `${mealPct}%`, background: "var(--fill-warning)" }} />
+                </div>
+                <span
+                  className="tabular flex-none whitespace-nowrap text-right"
+                  style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                >
+                  {d.inCount} / {d.total} in
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        <div
+          className="flex flex-wrap items-center gap-4"
+          style={{ font: "var(--type-caption1)", color: "var(--text-secondary)" }}
+        >
+          {[
+            { label: "On the clock", bg: "var(--fill-success)" },
+            { label: "On meal", bg: "var(--fill-warning)" },
+            { label: "Not in", bg: "var(--ta-track)" },
+          ].map((l) => (
+            <span key={l.label} className="inline-flex items-center gap-1.5">
+              <span style={{ width: 10, height: 8, borderRadius: 2, background: l.bg }} />
+              {l.label}
+            </span>
+          ))}
+        </div>
+      </div>
+    </Card>
+  );
+
   return (
     <div className="flex flex-col gap-4">
       <PageHeader pinned
@@ -371,10 +613,17 @@ export default async function DashboardPage({
         phoneTitle={greeting(siteNow.getHours(), session?.user?.name)}
         phoneSubtitle={format(siteNow, "EEEE, MMMM d")}
         actions={
-          employeeId && canPunch ? (
-            <LinkButton href="/time/punch" hierarchy="secondary" className="ta-dash-punch">
-              Punch Clock
-            </LinkButton>
+          viewableSites.length > 1 || (employeeId && canPunch) ? (
+            <div className="flex items-center gap-2">
+              {viewableSites.length > 1 && (
+                <BuildingFilter options={siteOptions} selectedId={siteChoice ?? "all"} />
+              )}
+              {employeeId && canPunch && (
+                <LinkButton href="/time/punch" hierarchy="secondary" className="ta-dash-punch">
+                  Punch Clock
+                </LinkButton>
+              )}
+            </div>
           ) : undefined
         }
       />
@@ -382,7 +631,7 @@ export default async function DashboardPage({
       {/* The badge first on a phone: the app opens here, at the door. */}
       {employeeId && <BadgeShortcut />}
 
-      {/* ── Row 1: your day, and your team's ── */}
+      {/* ── Row 1: your day ── */}
       <div className={CARD_GRID}>
         {!ownTime && (canSeeTeamPeople || canSeeTeamTimecards || canSeeTeamPunches) && (
           <Card title="Your people" subtitle="View only">
@@ -398,6 +647,7 @@ export default async function DashboardPage({
             </div>
           </Card>
         )}
+        {!ownTime && presenceCard}
         {today && (
           <Card
             title="Today"
@@ -581,174 +831,144 @@ export default async function DashboardPage({
           </Card>
         )}
 
-        {exceptionsFeed && (
-          <Card title="Exceptions" subtitle="Unresolved this period">
-            <div className="flex flex-col">
-              {exceptionsFeed.rows.length === 0 ? (
-                <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-tertiary)" }}>
-                  Every timecard in range is clean.
-                </p>
-              ) : (
-                exceptionsFeed.rows.map((e) => (
-                  <div
-                    key={e.id}
-                    className="flex items-center gap-2.5 py-2"
-                    style={{ borderBottom: "1px solid var(--stroke-divider)" }}
-                  >
-                    <span className="min-w-0 flex-1 truncate" style={{ font: "var(--type-body1)" }}>
-                      {e.name}
-                    </span>
-                    <span
-                      className="tabular"
-                      style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
-                    >
-                      {format(e.date, "EEE MMM d")}
-                    </span>
-                    <Badge tone={exceptionTone(e.type)} size="sm">
-                      {EXCEPTION_LABEL[e.type] ?? e.type}
-                    </Badge>
-                  </div>
-                ))
-              )}
-              <div className="pt-2.5">
-                <LinkButton href="/supervisor/exceptions" hierarchy="secondary" size="sm" className="ta-card-link">
-                  Open Exceptions
-                </LinkButton>
-              </div>
-            </div>
-          </Card>
-        )}
-
-        {presence && (
-          <Card
-            title="Team Presence"
-            subtitle={`Live · ${format(siteNow, "MMM d, h:mm a")}${me?.site?.name ? ` · ${me.site.name}` : ""}`}
-          >
-            <div className="flex flex-col gap-3">
-              <div className="ta-dash-presence grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(126px,1fr))]">
-                {[
-                  { label: "On the clock", value: presence.onClock, bg: "var(--surface-success)", color: "var(--text-success)" },
-                  { label: "On meal", value: presence.onMeal, bg: "var(--surface-warning)", color: "var(--text-warning)" },
-                  { label: "Not in", value: presence.notIn, bg: "var(--surface-card)", color: "var(--text-primary)" },
-                  { label: "On leave", value: presence.onLeave, bg: "var(--surface-info)", color: "var(--text-accent)" },
-                ].map((p) => (
-                  <div
-                    key={p.label}
-                    className="ta-dash-stat flex flex-col gap-0.5 rounded-lg px-3 py-2.5"
-                    style={{ border: "1px solid var(--stroke-divider)", background: p.bg }}
-                  >
-                    <span className="wms-overline">{p.label}</span>
-                    <span
-                      className="tabular"
-                      style={{
-                        font: "var(--weight-semibold) 22px/28px var(--font-sans)",
-                        color: p.color,
-                      }}
-                    >
-                      {p.value}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex flex-col">
-                {presence.byDept.map((d) => {
-                  const inPct = d.total ? (d.inCount / d.total) * 100 : 0;
-                  const mealPct = d.total ? (d.mealCount / d.total) * 100 : 0;
-                  return (
-                    <div
-                      key={d.dept}
-                      className="flex items-center gap-3 py-2"
-                      style={{ borderBottom: "1px solid var(--stroke-divider)" }}
-                    >
-                      <span
-                        className="w-[82px] flex-none truncate"
-                        style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)" }}
-                        title={d.dept}
-                      >
-                        {d.dept}
-                      </span>
-                      <div
-                        className="flex h-2 flex-1 overflow-hidden rounded-full"
-                        style={{ background: "var(--ta-track)" }}
-                      >
-                        <div style={{ width: `${inPct}%`, background: "var(--fill-success)" }} />
-                        <div style={{ width: `${mealPct}%`, background: "var(--fill-warning)" }} />
-                      </div>
-                      <span
-                        className="tabular flex-none whitespace-nowrap text-right"
-                        style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
-                      >
-                        {d.inCount} / {d.total} in
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div
-                className="flex flex-wrap items-center gap-4"
-                style={{ font: "var(--type-caption1)", color: "var(--text-secondary)" }}
-              >
-                {[
-                  { label: "On the clock", bg: "var(--fill-success)" },
-                  { label: "On meal", bg: "var(--fill-warning)" },
-                  { label: "Not in", bg: "var(--ta-track)" },
-                ].map((l) => (
-                  <span key={l.label} className="inline-flex items-center gap-1.5">
-                    <span style={{ width: 10, height: 8, borderRadius: 2, background: l.bg }} />
-                    {l.label}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </Card>
-        )}
       </div>
 
-      {/* ── Row 2: what is coming ── */}
-      {upcoming.length > 0 && (
-        <Card title="Coming Up" subtitle="Next 30 days">
-          <div className="flex flex-col">
-            {upcoming.map((u) => (
-              <div
-                key={u.key}
-                className="flex items-center gap-3 py-2"
-                style={{ borderBottom: "1px solid var(--stroke-divider)" }}
-              >
-                <span
-                  className="tabular w-[66px] flex-none"
-                  style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
-                >
-                  {format(u.date, "MMM d")}
-                </span>
-                <span
-                  className="min-w-0 flex-1"
-                  style={{ font: "var(--type-body1)", textWrap: "pretty" }}
-                >
-                  {u.what}
-                </span>
-                <Badge tone={u.tone} size="sm">
-                  {u.kind}
-                </Badge>
-              </div>
-            ))}
-            {(canRequestLeave || canApproveTeam) && (
-              <div className="ta-card-links flex gap-2 pt-2.5">
-                {canRequestLeave && (
-                  <LinkButton href="/leave" hierarchy="secondary" size="sm">
-                    My Leave
-                  </LinkButton>
-                )}
-                {canApproveTeam && (
-                  <LinkButton href="/supervisor/leave" hierarchy="tertiary" size="sm">
-                    Team Calendar
-                  </LinkButton>
-                )}
-              </div>
-            )}
-          </div>
+      {waitingRows.length > 0 && (
+        <Card
+          title="Waiting on You"
+          subtitle={
+            waitingTotal === 0
+              ? "Nothing is waiting on you"
+              : `${waitingTotal.toLocaleString()} ${waitingTotal === 1 ? "item" : "items"}${hasPayrollAccess ? " · All buildings" : ""}`
+          }
+          padding={0}
+        >
+          <WorkQueueList rows={waitingRows} />
         </Card>
+      )}
+
+      {/* ── Row 2: your team ── */}
+      {(companyExceptions || exceptionsFeed || (ownTime && presence)) && (
+        <div className={CARD_GRID}>
+          {companyExceptions && (
+            <Card title="Exceptions" subtitle={`Open, every pay period · ${siteLabel}`}>
+              <div className="flex flex-col gap-3">
+                <p className="m-0 flex items-baseline gap-2">
+                  <span className="tabular" style={{ font: "var(--type-h1)", color: "var(--text-primary)" }}>
+                    {companyExceptionTotal.toLocaleString()}
+                  </span>
+                  <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
+                    {companyExceptionTotal === 1 ? "open exception" : "open exceptions"}
+                  </span>
+                </p>
+                <CountRows rows={companyExceptionRows} empty="Every timecard is clean." />
+                <div>
+                  <LinkButton href={`/supervisor/exceptions${siteQs ? `?${siteQs.slice(1)}` : ""}`} hierarchy="secondary" size="sm" className="ta-card-link">
+                    Open Exceptions
+                  </LinkButton>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {exceptionsFeed && (
+            <Card
+              title="Exceptions"
+              subtitle={
+                exceptionsFeed.total === 0
+                  ? "Your team"
+                  : `${exceptionsFeed.total.toLocaleString()} open · newest first · Your team`
+              }
+            >
+              <div className="flex flex-col">
+                {exceptionsFeed.rows.length === 0 ? (
+                  <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-tertiary)" }}>
+                    Every timecard is clean.
+                  </p>
+                ) : (
+                  exceptionsFeed.rows.map((e) => (
+                    <div
+                      key={e.id}
+                      className="flex items-center gap-2.5 py-2"
+                      style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+                    >
+                      <span className="min-w-0 flex-1 truncate" style={{ font: "var(--type-body1)" }}>
+                        {e.name}
+                      </span>
+                      <span
+                        className="tabular"
+                        style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
+                      >
+                        {format(e.date, "EEE MMM d")}
+                      </span>
+                      <Badge tone={exceptionTone(e.type)} size="sm">
+                        {EXCEPTION_LABEL[e.type] ?? e.type}
+                      </Badge>
+                    </div>
+                  ))
+                )}
+                <div className="pt-2.5">
+                  <LinkButton href="/supervisor/exceptions" hierarchy="secondary" size="sm" className="ta-card-link">
+                    Open Exceptions
+                  </LinkButton>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {ownTime && presenceCard}
+        </div>
+      )}
+
+      {/* ── Row 3: what is coming ── */}
+      {(upcoming.length > 0 || timeOffAhead) && (
+        <div className={CARD_GRID}>
+          {upcoming.length > 0 && (
+            <Card title="Coming Up" subtitle="Next 30 days">
+              <div className="flex flex-col">
+                {upcoming.map((u) => (
+                  <div
+                    key={u.key}
+                    className="flex items-center gap-3 py-2"
+                    style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+                  >
+                    <span
+                      className="tabular w-[66px] flex-none"
+                      style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
+                    >
+                      {format(u.date, "MMM d")}
+                    </span>
+                    <span
+                      className="min-w-0 flex-1"
+                      style={{ font: "var(--type-body1)", textWrap: "pretty" }}
+                    >
+                      {u.what}
+                    </span>
+                    <Badge tone={u.tone} size="sm">
+                      {u.kind}
+                    </Badge>
+                  </div>
+                ))}
+                {(canRequestLeave || canApproveTeam) && (
+                  <div className="ta-card-links flex gap-2 pt-2.5">
+                    {canRequestLeave && (
+                      <LinkButton href="/leave" hierarchy="secondary" size="sm">
+                        My Leave
+                      </LinkButton>
+                    )}
+                    {/* Time Off Ahead beside it carries the same link. */}
+                    {canApproveTeam && !timeOffAhead && (
+                      <LinkButton href="/supervisor/leave" hierarchy="tertiary" size="sm">
+                        Team Calendar
+                      </LinkButton>
+                    )}
+                  </div>
+                )}
+              </div>
+            </Card>
+          )}
+          {timeOffAhead && <TimeOffAheadCard timeOff={timeOffAhead} now={now} />}
+        </div>
       )}
 
       {/* ── Pay period overview ── */}
@@ -770,9 +990,7 @@ export default async function DashboardPage({
             <OverviewColumn
               title="Exceptions"
               link={{
-                href: selectedOverviewPeriodId
-                  ? `/supervisor/exceptions?payPeriodId=${selectedOverviewPeriodId}`
-                  : "/supervisor/exceptions",
+                href: `/supervisor/exceptions?${selectedOverviewPeriodId ? `payPeriodId=${selectedOverviewPeriodId}` : ""}${siteQs}`,
                 label: "Review exceptions",
               }}
               figure={exceptionTotal}
@@ -891,61 +1109,68 @@ function OverviewColumn({
         )}
       </div>
 
-      {rows.length === 0 ? (
-        <p className="m-0 flex h-9 items-center" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-          {empty}
-        </p>
-      ) : (
-        <ul className="m-0 flex list-none flex-col p-0" style={{ boxShadow: "inset 0 1px 0 var(--stroke-divider)" }}>
-          {rows.map((r) => {
-            const inner = (
-              <>
-                <span className="h-2 w-2 flex-none rounded-full" style={{ background: r.count ? r.color : "var(--ta-track)" }} aria-hidden />
-                <span
-                  className="min-w-0 flex-1 truncate whitespace-nowrap"
-                  style={{ font: "var(--type-body2)", color: r.count ? "var(--text-secondary)" : "var(--text-tertiary)" }}
-                >
-                  {r.label}
-                </span>
-                <span
-                  className="tabular flex-none"
-                  style={{
-                    font: "var(--type-body2)",
-                    fontWeight: "var(--weight-semibold)",
-                    color: r.count ? "var(--text-primary)" : "var(--text-tertiary)",
-                  }}
-                >
-                  {r.count.toLocaleString()}
-                </span>
-                <ChevronRight
-                  className="h-3.5 w-3.5 flex-none"
-                  style={{ color: "var(--icon-tertiary)", visibility: r.href ? "visible" : "hidden" }}
-                  aria-hidden
-                />
-              </>
-            );
-            return (
-              <li key={r.key} style={{ boxShadow: "inset 0 -1px 0 var(--stroke-divider)" }}>
-                {r.href ? (
-                  <Link
-                    href={r.href}
-                    title={r.hint}
-                    className="ta-hoverable -mx-2 flex h-9 items-center gap-2.5 rounded-md px-2"
-                    style={{ textDecoration: "none" }}
-                  >
-                    {inner}
-                  </Link>
-                ) : (
-                  <div title={r.hint} className="-mx-2 flex h-9 items-center gap-2.5 px-2">
-                    {inner}
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      <CountRows rows={rows} empty={empty} />
     </section>
   );
 }
 
+/**
+ * Count lines, one per kind, each opening the list it counts: the overview's
+ * columns and the company-wide Exceptions card draw the same rows.
+ */
+function CountRows({ rows, empty }: { rows: OverviewRow[]; empty: string }) {
+  return rows.length === 0 ? (
+    <p className="m-0 flex h-9 items-center" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
+      {empty}
+    </p>
+  ) : (
+    <ul className="m-0 flex list-none flex-col p-0" style={{ boxShadow: "inset 0 1px 0 var(--stroke-divider)" }}>
+      {rows.map((r) => {
+        const inner = (
+          <>
+            <span className="h-2 w-2 flex-none rounded-full" style={{ background: r.count ? r.color : "var(--ta-track)" }} aria-hidden />
+            <span
+              className="min-w-0 flex-1 truncate whitespace-nowrap"
+              style={{ font: "var(--type-body2)", color: r.count ? "var(--text-secondary)" : "var(--text-tertiary)" }}
+            >
+              {r.label}
+            </span>
+            <span
+              className="tabular flex-none"
+              style={{
+                font: "var(--type-body2)",
+                fontWeight: "var(--weight-semibold)",
+                color: r.count ? "var(--text-primary)" : "var(--text-tertiary)",
+              }}
+            >
+              {r.count.toLocaleString()}
+            </span>
+            <ChevronRight
+              className="h-3.5 w-3.5 flex-none"
+              style={{ color: "var(--icon-tertiary)", visibility: r.href ? "visible" : "hidden" }}
+              aria-hidden
+            />
+          </>
+        );
+        return (
+          <li key={r.key} style={{ boxShadow: "inset 0 -1px 0 var(--stroke-divider)" }}>
+            {r.href ? (
+              <Link
+                href={r.href}
+                title={r.hint}
+                className="ta-hoverable -mx-2 flex h-9 items-center gap-2.5 rounded-md px-2"
+                style={{ textDecoration: "none" }}
+              >
+                {inner}
+              </Link>
+            ) : (
+              <div title={r.hint} className="-mx-2 flex h-9 items-center gap-2.5 px-2">
+                {inner}
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}

@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import type { ReportResult } from "../data-sources";
-import { cellValue, isHoursColumn } from "../cell";
+import { cellValue, isHoursColumn, isMoneyColumn } from "../cell";
 import { signers, type Signature } from "../grouping";
 
 export async function generateXlsx(
@@ -19,7 +19,7 @@ export async function generateXlsx(
     header: col.exportLabel ?? col.label,
     key: col.id,
     width: col.type === "number" ? 12 : 20,
-    ...(isHoursColumn(col) ? { style: { numFmt: "0.00" } } : {}),
+    ...(isHoursColumn(col) ? { style: { numFmt: "0.00" } } : isMoneyColumn(col) ? { style: { numFmt: '"$"#,##0.00' } } : {}),
   }));
 
   // Style header row

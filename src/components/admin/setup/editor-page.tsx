@@ -2,12 +2,11 @@
 
 import { useEffect, useRef, useState, type FormEvent, type InputHTMLAttributes, type ReactNode } from "react";
 import { useRouter } from "@/components/layout/navigation-progress";
-import { Banner, Button, Checkbox, Input, Switch } from "@/components/ui";
+import { Banner, Button, Checkbox, ConfirmDialog, Input, Switch } from "@/components/ui";
 import { SetupShell } from "./setup-shell";
 import { NotCalculated } from "./setup-ui";
 import { useViewOnly } from "./view-only";
 import phone from "./setup-phone.module.css";
-import { Overlay } from "@/components/ui/overlay";
 
 /**
  * The frame every Rules Setup editor page shares: the rule set, the shift,
@@ -191,42 +190,21 @@ function useLeaveGuard(dirty: boolean, noun: string) {
   }, []);
 
   return pending ? (
-    <Overlay
-      className="ta-sheet-scrim z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(3, 7, 18, 0.5)" }}
-      onClick={(e) => e.target === e.currentTarget && setPending(null)}
+    <ConfirmDialog
+      tone="warning"
+      title="Discard unsaved changes?"
+      confirmLabel="Discard changes"
+      cancelLabel="Keep editing"
+      onCancel={() => setPending(null)}
+      onConfirm={() => {
+        const to = pending;
+        dirtyRef.current = false;
+        setPending(null);
+        router.push(to);
+      }}
     >
-      <div
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="editor-leave-title"
-        className="ta-sheet ta-modal flex w-full max-w-[420px] flex-col gap-2 p-5"
-        style={{ borderRadius: "var(--radius-l)" }}
-      >
-        <h2 id="editor-leave-title" style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>
-          Discard unsaved changes?
-        </h2>
-        <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>
-          The changes on this {noun} have not been saved. Leaving now loses them.
-        </p>
-        <div className="ta-sheet-actions mt-3 flex justify-end gap-2">
-          <Button hierarchy="secondary" onClick={() => setPending(null)}>
-            Keep editing
-          </Button>
-          <Button
-            tone="error"
-            onClick={() => {
-              const to = pending;
-              dirtyRef.current = false;
-              setPending(null);
-              router.push(to);
-            }}
-          >
-            Discard changes
-          </Button>
-        </div>
-      </div>
-    </Overlay>
+      The changes on this {noun} have not been saved. Leaving now loses them.
+    </ConfirmDialog>
   ) : null;
 }
 

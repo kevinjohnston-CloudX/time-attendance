@@ -27,5 +27,6 @@ export { StatCard, type StatTone } from "./stat";
 export { Banner, type BannerTone } from "./banner";
 export { ConfirmDialog } from "./confirm-dialog";
 export { Overlay } from "./overlay";
+export { Window, WindowCard, WindowBlock, WindowGroupLabel, WindowFacts, type WindowSize, type WindowTone } from "./window";
 export { PendingRegion } from "./pending-region";
 export { LanguagePicker } from "./language-picker";

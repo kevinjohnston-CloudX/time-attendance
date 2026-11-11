@@ -338,6 +338,7 @@ const STANDARD_DATES: Record<StandardReport["dates"], string> = {
   currentPayPeriod: "Current pay period, moving on by itself",
   previousPayPeriod: "Previous pay period, moving on by itself",
   currentWeek: "This week, moving on by itself",
+  previousWeek: "Last week, moving on by itself",
   currentMonth: "This month, moving on by itself",
   previousMonth: "Last month, moving on by itself",
   currentYear: "This year, moving on by itself",

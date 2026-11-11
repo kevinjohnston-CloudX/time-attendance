@@ -1,0 +1,13 @@
+/* What a confirmation will do, in its one white card. Text reads left to
+   right like every other window; a field or a photo sits under it. */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font: var(--type-body1);
+  color: var(--text-primary);
+  text-wrap: pretty;
+}
+.body p {
+  margin: 0;
+}

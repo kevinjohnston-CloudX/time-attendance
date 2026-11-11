@@ -8,8 +8,9 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { Camera, ImageDown, ImageUp, X } from "lucide-react";
+import { Camera, ImageDown, ImageUp } from "lucide-react";
 import { Button } from "@/components/ui";
+import { Window, WindowCard } from "@/components/ui/window";
 import { updateEmployeePhoto } from "@/actions/presence.actions";
 import { initialsOf } from "./presence-meta";
 import styles from "./on-site.module.css";
@@ -27,8 +28,8 @@ import { codeOf } from "@/lib/action-errors";
  * files a small JPEG and never works on pixels.
  *
  * <p>Nothing is saved until Save photo. Closing, Escape or Cancel leave the
- * person's photo as it was. Escape is caught before the panel underneath
- * hears it, so it closes this and leaves the panel open.
+ * person's photo as it was. It is a window on the shared frame, so Escape
+ * closes this and leaves the panel underneath open.
  */
 
 /** The frame on screen, and the file it becomes. */
@@ -57,7 +58,6 @@ export function PhotoEditor({
   siteId,
   employeeId,
   name,
-  detail,
   currentSrc,
   onClose,
   onSaved,
@@ -66,7 +66,6 @@ export function PhotoEditor({
   siteId: string;
   employeeId: string;
   name: string;
-  detail: string;
   currentSrc: string | null | undefined;
   onClose: () => void;
   /** The new photo's link, to draw at once everywhere on the page. */
@@ -93,30 +92,24 @@ export function PhotoEditor({
   const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(
     null,
   );
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const closeRef = useRef(onClose);
-  useEffect(() => {
-    closeRef.current = onClose;
-  }, [onClose]);
+  const cardRef = useRef<HTMLElement>(null);
 
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
   }, []);
 
-  // Escape closes this, not the panel; focus comes in and goes back out.
+  // The first way to a photo, once the window has taken focus for itself
+  // (its effect runs first). A photo let go of anywhere outside the card
+  // must not open in the tab instead.
   useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    dialogRef.current?.querySelector<HTMLElement>("[data-autofocus]")?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      closeRef.current();
-    };
-    window.addEventListener("keydown", onKey, true);
+    cardRef.current?.querySelector<HTMLElement>("[data-autofocus]")?.focus();
+    const stop = (e: DragEvent) => e.preventDefault();
+    window.addEventListener("dragover", stop);
+    window.addEventListener("drop", stop);
     return () => {
-      window.removeEventListener("keydown", onKey, true);
-      opener?.focus?.();
+      window.removeEventListener("dragover", stop);
+      window.removeEventListener("drop", stop);
     };
   }, []);
 
@@ -331,20 +324,37 @@ export function PhotoEditor({
   const showCurrent = mode === "current" && currentSrc && !currentFailed;
 
   return (
-    <div
-      className={`${styles.peScrim} ta-sheet-scrim`}
-      onClick={saving ? undefined : onClose}
-      // A photo let go of beside the dialog must not open in the tab instead.
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => e.preventDefault()}
+    <Window
+      // The frame's width plus the card's padding and the window's edge.
+      width={FRAME_W + 48}
+      icon={<Camera />}
+      title="Update photo"
+      subtitle={name}
+      busy={saving}
+      // Remove sits on the left, apart from Cancel and Save; an error takes its place.
+      foot={
+        error ??
+        (onRemove && mode === "current" ? (
+          <Button hierarchy="tertiary" tone="error" size="sm" onClick={onRemove} disabled={saving}>
+            Remove photo
+          </Button>
+        ) : undefined)
+      }
+      footTone={error ? "error" : undefined}
+      onClose={onClose}
+      actions={
+        <>
+          <Button hierarchy="secondary" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button pending={saving} hierarchy="primary" onClick={save} disabled={mode !== "frame" || !image || saving}>
+            {saving ? "Saving" : "Save photo"}
+          </Button>
+        </>
+      }
     >
-      <div
-        ref={dialogRef}
-        className={`${styles.peDialog} ta-sheet`}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="pe-title"
-        onClick={(e) => e.stopPropagation()}
+      <WindowCard
+        ref={cardRef}
         onDragEnter={(e) => {
           if (saving || !e.dataTransfer.types.includes("Files")) return;
           e.preventDefault();
@@ -368,27 +378,6 @@ export function PhotoEditor({
           if (!saving) pickFile(e.dataTransfer.files?.[0]);
         }}
       >
-        <div className={styles.peHead}>
-          <div className="flex min-w-0 flex-col">
-            <h2 id="pe-title" className={styles.peTitle}>
-              Update photo
-            </h2>
-            <span className={styles.peSub} title={`${name} · ${detail}`}>
-              {[name, detail].filter(Boolean).join(" · ")}
-            </span>
-          </div>
-          <Button
-            hierarchy="tertiary"
-            size="sm"
-            iconOnly
-            aria-label="Close"
-            onClick={onClose}
-            disabled={saving}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-
         <div className={styles.peBody}>
           <div
             className={styles.peFrame}
@@ -456,7 +445,24 @@ export function PhotoEditor({
               />
             )}
             {mode === "frame" && (
-              <span className={styles.peGuide} aria-hidden="true" />
+              <>
+                <span className={styles.peGuide} aria-hidden="true" />
+                <span className={styles.peFrameTag}>Drag to move</span>
+                {/* On the photo, so the window keeps one size; its own
+                    drag must not move the picture under it. */}
+                <label className={styles.peZoom} onPointerDown={(e) => e.stopPropagation()}>
+                  <span>Zoom</span>
+                  <input
+                    type="range"
+                    min={1}
+                    max={MAX_ZOOM}
+                    step={0.01}
+                    value={zoom}
+                    onChange={(e) => changeZoom(Number(e.target.value))}
+                    aria-label="Zoom"
+                  />
+                </label>
+              </>
             )}
             {dragOver && (
               <span className={styles.peDrop} aria-hidden="true">
@@ -466,27 +472,6 @@ export function PhotoEditor({
             )}
           </div>
 
-          {mode === "frame" && (
-            <label className={styles.peZoom}>
-              <span>Zoom</span>
-              <input
-                type="range"
-                min={1}
-                max={MAX_ZOOM}
-                step={0.01}
-                value={zoom}
-                onChange={(e) => changeZoom(Number(e.target.value))}
-                aria-label="Zoom"
-              />
-            </label>
-          )}
-          <p className={styles.peHint}>
-            {mode === "camera"
-              ? "Face the camera, then take the photo."
-              : mode === "frame"
-                ? "Saved as shown. To frame the face closer, zoom in and drag."
-                : "Drag a photo here, choose one, or use the camera. You can frame it before saving."}
-          </p>
 
           <div className={styles.peSources}>
             {mode === "camera" ? (
@@ -535,36 +520,8 @@ export function PhotoEditor({
               }}
             />
           </div>
-
-          {error && (
-            <p className={styles.peError} role="alert">
-              {error}
-            </p>
-          )}
         </div>
-
-        <div className={styles.peFoot}>
-          <span className={styles.peNote}>The photo it replaces is kept.</span>
-          <div className="flex items-center gap-2">
-            {onRemove && mode === "current" && (
-              <Button hierarchy="secondary" tone="error" onClick={onRemove} disabled={saving}>
-                Remove photo
-              </Button>
-            )}
-            <Button hierarchy="secondary" onClick={onClose} disabled={saving}>
-              Cancel
-            </Button>
-            <Button
-              pending={saving}
-              hierarchy="primary"
-              onClick={save}
-              disabled={mode !== "frame" || !image || saving}
-            >
-              {saving ? "Saving" : "Save photo"}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
+      </WindowCard>
+    </Window>
   );
 }

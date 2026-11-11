@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LinkPendingSpinner, useRouter } from "@/components/layout/navigation-progress";
-import { useRef, useState, useEffect, useTransition } from "react";
+import { useCallback, useRef, useState, useTransition } from "react";
+import { useMenuDismiss } from "@/components/ui/menu";
 import { signOut } from "next-auth/react";
 import { LogOut, Eye, X, Search, ChevronsUpDown, TriangleAlert, UserRound, ChevronRight, ChevronLeft } from "lucide-react";
 import { ProfileWindow } from "@/components/account/profile-window";
@@ -439,15 +440,10 @@ export function Sidebar({
   const [pinnedSection, setPinnedSection] = useState<{ id: string; path: string } | null>(null);
   const rolePickerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (rolePickerRef.current && !rolePickerRef.current.contains(e.target as Node)) {
-        setShowRolePicker(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  // A press outside closes the account menu, and so does Escape, which puts
+  // focus back on the name card.
+  const closeRolePicker = useCallback(() => setShowRolePicker(false), []);
+  useMenuDismiss(showRolePicker, closeRolePicker, rolePickerRef);
 
   function handleSetViewAs(customRoleId: string) {
     startTransition(async () => {

@@ -311,6 +311,7 @@ function PayCodeDialog({
   return (
     <SetupDialog
       title={p ? `${p.code} ${p.label}` : "Add pay code"}
+      icon={<Receipt />}
       subtitle={p ? "Edit pay code" : undefined}
       submitLabel={p ? "Save changes" : "Add pay code"}
       pending={pending}

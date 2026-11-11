@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui";
 import { isPhone } from "@/lib/phone";
 import styles from "./punch-history-date-picker.module.css";
+import { menuStyles } from "@/components/ui/menu";
 import { PAY_PERIOD_STATUS_LABEL } from "@/lib/state-machines/labels";
 import type { PayPeriodPreset } from "@/lib/punch-history/punch-history-data";
 
@@ -168,10 +169,9 @@ export function PunchHistoryDatePicker({
               aria-label="Date range"
               className={`absolute left-0 top-[calc(100%+6px)] z-40 flex w-[560px] max-w-[calc(100vw-48px)] flex-wrap overflow-hidden ${styles.sheet}`}
               style={{
-                border: "1px solid var(--stroke-secondary)",
-                borderRadius: "var(--radius-l)",
+                borderRadius: 12,
                 background: "var(--surface-card)",
-                boxShadow: "var(--shadow-menu)",
+                boxShadow: "var(--ta-menu-shadow)",
               }}
             >
               <div className={styles.head}>Date range</div>
@@ -179,7 +179,7 @@ export function PunchHistoryDatePicker({
                 className={`flex flex-[1_1_180px] flex-col gap-1 px-2 py-2.5 ${styles.periods}`}
                 style={{ borderRight: "1px solid var(--stroke-divider)", background: "var(--surface-tertiary)" }}
               >
-                <span className="wms-overline px-2.5 py-1">Pay periods</span>
+                <span className={menuStyles.label}>Pay periods</span>
                 {payPeriods.length === 0 && (
                   <span className="px-2.5 py-2" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
                     No pay periods yet
@@ -193,10 +193,13 @@ export function PunchHistoryDatePicker({
                       key={`${p.startDate}|${p.endDate}`}
                       type="button"
                       onClick={() => onPick(p.startDate, p.endDate)}
-                      className="ta-outlined flex w-full flex-col items-start gap-px rounded-md px-2.5 py-2 text-left"
+                      aria-pressed={on}
+                      className="ta-outlined flex w-full flex-col items-start gap-px rounded-lg px-2.5 py-2 text-left"
                       style={{
-                        border: `1px solid ${on ? "var(--stroke-accent)" : "transparent"}`,
-                        background: on ? "var(--surface-card)" : "transparent",
+                        border: 0,
+                        // The chosen period reads as a chosen choice row does.
+                        background: on ? "var(--ta-choice-on)" : "transparent",
+                        boxShadow: on ? "inset 0 0 0 1px var(--stroke-accent)" : "none",
                         cursor: "pointer",
                       }}
                     >

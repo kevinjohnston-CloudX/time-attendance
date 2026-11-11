@@ -1,25 +1,30 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
-import { Info, OctagonAlert, TriangleAlert, X } from "lucide-react";
+import { useEffect, useId, type ReactNode } from "react";
+import { Info, OctagonAlert, TriangleAlert } from "lucide-react";
 import { Button } from "./button";
-import { Overlay } from "./overlay";
+import { Window, WindowCard } from "./window";
+import styles from "./confirm-dialog.module.css";
 
 /**
- * The design system's ConfirmDialog: a small centred card with the icon, a
- * question for a title, one sentence saying what will happen, and Cancel
- * beside the action.
+ * A yes or no before something that cannot be taken back, on the same frame
+ * as every other window: the tone in the glyph, the question as the title,
+ * what will happen in one white card, and the buttons on the right with one
+ * quiet line beside them (the error when there is one, else the hint).
  *
- * <p>For a yes or no before something that cannot be taken back. Anything
- * with fields in it is a SetupDialog instead. Escape, the X, Cancel and the
- * scrim all close it, except while the action is running, so a slow request
- * cannot be abandoned halfway and clicked again.
+ * <p>Anything with more than a field or two is a window of its own instead.
+ * Escape, the X, Cancel and the scrim all close it, except while the action is
+ * running, so a slow request cannot be abandoned halfway and clicked again.
+ * Focus starts on Cancel, so an Enter pressed out of habit never confirms.
  */
 export function ConfirmDialog({
   title,
+  subtitle,
   children,
   confirmLabel,
   pendingLabel,
+  cancelLabel = "Cancel",
+  hint,
   tone = "danger",
   pending = false,
   confirmDisabled = false,
@@ -28,12 +33,18 @@ export function ConfirmDialog({
   onCancel,
 }: {
   title: string;
+  /** What it acts on, under the question: a key, a webhook, a person. */
+  subtitle?: ReactNode;
   children: ReactNode;
   confirmLabel: string;
   /** What the action button says while it runs ("Revoking…"). */
   pendingLabel?: string;
+  /** The way out, when "Cancel" would read as the action itself ("Keep request"). */
+  cancelLabel?: string;
+  /** One quiet line beside the buttons, such as "This cannot be undone." */
+  hint?: ReactNode;
   /** danger (red) for what takes access or data away, warning (amber) for
-   *  what cannot be undone quietly, info (blue) for a routine bulk step. */
+   *  what cannot be undone quietly, info (blue) for a routine step. */
   tone?: "danger" | "warning" | "info";
   pending?: boolean;
   /** Holds the action back until something in the body is filled in, such as a required reason. */
@@ -42,93 +53,46 @@ export function ConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const cancelRef = useRef(onCancel);
-  const pendingRef = useRef(pending);
-  useEffect(() => {
-    cancelRef.current = onCancel;
-    pendingRef.current = pending;
-  }, [onCancel, pending]);
+  const cancelId = useId();
 
+  // After the window has taken focus for itself (its effect runs first).
   useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    // Cancel, not the action: an Enter pressed out of habit must not revoke.
-    ref.current?.querySelector<HTMLElement>("[data-cancel]")?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      if (!pendingRef.current) cancelRef.current();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      window.removeEventListener("keydown", onKey, true);
-      opener?.focus?.();
-    };
-  }, []);
+    document.getElementById(cancelId)?.focus({ preventScroll: true });
+  }, [cancelId]);
 
   const Icon = tone === "danger" ? OctagonAlert : tone === "warning" ? TriangleAlert : Info;
 
   return (
-    <Overlay
-      className="ta-sheet-scrim z-[60] flex items-center justify-center p-6"
-      style={{ background: "var(--wms-overlay-modal)" }}
-      onClick={(e) => e.target === e.currentTarget && !pending && onCancel()}
-    >
-      <div
-        ref={ref}
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="confirm-dialog-title"
-        className="ta-sheet relative flex w-full max-w-[470px] flex-col items-center gap-3.5 px-6 pb-5 pt-4 text-center sm:w-auto sm:min-w-[370px]"
-        style={{
-          background: "var(--surface-card)",
-          border: "1px solid var(--stroke-divider)",
-          borderRadius: "var(--radius-l)",
-          boxShadow: "var(--shadow-md)",
-          // Its own bottom padding, kept when a phone shows it as a sheet.
-          ["--ta-sheet-pad" as string]: "20px",
-        }}
-      >
-        <span className="absolute right-3.5 top-3.5">
-          <Button hierarchy="tertiary" size="sm" iconOnly onClick={onCancel} disabled={pending} aria-label="Close">
-            <X className="h-[18px] w-[18px]" style={{ color: "var(--icon-tertiary)" }} />
-          </Button>
-        </span>
-        <Icon
-          className="h-12 w-12"
-          strokeWidth={1.3}
-          aria-hidden
-          style={{ color: tone === "danger" ? "var(--icon-error)" : tone === "warning" ? "var(--icon-warning)" : "var(--icon-accent)" }}
-        />
-        <div className="flex flex-col items-center">
-          <h3
-            id="confirm-dialog-title"
-            style={{ margin: 0, font: "var(--weight-semibold) 18px/26px var(--font-sans)", color: "var(--text-primary)" }}
-          >
-            {title}
-          </h3>
-          <div style={{ maxWidth: 340, font: "var(--type-body1)", color: "var(--text-secondary)", textWrap: "pretty" }}>
-            {children}
-          </div>
-        </div>
-        {error && (
-          <p role="alert" style={{ margin: 0, maxWidth: 340, font: "var(--type-body2)", color: "var(--text-error)" }}>
-            {error}
-          </p>
-        )}
-        <div className="ta-sheet-actions flex w-full justify-center gap-2">
-          <Button data-cancel hierarchy="secondary" onClick={onCancel} disabled={pending}>
-            Cancel
+    <Window
+      alert
+      size="sm"
+      tone={tone === "info" ? "accent" : tone}
+      icon={<Icon />}
+      title={title}
+      subtitle={subtitle}
+      busy={pending}
+      foot={error ?? hint}
+      footTone={error ? "error" : undefined}
+      onClose={onCancel}
+      actions={
+        <>
+          <Button id={cancelId} hierarchy="secondary" onClick={onCancel} disabled={pending}>
+            {cancelLabel}
           </Button>
           <Button
             tone={tone === "danger" ? "error" : tone === "warning" ? "warning" : "regular"}
             onClick={onConfirm}
+            pending={pending}
             disabled={pending || confirmDisabled}
           >
             {pending ? (pendingLabel ?? confirmLabel) : confirmLabel}
           </Button>
-        </div>
-      </div>
-    </Overlay>
+        </>
+      }
+    >
+      <WindowCard padded>
+        <div className={styles.body}>{children}</div>
+      </WindowCard>
+    </Window>
   );
 }

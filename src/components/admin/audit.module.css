@@ -48,26 +48,9 @@
   .row > :nth-child(4) > code { display: none; }
   .row > :nth-child(5) { grid-area: chev; align-self: center; }
 
-  /* An entry's details rise from the bottom, the full width. */
-  .drawer {
-    top: auto !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    left: 0 !important;
-    width: auto !important;
-    max-width: none !important;
-    max-height: calc(100dvh - env(safe-area-inset-top) - 16px);
-    border-radius: 20px 20px 0 0 !important;
-    animation: drawerUp 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
-  .drawerFoot {
-    padding-bottom: calc(14px + env(safe-area-inset-bottom)) !important;
-  }
-  .drawerFoot > span {
+  /* Where this entry sits on the page: the arrows say enough on a phone. */
+  .drawerPos {
     display: none;
-  }
-  .drawerFoot > :global(.wms-btn):first-child {
-    flex: 1 1 auto;
   }
   /* A change: the field, then before and after one under the other. */
   .diffHead {
@@ -95,17 +78,6 @@
   .copy {
     width: 40px !important;
     height: 40px !important;
-  }
-}
-@keyframes drawerUp {
-  from {
-    transform: translateY(32px);
-    opacity: 0.4;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .drawer {
-    animation: none;
   }
 }
 

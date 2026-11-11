@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: msgs }, { status: 400 });
   }
 
-  const { EmployeeCode, ScanDateTime, Stream, DeviceName, Warehouse, LegacyScanType, AppVersion } =
+  const { EmployeeCode, ScanDateTime, Stream, DeviceName, Warehouse, LegacyScanType, AppVersion, Direction } =
     parsed.data;
 
   if (Stream !== "SECURITY") {
@@ -132,6 +132,12 @@ export async function POST(req: NextRequest) {
       // legacy system is being retired, so CloudTime has to be able to answer
       // this on its own eventually, and the anchors that make that safe exist
       // now rather than being promised.
+      // A direction a guard stated (the security phone's batch mode, 2026-11-10)
+      // is taken as fact and stored as SOURCE_COLUMN; it anchors the chain
+      // rather than alternating off it. Omitted by every tablet, so their scans
+      // alternate exactly as described above. Oracle's own log keeps alternating
+      // regardless, and `legacyMismatch` shows where the two part.
+      knownDirection: Direction,
       // A gate crossing never enters the timecard pipeline, so it is resolved
       // the moment it is stored. Leaving these PENDING would have the
       // discrepancy sweep chase a punch that was never meant to exist.

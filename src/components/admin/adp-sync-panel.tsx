@@ -5,10 +5,9 @@ import { addDays, format } from "date-fns";
 import { AlertCircle, ArrowLeft, CheckCircle2, Circle, RefreshCw } from "lucide-react";
 import { testAdpConnection, syncAdpEmployees } from "@/actions/adp.actions";
 import { parseUtcDate } from "@/lib/utils/date";
-import { Badge, Banner, Button, Card, LinkButton, PageHeader, Select, Table, THead, TBody, TR, TH, TD } from "@/components/ui";
+import { Badge, Banner, Button, Card, ConfirmDialog, LinkButton, PageHeader, Select, Table, THead, TBody, TR, TH, TD } from "@/components/ui";
 import styles from "./adp-sync.module.css";
 import { codeOf } from "@/lib/action-errors";
-import { Overlay } from "@/components/ui/overlay";
 
 /**
  * ADP Sync: both directions of the ADP link on one page, in the Dashboard's
@@ -573,35 +572,18 @@ export function AdpSyncPanel({ status, sites, departments, ruleSets }: Props) {
       )}
 
       {confirming && (
-        <Overlay
-          className="ta-sheet-scrim z-50 flex items-center justify-center p-4"
-          style={{ background: "var(--wms-overlay-modal)" }}
-          onClick={(e) => e.target === e.currentTarget && setConfirming(false)}
+        <ConfirmDialog
+          tone="info"
+          title="Sync employees from ADP?"
+          confirmLabel="Sync employees"
+          onConfirm={handleSync}
+          onCancel={() => setConfirming(false)}
         >
-          <div
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="adp-sync-title"
-            className="ta-modal ta-sheet flex w-full max-w-[460px] flex-col gap-2 p-5"
-            style={{ borderRadius: "var(--radius-l)", ["--ta-sheet-pad" as string]: "20px" }}
-          >
-            <h2 id="adp-sync-title" style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>
-              Sync employees from ADP?
-            </h2>
-            <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)", textWrap: "pretty" }}>
-              Employees linked to ADP are updated to match it, and anyone who has left is deactivated. Anyone in ADP not linked
-              here yet is added as a new employee at {siteName}, in {deptName}, on {ruleSetName}.
-            </p>
-            <div className="ta-sheet-actions mt-3 flex justify-end gap-2">
-              <Button hierarchy="secondary" onClick={() => setConfirming(false)}>
-                Cancel
-              </Button>
-              <Button hierarchy="primary" onClick={handleSync}>
-                Sync employees
-              </Button>
-            </div>
-          </div>
-        </Overlay>
+          <p>Employees linked to ADP are updated to match it, and anyone who has left is deactivated.</p>
+          <p>
+            Anyone in ADP not linked here yet is added as a new employee at {siteName}, in {deptName}, on {ruleSetName}.
+          </p>
+        </ConfirmDialog>
       )}
     </div>
   );

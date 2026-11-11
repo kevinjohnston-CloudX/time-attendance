@@ -53,7 +53,7 @@ import styles from "./employee-record.module.css";
 import { PayRatesTable } from "./pay-rates-table";
 import type { PayRateRow } from "@/actions/pay-rate.actions";
 import { TIME_ZONE_OPTIONS, timeZoneLabel } from "@/lib/utils/person-time-zone";
-import { Overlay } from "@/components/ui/overlay";
+import { Window, WindowCard } from "@/components/ui/window";
 import { languageName } from "@/lib/languages";
 import { LanguagePicker } from "@/components/ui/language-picker";
 import { SIGN_IN_ONLY_RULE_SET } from "@/lib/sign-in-only";
@@ -977,7 +977,7 @@ export function EditEmployeeForm({
                     setTempPasswordValue("");
                   }}
                 >
-                  Set Temporary Password
+                  Set temporary password
                 </Button>
               </div>
             </div>
@@ -1728,7 +1728,6 @@ export function EditEmployeeForm({
           siteId={employee.siteId}
           employeeId={employee.id}
           name={employee.user.name ?? employee.employeeCode}
-          detail={[employee.wmsId ?? employee.employeeCode, jobTitleName(saved) || employee.department.name].filter(Boolean).join(" · ")}
           currentSrc={photo}
           onClose={() => setEditingPhoto(false)}
           onSaved={(url) => {
@@ -1779,6 +1778,7 @@ export function EditEmployeeForm({
           title="Discard your changes?"
           tone="warning"
           confirmLabel="Discard changes"
+          cancelLabel="Keep editing"
           onCancel={() => setAskingDiscard(false)}
           onConfirm={discard}
         >
@@ -1786,61 +1786,53 @@ export function EditEmployeeForm({
         </ConfirmDialog>
       )}
 
-      {/* ── Temp password modal ───────────────────────────────────────────── */}
+      {/* ── Temporary password ───────────────────────────────────────────── */}
       {showPasswordModal && (
-        <Overlay
-          className="ta-sheet-scrim z-50 flex items-center justify-center bg-black/50 p-4"
-          onClick={(e) => { if (e.target === e.currentTarget) setShowPasswordModal(false); }}
+        <Window
+          icon={<KeyRound />}
+          title="Set temporary password"
+          subtitle={employee.user.name ?? employee.employeeCode}
+          size="sm"
+          busy={tempStatus === "loading"}
+          onClose={() => setShowPasswordModal(false)}
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setTempStatus("loading");
+            setTempMessage("");
+            const result = await setTemporaryPassword(employee.id, tempPassword);
+            setTempStatus(result.success ? "done" : "error");
+            setTempMessage(result.message);
+            if (result.success) setTempPasswordValue("");
+          }}
+          foot="They are asked to change it the first time they sign in."
+          actions={
+            <>
+              <Button type="button" hierarchy="secondary" onClick={() => setShowPasswordModal(false)} disabled={tempStatus === "loading"}>
+                {tempStatus === "done" ? "Close" : "Cancel"}
+              </Button>
+              <Button type="submit" pending={tempStatus === "loading"} disabled={tempStatus === "loading"}>
+                {tempStatus === "loading" ? "Saving…" : "Set password"}
+              </Button>
+            </>
+          }
         >
-          <div className="ta-modal ta-sheet w-full max-w-sm rounded-xl p-6" style={{ "--ta-sheet-pad": "24px" } as React.CSSProperties}>
-            <h2 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>
-              Set Temporary Password
-            </h2>
-            <p className="mt-1" style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-              The employee will be required to change this on first login.
-            </p>
-
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                setTempStatus("loading");
-                setTempMessage("");
-                const result = await setTemporaryPassword(employee.id, tempPassword);
-                setTempStatus(result.success ? "done" : "error");
-                setTempMessage(result.message);
-                if (result.success) setTempPasswordValue("");
-              }}
-              className="mt-4 flex flex-col gap-3"
-            >
-              {/* Shown as text, not dots: whoever sets this has to read it back
-                  to the employee, and a masked field they cannot check is how a
-                  typo becomes a locked-out badge on a Monday morning. */}
-              <Input
-                label="Temporary password"
-                type="text"
-                value={tempPassword}
-                onChange={(e) => setTempPasswordValue(e.target.value)}
-                placeholder="Enter temporary password"
-                minLength={8}
-                required
-                hint="8+ characters, with an uppercase letter, a number and a special character."
-              />
-
-              {tempMessage && (
-                <Banner tone={tempStatus === "error" ? "error" : "success"} body={tempMessage} />
-              )}
-
-              <div className="ta-sheet-actions mt-1 flex justify-end gap-2">
-                <Button type="button" hierarchy="secondary" onClick={() => setShowPasswordModal(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={tempStatus === "loading"}>
-                  {tempStatus === "loading" ? "Saving…" : "Set Password"}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </Overlay>
+          {tempMessage && <Banner tone={tempStatus === "error" ? "error" : "success"} body={tempMessage} />}
+          <WindowCard padded>
+            {/* Shown as text, not dots: whoever sets this has to read it back
+                to the employee, and a masked field they cannot check is how a
+                typo becomes a locked-out badge on a Monday morning. */}
+            <Input
+              label="Temporary password"
+              type="text"
+              value={tempPassword}
+              onChange={(e) => setTempPasswordValue(e.target.value)}
+              autoComplete="off"
+              minLength={8}
+              required
+              hint="At least 8 characters, with an uppercase letter, a number and a symbol."
+            />
+          </WindowCard>
+        </Window>
       )}
     </>
   );

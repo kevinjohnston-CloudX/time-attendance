@@ -1,7 +1,8 @@
 "use client";
 
 import { useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { ChevronDown } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
+import { menuStyles } from "./menu";
 import { LANGUAGES, languageName } from "@/lib/languages";
 
 /**
@@ -144,13 +145,10 @@ export function LanguagePicker({
           id={listId}
           role="listbox"
           aria-label="Languages"
-          className="ta-scroll absolute left-0 right-0 top-full z-50 m-0 mt-1 max-h-[260px] list-none overflow-y-auto rounded-lg p-1"
-          style={{ background: "var(--surface-card)", boxShadow: "var(--ta-menu-shadow)" }}
+          className={`ta-scroll absolute left-0 right-0 top-full z-50 m-0 mt-1 max-h-[260px] list-none overflow-y-auto ${menuStyles.panel}`}
         >
           {options.length === 0 ? (
-            <li className="px-2.5 py-2" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-              No language matches &ldquo;{text}&rdquo;.
-            </li>
+            <li className={menuStyles.empty}>No language matches &ldquo;{text}&rdquo;.</li>
           ) : (
             options.map((o, i) => (
               <li
@@ -164,17 +162,12 @@ export function LanguagePicker({
                   e.preventDefault();
                   pick(o.code);
                 }}
-                className="flex cursor-pointer items-center justify-between rounded-md px-2.5 py-1.5"
-                style={{
-                  font: "var(--type-body1)",
-                  color: o.code ? "var(--text-primary)" : "var(--text-tertiary)",
-                  background: i === active ? "var(--fill-hover)" : undefined,
-                }}
+                data-chosen={(o.code === value && value !== "") || undefined}
+                className={menuStyles.option}
+                style={o.code ? undefined : { color: "var(--text-tertiary)" }}
               >
-                <span>{o.name}</span>
-                {o.code === value && value !== "" && (
-                  <span style={{ font: "var(--type-caption1)", color: "var(--text-accent)" }}>Selected</span>
-                )}
+                <span className="min-w-0 truncate">{o.name}</span>
+                {o.code === value && value !== "" && <Check className={menuStyles.optionCheck} aria-label="Selected" />}
               </li>
             ))
           )}

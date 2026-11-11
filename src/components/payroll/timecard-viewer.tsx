@@ -20,7 +20,6 @@ import type { PayFrequency } from "@prisma/client";
 import { minutesToHoursDecimal } from "@/lib/utils/duration";
 import {
   Badge,
-  Banner,
   Button,
   Checkbox,
   ConfirmDialog,
@@ -92,6 +91,7 @@ import { usePhoneBack } from "@/components/layout/phone-back";
 import { shiftMeal } from "@/lib/shift-meal";
 import { roundedHoursNote } from "@/lib/utils/hours-entry";
 import { Overlay } from "@/components/ui/overlay";
+import { Window, WindowBlock, WindowCard } from "@/components/ui/window";
 
 /**
  * The Timecards workspace, as the portal design lays it out.
@@ -737,6 +737,7 @@ function InlinePunchEdit({
           <ConfirmDialog
             title="Remove this punch?"
             confirmLabel="Remove punch"
+            hint="This cannot be undone."
             confirmDisabled={!deleteReason.trim()}
             onCancel={() => { setAskingDelete(false); setDeleteReason(""); }}
             onConfirm={() => {
@@ -747,19 +748,17 @@ function InlinePunchEdit({
               onDelete(reason);
             }}
           >
-            The punch is taken off this timecard and the hours are worked out again. This cannot be undone.
-            <span className="mt-3 block text-left">
-              <Textarea
-                label="Reason"
-                required
-                rows={2}
-                maxLength={500}
-                value={deleteReason}
-                onChange={(e) => setDeleteReason(e.target.value)}
-                placeholder="For example: badge scanned twice"
-                hint="Kept with the punch history."
-              />
-            </span>
+            <p>The punch is taken off this timecard and the hours are worked out again.</p>
+            <Textarea
+              label="Reason"
+              required
+              rows={2}
+              maxLength={500}
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              placeholder="For example: badge scanned twice"
+              hint="Kept with the punch history."
+            />
           </ConfirmDialog>,
           document.body
         )}
@@ -1029,6 +1028,7 @@ export function TimecardViewer({
   // Notes modal
   const [noteDay, setNoteDay] = useState<string | null>(null);
   const [noteText, setNoteText] = useState("");
+  const noteFieldRef = useRef<HTMLElement>(null);
   const [noteSaving, setNoteSaving] = useState(false);
 
   // Manual hours inline editor
@@ -4362,208 +4362,144 @@ export function TimecardViewer({
       </div>
 
       {leaveTo && (
-        <Overlay
-          className="ta-sheet-scrim z-50 flex items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.5)" }}
-          onClick={(e) => e.target === e.currentTarget && setLeaveTo(null)}
-          onKeyDown={(e) => e.key === "Escape" && setLeaveTo(null)}
+        <ConfirmDialog
+          tone="warning"
+          title="Discard unsaved changes?"
+          subtitle={timecard?.employee.user?.name ?? undefined}
+          confirmLabel="Discard changes"
+          cancelLabel="Keep editing"
+          onCancel={() => setLeaveTo(null)}
+          onConfirm={discardAndLeave}
         >
-          <div
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="unsaved-title"
-            aria-describedby="unsaved-body"
-            className="ta-sheet ta-modal flex w-full max-w-md flex-col"
-            style={{ borderRadius: "var(--radius-l)" }}
-          >
-            <div className="flex flex-col gap-1.5 px-5 pb-4 pt-5">
-              <h3 id="unsaved-title" style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
-                Discard unsaved changes?
-              </h3>
-              <p id="unsaved-body" className="m-0" style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}>
-                {pendingChangeCount === 1 ? "1 change" : `${pendingChangeCount} changes`} to{" "}
-                {timecard?.employee.user?.name ? `${timecard.employee.user.name}\u2019s timecard` : "this timecard"}{" "}
-                {pendingChangeCount === 1 ? "has" : "have"} not been saved. Leaving now loses{" "}
-                {pendingChangeCount === 1 ? "it" : "them"}.
-              </p>
-            </div>
-            <div className="ta-sheet-actions flex justify-end gap-2 px-5 py-3" style={{ borderTop: "1px solid var(--stroke-divider)" }}>
-              <Button hierarchy="secondary" onClick={() => setLeaveTo(null)} autoFocus>
-                Keep editing
-              </Button>
-              <Button tone="error" onClick={discardAndLeave}>
-                Discard changes
-              </Button>
-            </div>
-          </div>
-        </Overlay>
+          <p>
+            {pendingChangeCount === 1 ? "1 change" : `${pendingChangeCount} changes`} to this timecard{" "}
+            {pendingChangeCount === 1 ? "has" : "have"} not been saved. Leaving now loses{" "}
+            {pendingChangeCount === 1 ? "it" : "them"}.
+          </p>
+        </ConfirmDialog>
       )}
 
-      {/* Notes Modal */}
       {noteDay && timecard && (
-        <Overlay
-          className="ta-sheet-scrim z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-          onClick={() => { setNoteDay(null); setNoteText(""); }}
+        <Window
+          size="sm"
+          icon={<StickyNote />}
+          title="Notes"
+          subtitle={`${timecard.employee.user?.name ?? timecard.employee.employeeCode} on ${(() => {
+            try { return format(parseISO(noteDay), "EEE MM/dd/yyyy"); } catch { return noteDay; }
+          })()}`}
+          busy={noteSaving}
+          initialFocus={canEdit || canFixMissed ? noteFieldRef : undefined}
+          foot={canEdit || canFixMissed ? "Kept with the timecard." : undefined}
+          onClose={() => { setNoteDay(null); setNoteText(""); }}
+          onSubmit={
+            canEdit || canFixMissed
+              ? (e) => { e.preventDefault(); handleSaveNote(); }
+              : undefined
+          }
+          actions={
+            canEdit || canFixMissed ? (
+              <>
+                <Button hierarchy="secondary" onClick={() => { setNoteDay(null); setNoteText(""); }} disabled={noteSaving}>
+                  Close
+                </Button>
+                <Button type="submit" pending={noteSaving} disabled={noteSaving || !noteText.trim()}>
+                  {noteSaving ? "Saving…" : "Add note"}
+                </Button>
+              </>
+            ) : undefined
+          }
         >
-          <div
-            className="ta-sheet flex w-full max-w-lg flex-col rounded-xl ta-modal"
-            style={{ maxHeight: "80vh" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div
-              className="flex shrink-0 items-center justify-between gap-3 px-5 py-3.5"
-              style={{ borderBottom: "1px solid var(--stroke-divider)" }}
-            >
-              <div className="flex flex-col gap-0.5">
-                <h3 style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
-                  Notes
-                </h3>
-                <p
-                  className="m-0"
-                  style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
-                >
-                  {(() => {
-                    try { return format(parseISO(noteDay), "EEE MM/dd/yyyy"); } catch { return noteDay; }
-                  })()}
-                  {" · "}{timecard.employee.user?.name ?? timecard.employee.employeeCode}
-                </p>
-              </div>
-              <Button
-                hierarchy="tertiary"
-                size="sm"
-                iconOnly
-                onClick={() => { setNoteDay(null); setNoteText(""); }}
-                title="Close"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-
-            {/* Notes list */}
-            <div className="flex-1 overflow-y-auto">
-              {(() => {
-                const dayNotes = (timecard?.notes ?? []).filter((n) => n.noteDate === noteDay);
-                if (dayNotes.length === 0) {
-                  return (
-                    <EmptyState
-                      icon={<StickyNote className="h-7 w-7" />}
-                      title="No notes on this day"
-                      body="Anything saved here is kept with the timecard, so the next person can see why an entry looks the way it does."
-                    />
-                  );
-                }
-                return (
-                  <div className="flex flex-col">
-                    {dayNotes.map((n) => (
-                      <div
+          {(() => {
+            const dayNotes = (timecard?.notes ?? []).filter((n) => n.noteDate === noteDay);
+            return (
+              <WindowCard>
+                {dayNotes.length === 0 ? (
+                  <EmptyState
+                    icon={<StickyNote className="h-7 w-7" />}
+                    title="No notes on this day"
+                    body="A note explains why an entry looks the way it does, for the next person who opens this timecard."
+                  />
+                ) : (
+                  <ul className="m-0 flex list-none flex-col p-0">
+                    {dayNotes.map((n, i) => (
+                      <li
                         key={n.id}
-                        className="px-5 py-3.5"
-                        style={{ borderTop: "1px solid var(--stroke-divider)" }}
+                        className="flex flex-col gap-1 px-4 py-3"
+                        style={i > 0 ? { borderTop: "1px solid var(--stroke-divider)" } : undefined}
                       >
-                        <div
-                          className="mb-1 flex items-center gap-2"
-                          style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}
-                        >
+                        <div className="flex items-baseline justify-between gap-3">
                           <span
-                            style={{
-                              fontWeight: "var(--weight-medium)",
-                              color: "var(--text-secondary)",
-                            }}
+                            className="min-w-0 truncate"
+                            style={{ font: "var(--weight-medium) 13px/18px var(--font-sans)", color: "var(--text-secondary)" }}
                           >
                             {n.createdByName ?? "Unknown"}
                           </span>
-                          <span>·</span>
-                          <span className="tabular">
+                          <span className="tabular flex-none whitespace-nowrap" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
                             {format(atSite(n.createdAt), "MM/dd/yyyy h:mm a")}
                           </span>
                         </div>
-                        <p
-                          className="m-0 whitespace-pre-wrap"
-                          style={{ font: "var(--type-body1)", color: "var(--text-primary)" }}
-                        >
+                        <p className="m-0 whitespace-pre-wrap" style={{ font: "var(--type-body1)", color: "var(--text-primary)" }}>
                           {n.note}
                         </p>
-                      </div>
+                      </li>
                     ))}
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* Add note form — for anyone who may change this timecard, a
-                supervisor who only fixes missed punches included */}
-            {(canEdit || canFixMissed) && (
-              <div
-                className="shrink-0 px-5 py-4"
-                style={{
-                  borderTop: "1px solid var(--stroke-divider)",
-                  background: "var(--surface-tertiary)",
-                }}
-              >
-                <Textarea
-                  value={noteText}
-                  onChange={(e) => setNoteText(e.target.value)}
-                  placeholder="Add a note…"
-                  rows={3}
-                  autoFocus
-                />
-                <div className="mt-2 flex justify-end">
-                  <Button
-                    pending={noteSaving}
-                    onClick={handleSaveNote}
-                    disabled={noteSaving || !noteText.trim()}
-                  >
-                    {noteSaving ? "Saving…" : "Add note"}
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        </Overlay>
+                  </ul>
+                )}
+              </WindowCard>
+            );
+          })()}
+          {/* For anyone who may change this timecard, a supervisor who only
+              fixes missed punches included. */}
+          {(canEdit || canFixMissed) && (
+            <WindowCard padded ref={noteFieldRef}>
+              <Textarea
+                label="New note"
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+                placeholder="For example: forgot to clock out, left at 5:00 PM"
+                rows={3}
+              />
+            </WindowCard>
+          )}
+        </Window>
       )}
 
-      {/* Add Entry Modal */}
       {showAddEntryModal && canAddTime && (
-        <Overlay
-          className="ta-sheet-scrim z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-          onClick={() => { setShowAddEntryModal(false); setNewEntryError(null); }}
-        >
-          <div
-            className="ta-sheet w-full max-w-lg overflow-y-auto rounded-xl ta-modal"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div
-              className="flex items-center justify-between gap-3 px-5 py-3.5"
-              style={{ borderBottom: "1px solid var(--stroke-divider)" }}
-            >
-              <div className="flex flex-col gap-0.5">
-                <h3 style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
-                  Add time
-                </h3>
-                <p
-                  className="m-0"
-                  style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}
-                >
-                  {timecard?.employee.user?.name ?? timecard?.employee.employeeCode ?? employees.find((e) => e.employeeId === selectedEmployeeId)?.name ?? selectedEmployeeId}
-                </p>
-              </div>
+        <Window
+          width={520}
+          icon={<Plus />}
+          title="Add time"
+          subtitle={timecard?.employee.user?.name ?? timecard?.employee.employeeCode ?? employees.find((e) => e.employeeId === selectedEmployeeId)?.name ?? selectedEmployeeId}
+          busy={isPending}
+          foot={newEntryError ?? "Any day in this pay period."}
+          footTone={newEntryError ? "error" : undefined}
+          onClose={() => { setShowAddEntryModal(false); setNewEntryError(null); }}
+          onSubmit={newEntryMode === "hours" ? handleAddHoursEntry : handleAddEntry}
+          actions={
+            <>
               <Button
-                hierarchy="tertiary"
-                size="sm"
-                iconOnly
+                hierarchy="secondary"
+                disabled={isPending}
                 onClick={() => { setShowAddEntryModal(false); setNewEntryError(null); }}
-                title="Close"
               >
-                <X className="h-4 w-4" />
+                Cancel
               </Button>
-            </div>
-            <form onSubmit={newEntryMode === "hours" ? handleAddHoursEntry : handleAddEntry} className="flex flex-col gap-4 p-5">
-              {/* The field grid the document template uses: auto-fit columns
-                  that collapse to one at narrow widths, rather than a fixed two
-                  that would put a 70px AM/PM select on its own row. */}
-              <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(200px,46%)),1fr))]">
-                {/* Date — full width */}
+              <Button
+                pending={isPending}
+                type="submit"
+                disabled={isPending || (newEntryMode === "time" ? (!newInTimeStr || !newOutTimeStr) : !newEntryHours)}
+              >
+                {isPending ? "Adding…" : "Add time"}
+              </Button>
+            </>
+          }
+        >
+          <WindowCard>
+            {/* The field grid the document template uses: auto-fit columns
+                that collapse to one at narrow widths, rather than a fixed two
+                that would put a 70px AM/PM select on its own row. */}
+            <WindowBlock>
+              <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(180px,46%)),1fr))]">
                 <div className="col-span-full">
                   <Input
                     label="Date"
@@ -4661,7 +4597,10 @@ export function TimecardViewer({
                     />
                   </div>
                 )}
-
+              </div>
+            </WindowBlock>
+            <WindowBlock>
+              <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,max(180px,46%)),1fr))]">
                 {/* Pay Code: regular hours only, for a supervisor who fixes missed punches */}
                 {!canEdit && (
                   <label className="flex flex-col gap-1.5">
@@ -4708,7 +4647,7 @@ export function TimecardViewer({
                     </Select>
                   </label>
                 )}
-                {/* Notes — full width, saved as timesheet note */}
+                {/* Saved as a timesheet note. */}
                 <div className="col-span-full">
                   <Input
                     label="Note"
@@ -4718,28 +4657,9 @@ export function TimecardViewer({
                   />
                 </div>
               </div>
-              {newEntryError && <Banner tone="error" body={newEntryError} />}
-              <div
-                className="ta-sheet-actions flex justify-end gap-2 pt-4"
-                style={{ borderTop: "1px solid var(--stroke-divider)" }}
-              >
-                <Button
-                  hierarchy="secondary"
-                  onClick={() => { setShowAddEntryModal(false); setNewEntryError(null); }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  pending={isPending}
-                  type="submit"
-                  disabled={isPending || (newEntryMode === "time" ? (!newInTimeStr || !newOutTimeStr) : !newEntryHours)}
-                >
-                  {isPending ? "Adding…" : "Add time"}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </Overlay>
+            </WindowBlock>
+          </WindowCard>
+        </Window>
       )}
     </div>
   );

@@ -59,15 +59,13 @@ export function RemovePhotoDialog({
       onConfirm={remove}
       onCancel={onClose}
     >
-      <span className="flex flex-col items-center gap-3">
+      <>
         {photoSrc && (
           // eslint-disable-next-line @next/next/no-img-element -- a signed S3 link, not an app asset
           <img src={photoSrc} alt={`Current photo of ${name}`} className={styles.rpPhoto} />
         )}
-        <span>
-          {name}&apos;s photo is removed everywhere it shows. Their next scan at a time clock takes a new one.
-        </span>
-      </span>
+        <p>{name}&apos;s photo is removed everywhere it shows. Their next scan at a time clock takes a new one.</p>
+      </>
     </ConfirmDialog>
   );
 }

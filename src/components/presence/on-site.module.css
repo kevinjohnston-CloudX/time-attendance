@@ -693,18 +693,22 @@
   animation: fade 160ms ease-out;
 }
 
+/* The shared window's frame down the right edge: grey, with the header on
+   the grey and each part of the person in a white raised card. */
 .panel {
   position: fixed;
   z-index: 41;
-  top: 0;
-  right: 0;
-  bottom: 0;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
   /* Wide enough for a working day on the lanes to read hour by hour. */
-  width: min(560px, 100vw);
+  width: min(560px, calc(100vw - 24px));
   display: flex;
   flex-direction: column;
-  background: var(--surface-card);
-  box-shadow: -12px 0 40px rgba(3, 7, 18, 0.18);
+  overflow: hidden;
+  border-radius: var(--radius-l);
+  background: var(--ta-canvas);
+  box-shadow: var(--shadow-modal);
   animation: slide 200ms ease-out;
 }
 
@@ -722,21 +726,19 @@
 }
 
 .panelHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px 14px 20px;
-  border-bottom: 1px solid var(--stroke-divider);
+  flex: none;
 }
 
 .panelBody {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
+  padding: 0 16px 16px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
+}
+.panelBody > * {
+  flex: none;
 }
 
 .identity {
@@ -2459,11 +2461,15 @@
 /* ── Person panel, v2: who, the status, the day at a glance, the chart,
       the breakdown, every scan. One column, one rhythm. ─────────────── */
 
-.ppEyebrow {
-  font: var(--weight-semibold) 12px/16px var(--font-sans);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
+/* Who they are, where they are now and their facts, in one white card. */
+.ppCard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--surface-card);
+  box-shadow: var(--ta-raised);
 }
 
 .ppProfile {
@@ -2592,8 +2598,8 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px 20px;
   margin: 0;
-  padding: 2px 0 20px;
-  border-bottom: 1px solid var(--stroke-divider);
+  padding: 16px 0 0;
+  border-top: 1px solid var(--stroke-divider);
 }
 
 .ppFact {
@@ -2615,10 +2621,15 @@
   white-space: nowrap;
 }
 
+/* The day and its scans, each a white card with its heading inside. */
 .ppSection {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding: 12px 16px 16px;
+  border-radius: 14px;
+  background: var(--surface-card);
+  box-shadow: var(--ta-raised);
 }
 
 .ppSectionHead {
@@ -3870,72 +3881,32 @@
   display: block;
   width: 168px;
   aspect-ratio: 4 / 3;
-  margin-top: 10px;
   object-fit: cover;
   border-radius: 10px;
   border: 1px solid var(--stroke-divider);
   background: var(--surface-subtle, var(--surface-card));
 }
 
-.peScrim {
-  position: fixed;
-  inset: 0;
-  z-index: 55;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  background: rgba(3, 7, 18, 0.5);
-  animation: fade 160ms ease-out;
-}
 
-.peDialog {
-  width: min(440px, 100%);
-  max-height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: auto;
-  border-radius: 14px;
-  background: var(--surface-card);
-  box-shadow: var(--shadow-modal);
-}
 
-.peHead {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 16px 16px 12px 20px;
-  border-bottom: 1px solid var(--stroke-divider);
-}
 
-.peTitle {
-  margin: 0;
-  font: var(--type-h3);
-  color: var(--text-primary);
-}
 
-.peSub {
-  font: var(--type-body2);
-  color: var(--text-tertiary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
+/* The frame edge to edge in the card, the ways to a photo under it. */
 .peBody {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  padding: 20px;
+  padding: 8px 8px 12px;
 }
 
 .peFrame {
   position: relative;
   flex: none;
   max-width: 100%;
-  border-radius: 14px;
+  /* The card's 14 less its 8px of padding, so the corners run parallel. */
+  border-radius: 8px;
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -3974,7 +3945,7 @@
   justify-content: center;
   gap: 8px;
   border: 2px dashed var(--stroke-accent);
-  border-radius: 14px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--surface-card) 88%, transparent);
   color: var(--text-accent);
   font: var(--type-button1);
@@ -4021,28 +3992,32 @@
   white-space: nowrap;
 }
 
+/* Zoom, on the photo's foot beside the tag, in the same dark pill. */
 .peZoom {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
   display: flex;
   align-items: center;
-  gap: 12px;
-  width: 360px;
-  max-width: 100%;
-  font: var(--type-body2);
-  color: var(--text-secondary);
+  gap: 8px;
+  width: 168px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-inverse) 72%, transparent);
+  color: var(--ta-text-on-inverse);
+  font: var(--type-caption1);
+  cursor: default;
 }
 
 .peZoom input {
   flex: 1;
   min-width: 0;
+  height: 16px;
   accent-color: var(--fill-accent);
+  cursor: pointer;
 }
 
-.peHint {
-  margin: 0;
-  font: var(--type-body2);
-  color: var(--text-tertiary);
-  text-align: center;
-}
 
 .peSources {
   display: flex;
@@ -4062,20 +4037,7 @@
   text-align: center;
 }
 
-.peFoot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px 16px 20px;
-  border-top: 1px solid var(--stroke-divider);
-}
 
-.peNote {
-  min-width: 0;
-  font: var(--type-body2);
-  color: var(--text-tertiary);
-}
 
 
 /* ── Add to schedule ────────────────────────────────────────────────────── */
@@ -4114,12 +4076,6 @@
   flex: none;
 }
 
-.sdBody {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 20px;
-}
 
 .sdRow {
   display: grid;
@@ -4146,18 +4102,13 @@
   font-variant-numeric: tabular-nums;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .peScrim {
-    animation: none;
-  }
-}
 
 /* ── Gate alert ─────────────────────────────────────────────────────────────
-   Somebody the gate just turned away, made from the page's own pieces: the
-   photo, the reason as the soft amber chip the rows use for a warning, and
-   the details as the employee panel's day at a glance strip. Big, calm and white, so it reads
-   from across the room without shouting. Above every layer on the page but
-   the photo viewer. */
+   Somebody the gate just turned away, on the shared window frame: a grey
+   frame, a raised glyph tile, and the person with their details in one white
+   card, the reason as the soft amber chip the rows use for a warning. Larger
+   than any other window and glowing, so it reads from across the room.
+   Above every layer on the page but the photo viewer. */
 
 .gaScrim {
   position: fixed;
@@ -4183,8 +4134,8 @@
      under the timer as a grey strip. */
   overflow-x: hidden;
   overflow-y: auto;
-  border-radius: 24px;
-  background: var(--surface-card);
+  border-radius: 22px;
+  background: var(--ta-canvas);
   box-shadow: var(--shadow-modal);
   outline: none;
   animation:
@@ -4212,30 +4163,30 @@
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 20px 28px;
-  background: var(--surface-warning);
-  border-bottom: 1px solid var(--stroke-warning);
+  padding: 22px 26px 18px;
 }
 
+/* The frame's raised glyph tile, larger, the icon in the card's colour. */
 .gaHeadIcon {
   position: relative;
   flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 999px;
-  background: var(--fill-warning);
-  color: var(--text-on-accent);
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: var(--surface-card);
+  box-shadow: var(--ta-raised);
+  color: var(--icon-warning);
 }
 
-/* The page's live dot, in amber and larger: rings keep leaving the icon. */
+/* The page's live dot, in amber and larger: rings keep leaving the tile. */
 .gaHeadIcon::after {
   content: "";
   position: absolute;
   inset: -5px;
-  border-radius: 999px;
+  border-radius: 19px;
   border: 3px solid var(--fill-warning);
   opacity: 0;
   animation: ping 1.6s ease-out infinite;
@@ -4288,8 +4239,19 @@
 .gaBody {
   display: flex;
   flex-direction: column;
-  gap: 26px;
-  padding: 28px 28px 22px;
+  gap: 18px;
+  padding: 0 20px 20px;
+}
+
+/* The person and their details: one white card on the grey, split by rules. */
+.gaPanel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--surface-card);
+  box-shadow: var(--ta-raised);
 }
 
 .gaHero {
@@ -4297,6 +4259,7 @@
   align-items: center;
   gap: 28px;
   min-width: 0;
+  padding: 22px;
 }
 
 .gaPhoto {
@@ -4377,9 +4340,7 @@
 .gaGlance {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 0.8fr);
-  border: 1px solid var(--stroke-secondary);
-  border-radius: 16px;
-  overflow: hidden;
+  border-top: 1px solid var(--stroke-divider);
 }
 
 .gaCell {
@@ -4387,7 +4348,7 @@
   flex-direction: column;
   gap: 4px;
   min-width: 0;
-  padding: 16px 18px 17px;
+  padding: 16px 22px 17px;
 }
 
 .gaCell + .gaCell {
@@ -4410,7 +4371,9 @@
 }
 
 .gaNote {
-  margin: -8px 0 0;
+  margin: 0;
+  padding: 12px 22px 14px;
+  border-top: 1px solid var(--stroke-divider);
   font: var(--type-body2);
   color: var(--text-tertiary);
 }
@@ -4422,7 +4385,7 @@
 }
 
 .gaCountdown {
-  margin: -12px 0 0;
+  margin: -6px 0 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4478,11 +4441,9 @@
       var(--shadow-modal);
   }
 }
-.gaCard[data-tone="ended"] .gaHead {
-  background: var(--surface-error);
-  border-bottom-color: var(--stroke-error);
+.gaCard[data-tone="ended"] .gaHeadIcon {
+  color: var(--icon-error);
 }
-.gaCard[data-tone="ended"] .gaHeadIcon,
 .gaCard[data-tone="ended"] .gaQueueCount {
   background: var(--fill-error);
 }
@@ -4501,31 +4462,86 @@
   box-shadow: 0 0 0 1px var(--stroke-error);
 }
 
+/* On a phone: the photo beside the name rather than above it, and the
+   details as short rows, so both answers are in reach without scrolling. */
 @media (max-width: 560px) {
   .gaHead {
-    padding: 16px 20px;
+    padding: 18px 16px 14px;
+  }
+  .gaHeadIcon {
+    width: 44px;
+    height: 44px;
+  }
+  .gaHeadTitle {
+    font-size: 21px;
+    line-height: 26px;
   }
 
   .gaBody {
-    padding: 20px;
-    gap: 20px;
-  }
-
-  .gaName {
-    font-size: 30px;
-    line-height: 36px;
+    padding: 0 16px 16px;
+    gap: 14px;
   }
 
   .gaHero {
-    flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
     gap: 16px;
+    padding: 16px;
+  }
+  .gaPhoto {
+    width: 96px;
+    height: 112px;
+    border-radius: 14px;
+  }
+  .gaPhoto > span:first-child {
+    font-size: 32px !important;
+  }
+  .gaWho {
+    gap: 2px;
+  }
+  .gaName {
+    font-size: 24px;
+    line-height: 30px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .gaRole {
+    font-size: 15px;
+    line-height: 22px;
+  }
+  .gaStatus {
+    margin-top: 8px;
+    height: 34px;
+    padding: 0 14px 0 11px;
+    font-size: 14px;
   }
 
   .gaGlance {
     grid-template-columns: minmax(0, 1fr);
   }
-
+  /* A row each: the label on the left, the value and its line on the right. */
+  .gaCell {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 12px;
+    align-items: baseline;
+    padding: 11px 16px;
+  }
+  .gaCell > :first-child {
+    grid-row: 1 / span 2;
+  }
+  .gaCellValue {
+    font-size: 16px;
+    line-height: 22px;
+    text-align: right;
+  }
+  .gaCell > :last-child {
+    grid-column: 2;
+    min-height: 0;
+    text-align: right;
+  }
+  .gaCell > :last-child:empty {
+    display: none;
+  }
   .gaCell + .gaCell {
     border-left: 0;
     border-top: 1px solid var(--stroke-divider);
@@ -4533,6 +4549,7 @@
 
   .gaActions {
     grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
   }
 }
 
@@ -4659,11 +4676,10 @@
   left: 0;
   width: max(100%, 360px);
   max-width: calc(100vw - 32px);
-  padding: 4px;
-  border: 1px solid var(--stroke-secondary);
-  border-radius: 8px;
+  padding: 6px;
+  border-radius: 12px;
   background: var(--surface-card);
-  box-shadow: var(--shadow-menu);
+  box-shadow: var(--ta-menu-shadow);
 }
 
 .psList {
@@ -4679,8 +4695,8 @@
   align-items: center;
   gap: 10px;
   min-height: 44px;
-  padding: 6px 8px;
-  border-radius: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
   cursor: pointer;
 }
 
@@ -4745,7 +4761,7 @@
 .psNote {
   margin: 0 0 4px;
   padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--surface-info);
   color: var(--text-primary);
   font: var(--type-body2);
@@ -4757,8 +4773,8 @@
 }
 
 .psHint {
-  margin: 4px 0 0;
-  padding: 8px 8px 4px;
+  margin: 6px -6px 0;
+  padding: 8px 16px 4px;
   border-top: 1px solid var(--stroke-divider);
   font: var(--type-body2);
   color: var(--text-tertiary);
@@ -4897,11 +4913,10 @@
   flex-direction: column;
   gap: 4px;
   width: 260px;
-  padding: 8px;
-  border: 1px solid var(--stroke-secondary);
-  border-radius: 10px;
+  padding: 6px;
+  border-radius: 12px;
   background: var(--surface-card);
-  box-shadow: var(--shadow-menu);
+  box-shadow: var(--ta-menu-shadow);
 }
 
 .voGroup {
@@ -4911,10 +4926,9 @@
   padding: 4px 4px 8px;
 }
 
+/* A quiet sentence case label, as the shared menu draws its groups. */
 .voLabel {
-  font: var(--weight-semibold) 11px/16px var(--font-sans);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font: var(--weight-semibold) 12px/16px var(--font-sans);
   color: var(--text-tertiary);
 }
 
@@ -4925,7 +4939,7 @@
   width: 100%;
   padding: 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   text-align: left;
   cursor: pointer;
@@ -4972,37 +4986,8 @@
   color: var(--text-tertiary);
 }
 
-/* ── Profile card (View profile) ────────────────────────────────────
-   Built from the person panel's own parts: its header, the badge shaped
-   portrait, the name and the facts grid, in a window the width of the
-   panel, so it reads as the panel's card rather than a new style. */
-.pcDialog {
-  width: min(460px, 100%);
-  animation: pop 160ms ease-out;
-}
 
-.pcBody {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  padding: 20px 20px 22px;
-}
 
-.pcFacts {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px 20px;
-  margin: 0;
-  padding: 18px 0 0;
-  border-top: 1px solid var(--stroke-divider);
-}
-
-.pcSub {
-  display: block;
-  margin-top: 1px;
-  font: var(--type-body2);
-  color: var(--text-secondary);
-}
 
 @keyframes pop {
   from {
@@ -5098,21 +5083,6 @@
    rules for the tools bar lose to this file's own, which load later at the
    same strength, so the board states its phone shape here. */
 @media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
-  /* The windows (photo, profile, Add to schedule) open as sheets: the
-     footer's note on its own line, the buttons under it sharing the width. */
-  .peFoot {
-    flex-wrap: wrap;
-  }
-  .peNote {
-    flex: 1 1 100%;
-  }
-  .peFoot > :last-child:not(.peNote) {
-    flex: 1 1 100%;
-  }
-  .peFoot > :last-child > :global(.wms-btn) {
-    flex: 1 1 0;
-  }
-
   /* The bar scrolls with the page, as every pinned header does on a phone:
      pinned, it covered two fifths of the screen. */
   .boardBar {
@@ -5457,15 +5427,24 @@
   }
   .panel {
     top: calc(52px + env(safe-area-inset-top));
+    right: 0;
     bottom: calc(56px + env(safe-area-inset-bottom));
     z-index: 30;
     width: 100%;
+    border-radius: 0;
     background: var(--ta-canvas);
     box-shadow: none;
     animation: pushIn 320ms cubic-bezier(0.32, 0.72, 0, 1) backwards;
   }
   .panelHead {
-    display: none;
+    display: none !important;
+  }
+  .ppCard {
+    display: contents;
+  }
+  /* Its parts sit straight in the column, and keep their height there. */
+  .ppCard > * {
+    flex: none;
   }
   .panelBody {
     gap: 22px;

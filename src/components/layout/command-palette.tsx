@@ -149,29 +149,20 @@ export function CommandPalette({ destinations }: { destinations: Destination[] }
   }
 
   return (
-    <Overlay
-      role="dialog"
-      aria-modal="true"
-      aria-label="Search pages"
-      onMouseDown={close}
-      className={`z-50 flex items-start justify-center px-4 pt-[12vh] ${styles.scrim}`}
-      style={{ background: "var(--wms-overlay-modal)" }}
-    >
+    <Overlay onMouseDown={close} className={`z-50 flex items-start justify-center px-4 pt-[12vh] ${styles.scrim}`}>
+      {/* The shared window's materials (the grey frame, white raised cards,
+          a quiet footer) at the top of the screen, where a search belongs:
+          on a phone the keyboard opens at once and would cover a sheet. */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Search pages"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={onKeyDown}
-        className={`flex w-full max-w-lg flex-col overflow-hidden ${styles.panel}`}
-        style={{
-          background: "var(--surface-card)",
-          borderRadius: "var(--radius-l)",
-          boxShadow: "var(--shadow-modal)",
-        }}
+        className={styles.frame}
       >
-        <div
-          className={`flex items-center gap-2.5 px-4 ${styles.inputRow}`}
-          style={{ height: 48, borderBottom: "1px solid var(--stroke-divider)" }}
-        >
-          <Search className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} />
+        <div className={styles.field}>
+          <Search className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
           <input
             ref={inputRef}
             value={query}
@@ -180,60 +171,55 @@ export function CommandPalette({ destinations }: { destinations: Destination[] }
               setActive(0);
             }}
             placeholder="Search pages"
+            aria-label="Search pages"
+            aria-controls="palette-results"
+            aria-activedescendant={results[active] ? `palette-row-${active}` : undefined}
             className="min-w-0 flex-1 border-0 bg-transparent outline-none"
             style={{ font: "var(--type-body1)", color: "var(--text-primary)" }}
           />
-          <kbd
-            className={`rounded px-1.5 ${styles.keyHint}`}
-            style={{
-              font: "var(--type-caption1)",
-              color: "var(--text-tertiary)",
-              border: "1px solid var(--stroke-secondary)",
-            }}
-          >
-            esc
-          </kbd>
           <button type="button" className={styles.cancel} onClick={close}>
             Cancel
           </button>
         </div>
 
-        <div ref={listRef} className={`ta-scroll max-h-80 overflow-y-auto py-1.5 ${styles.list}`}>
+        <div ref={listRef} id="palette-results" role="listbox" aria-label="Pages" className={`ta-scroll ${styles.list}`}>
           {results.length === 0 ? (
-            <p className="px-4 py-6 text-center" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-              No page matches “{query}”.
-            </p>
+            <p className={styles.empty}>No page matches “{query}”.</p>
           ) : (
             results.map((r, i) => (
               <button
                 key={r.href + r.label}
+                id={`palette-row-${i}`}
+                role="option"
+                aria-selected={i === active}
                 data-index={i}
+                data-on={i === active || undefined}
                 onMouseEnter={() => setActive(i)}
                 onClick={() => go(r.href)}
-                className={`flex w-full items-center gap-3 px-4 py-2 text-left ${styles.row}`}
-                style={{
-                  background: i === active ? "var(--surface-info)" : "transparent",
-                  color: i === active ? "var(--text-accent)" : "var(--text-primary)",
-                }}
+                className={styles.row}
               >
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span style={{ font: "var(--type-button1)" }}>{r.label}</span>
-                  {r.detail && (
-                    <span className="truncate" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
-                      {r.detail}
-                    </span>
-                  )}
+                  <span className={styles.rowLabel}>{r.label}</span>
+                  {r.detail && <span className={styles.rowDetail}>{r.detail}</span>}
                 </span>
-                <span className="flex-none" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
-                  {r.group}
-                </span>
-                {i === active && (
-                  <CornerDownLeft className={`h-3.5 w-3.5 flex-none ${styles.keyHint}`} style={{ color: "var(--icon-accent)" }} />
-                )}
+                <span className={styles.rowGroup}>{r.group}</span>
+                <CornerDownLeft className={`h-3.5 w-3.5 flex-none ${styles.enter}`} aria-hidden="true" />
               </button>
             ))
           )}
         </div>
+
+        <p className={styles.foot}>
+          <span>
+            <kbd>↑</kbd> <kbd>↓</kbd> to move
+          </span>
+          <span>
+            <kbd>Enter</kbd> to open
+          </span>
+          <span>
+            <kbd>Esc</kbd> to close
+          </span>
+        </p>
       </div>
     </Overlay>
   );

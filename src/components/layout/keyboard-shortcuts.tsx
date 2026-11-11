@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { useRouter } from "@/components/layout/navigation-progress";
 import { Keyboard } from "lucide-react";
 import { collapseStore, navModeStore, useNavMode } from "./nav-mode";
-import { Overlay } from "@/components/ui/overlay";
+import { Window, WindowCard } from "@/components/ui/window";
 
 /**
  * The shortcuts button in the top bar, the list behind it, and the keys
@@ -79,7 +79,7 @@ export function KeyboardShortcuts({ reachableHrefs }: { reachableHrefs: string[]
         return;
       }
 
-      // Escape closes this list. Every other dialog closes itself.
+      // Escape belongs to the open window; here it only ends a G sequence.
       if (e.key === "Escape") {
         pendingGoTo.current = null;
         return;
@@ -167,7 +167,8 @@ export function shortcutRows(reachableHrefs: string[], isMac: boolean, grouped =
   ];
 }
 
-/** The list itself. Draws what it is given and owns no keys of its own. */
+/** The list itself, on the shared window frame. Draws what it is given; the
+ *  frame closes it on Escape, the X, Close or a click outside. */
 export function ShortcutsDialog({
   rows,
   onClose,
@@ -176,80 +177,41 @@ export function ShortcutsDialog({
   onClose: () => void;
 }) {
   return (
-    <Overlay
-      role="dialog"
-      aria-modal="true"
-      aria-label="Keyboard shortcuts"
-      onMouseDown={onClose}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          onClose();
-        }
-      }}
-      className="z-50 flex items-start justify-center px-4 pt-[12vh]"
-      style={{ background: "var(--wms-overlay-modal)" }}
+    <Window
+      size="sm"
+      icon={<Keyboard />}
+      title="Keyboard shortcuts"
+      subtitle="Move around CloudTime without the mouse."
+      foot="Shortcuts are off while you are typing in a field."
+      onClose={onClose}
     >
-      <div
-        onMouseDown={(e) => e.stopPropagation()}
-        className="flex w-full max-w-[460px] flex-col overflow-hidden"
-        style={{
-          background: "var(--surface-card)",
-          borderRadius: "var(--radius-l)",
-          boxShadow: "var(--shadow-modal)",
-        }}
-      >
-        <div
-          className="flex flex-none items-center px-4"
-          style={{ height: 48, borderBottom: "1px solid var(--stroke-divider)" }}
-        >
-          <p style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}>
-            Keyboard shortcuts
-          </p>
-        </div>
-
-        <div className="flex flex-col px-4 py-2">
+      <WindowCard>
+        <ul className="m-0 flex list-none flex-col p-0">
           {rows.map((row, i) => (
-            <div
+            <li
               key={row.what}
-              className="flex items-center gap-3 py-1.5"
-              // No rule under the last one: the note below is not a row, and a
-              // divider above it reads as a row that failed to draw.
-              style={
-                i < rows.length - 1
-                  ? { borderBottom: "1px solid var(--stroke-divider)" }
-                  : undefined
-              }
+              className="flex min-h-11 items-center gap-3 px-4 py-2"
+              style={i > 0 ? { borderTop: "1px solid var(--stroke-divider)" } : undefined}
             >
-              <span
-                className="min-w-0 flex-1 truncate"
-                style={{ font: "var(--type-body1)", color: "var(--text-primary)" }}
-              >
+              <span className="min-w-0 flex-1 truncate" style={{ font: "var(--type-body1)", color: "var(--text-primary)" }}>
                 {row.what}
               </span>
-              <span
-                className="tabular whitespace-nowrap rounded"
+              <kbd
+                className="tabular whitespace-nowrap rounded-md"
                 style={{
-                  font: "var(--type-body2)",
+                  font: "var(--weight-medium) 12px/18px var(--font-sans)",
                   color: "var(--text-secondary)",
-                  border: "1px solid var(--stroke-secondary)",
-                  background: "var(--surface-tertiary)",
-                  padding: "1px 6px",
+                  background: "var(--ta-well)",
+                  boxShadow: "inset 0 0 0 1px var(--ta-well-ring)",
+                  padding: "1px 8px",
                 }}
               >
                 {row.keys}
-              </span>
-            </div>
+              </kbd>
+            </li>
           ))}
-        </div>
-
-        <p
-          className="px-4 pb-3 pt-1"
-          style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-tertiary)" }}
-        >
-          Shortcuts are off while you are typing in a field.
-        </p>
-      </div>
-    </Overlay>
+        </ul>
+      </WindowCard>
+    </Window>
   );
 }

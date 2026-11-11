@@ -163,14 +163,16 @@
   display: flex;
   flex-direction: column;
   padding: 6px;
-  border: 1px solid var(--stroke-secondary);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--surface-card);
-  box-shadow: var(--shadow-menu);
+  box-shadow: var(--ta-menu-shadow);
 }
+/* A quiet sentence case label over a group, as the shared menu draws it. */
 .menuLabel {
   overflow: hidden;
   padding: 8px 10px 4px;
+  font: var(--weight-semibold) 12px/16px var(--font-sans);
+  color: var(--text-tertiary);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -182,12 +184,12 @@
 }
 .menuDivider {
   height: 1px;
-  margin: 6px 4px;
+  margin: 6px -6px;
   background: var(--stroke-divider);
 }
 .menuItem {
   display: flex;
-  min-height: 36px;
+  min-height: 40px;
   align-items: center;
   gap: 10px;
   width: 100%;
@@ -211,12 +213,20 @@
 .menuCheck,
 .menuIcon {
   display: inline-flex;
-  width: 16px;
+  width: 28px;
   flex: none;
   justify-content: center;
   color: var(--icon-accent);
 }
+/* Each tool's icon in a well, as the account menu draws its rows; the
+   check beside a building takes the same width so the names line up. */
 .menuIcon {
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  border-radius: 8px;
+  background: var(--ta-well);
+  box-shadow: inset 0 0 0 1px var(--ta-well-ring);
   color: var(--icon-secondary);
 }
 .menuCheck svg,

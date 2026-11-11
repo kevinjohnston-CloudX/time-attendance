@@ -143,7 +143,7 @@ export function BuildingMenu({
           >
             {sites.length > 1 && (
               <>
-                <div className={`wms-overline ${styles.menuLabel}`}>Building</div>
+                <div className={styles.menuLabel}>Building</div>
                 <div className={`ta-scroll ${styles.menuSites}`}>
                   {sites.map((s) => (
                     <button
@@ -166,7 +166,7 @@ export function BuildingMenu({
             {(seesTablets || gateOn !== undefined) && (
               <>
                 {sites.length > 1 && <div className={styles.menuDivider} role="separator" />}
-                <div className={`wms-overline ${styles.menuLabel}`} title={siteName}>
+                <div className={styles.menuLabel} title={siteName}>
                   {siteName}
                 </div>
                 {seesTablets && (

@@ -4,6 +4,8 @@ import { useEffect } from "react";
 import { SessionProvider, useSession } from "next-auth/react";
 import { ThemeProvider } from "next-themes";
 import { PhoneAppChrome } from "@/components/layout/phone-app-chrome";
+import { SelectLists } from "@/components/ui/select-lists";
+import { DateCalendars } from "@/components/ui/date-calendars";
 import { rememberedEmailStore } from "@/lib/remembered-email";
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -12,6 +14,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
         <PhoneAppChrome />
         <RememberGoogleEmail />
+        {/* Every dropdown's list and date field's calendar on a computer,
+            drawn by CloudTime. */}
+        <SelectLists />
+        <DateCalendars />
         {children}
       </ThemeProvider>
     </SessionProvider>

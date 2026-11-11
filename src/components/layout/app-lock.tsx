@@ -160,6 +160,7 @@ export function AppLock({ onReady }: { onReady?: () => void }) {
           tone="info"
           title={`Use ${methodName} to open CloudTime?`}
           confirmLabel={`Use ${methodName}`}
+          cancelLabel="Not now"
           pending={busy}
           onConfirm={() => void acceptOffer()}
           onCancel={() => {

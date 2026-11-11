@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ScanLine } from "lucide-react";
 import { Badge, Banner, Button, Select } from "@/components/ui";
 import { getTimecardRefusedScans, recoverTimecardRefusedScans } from "@/actions/refused-scans.actions";
 import type { RefusedScan } from "@/lib/services/refused-scans.service";
 import styles from "./refused-scans.module.css";
 import { codeOf } from "@/lib/action-errors";
-import { Overlay } from "@/components/ui/overlay";
+import { Window, WindowCard, WindowGroupLabel } from "@/components/ui/window";
 
 /**
  * On a timecard: the time clock scans that were refused because this person
@@ -121,18 +121,6 @@ function ReviewDialog({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const close = useCallback(() => {
-    if (!saving) onClose();
-  }, [saving, onClose]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [close]);
-
   const byDay = useMemo(() => {
     const out: { day: string; label: string; scans: RefusedScan[] }[] = [];
     for (const s of scans) {
@@ -170,109 +158,66 @@ function ReviewDialog({
   }
 
   return (
-    <Overlay
-      className="ta-sheet-scrim z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.4)" }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) close();
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Refused scans"
-        className="ta-modal ta-sheet flex max-h-[90vh] w-full max-w-xl flex-col"
-        style={{ borderRadius: "var(--radius-l)" }}
-      >
-        <header
-          className={`flex items-start justify-between gap-3 px-5 py-3.5 ${styles.head}`}
-          style={{ borderBottom: "1px solid var(--stroke-divider)" }}
-        >
-          <div className="flex flex-col gap-0.5">
-            <h3 style={{ margin: 0, font: "var(--type-h3)", color: "var(--text-primary)" }}>Refused scans</h3>
-            <p style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-              Pick what each scan was. Repeated taps are left out unless you choose otherwise.
-            </p>
-          </div>
-          <Button hierarchy="tertiary" size="sm" iconOnly onClick={close} aria-label="Close">
-            <X className="h-4 w-4" />
+    <Window
+      width={600}
+      tone="warning"
+      icon={<ScanLine />}
+      title="Refused scans"
+      subtitle="Pick what each scan was. Repeated taps are left out unless you choose otherwise."
+      busy={saving}
+      foot={
+        error ??
+        (picked.length === 0
+          ? "Nothing picked to add."
+          : "Added as approved manual punches, noted as recovered from a refused scan.")
+      }
+      footTone={error ? "error" : undefined}
+      onClose={onClose}
+      actions={
+        <>
+          <Button hierarchy="secondary" onClick={onClose} disabled={saving}>
+            Cancel
           </Button>
-        </header>
-
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {byDay.map((d) => (
-            <section key={d.day} aria-label={d.label}>
-              <h4
-                className={`px-5 py-2 ${styles.day}`}
-                style={{
-                  margin: 0,
-                  font: "var(--type-button2)",
-                  color: "var(--text-secondary)",
-                  background: "var(--surface-secondary)",
-                  borderBottom: "1px solid var(--stroke-divider)",
-                }}
-              >
-                {d.label}
-              </h4>
-              <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
-                {d.scans.map((s) => (
-                  <li
-                    key={s.id}
-                    className={`flex items-center gap-3 px-5 py-2.5 ${styles.scan}`}
-                    style={{ borderBottom: "1px solid var(--stroke-divider)" }}
+          <Button pending={saving} onClick={() => void save()} disabled={saving || picked.length === 0}>
+            {saving ? "Adding" : picked.length === 0 ? "Add punches" : picked.length === 1 ? "Add 1 punch" : `Add ${picked.length} punches`}
+          </Button>
+        </>
+      }
+    >
+      {byDay.map((d) => (
+        <section key={d.day} aria-label={d.label} className={styles.day}>
+          <WindowGroupLabel>{d.label}</WindowGroupLabel>
+          <WindowCard>
+            <ul className={styles.list}>
+              {d.scans.map((s) => (
+                <li key={s.id} className={styles.scan}>
+                  <span className={`tabular ${styles.time}`}>{time(s.at)}</span>
+                  <span className={styles.where}>
+                    <span className={styles.reader} title={s.reader ?? undefined}>
+                      {s.reader ?? "Time clock"}
+                    </span>
+                    {s.repeat && (
+                      <Badge tone="neutral" size="sm">
+                        Repeat tap
+                      </Badge>
+                    )}
+                  </span>
+                  <Select
+                    aria-label={`What the ${time(s.at)} scan was`}
+                    value={choice[s.id]}
+                    onChange={(e) => setChoice((c) => ({ ...c, [s.id]: e.target.value as Choice }))}
+                    style={{ width: 132, flex: "none" }}
                   >
-                    <span
-                      className="tabular w-[92px] flex-none whitespace-nowrap"
-                      style={{ font: "var(--weight-medium) 14px/20px var(--font-sans)", color: "var(--text-primary)" }}
-                    >
-                      {time(s.at)}
-                    </span>
-                    <span className="flex min-w-0 flex-1 items-center gap-2">
-                      <span className="truncate" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }} title={s.reader ?? undefined}>
-                        {s.reader ?? "Time clock"}
-                      </span>
-                      {s.repeat && (
-                        <Badge tone="neutral" size="sm">
-                          Repeat tap
-                        </Badge>
-                      )}
-                    </span>
-                    <Select
-                      aria-label={`What the ${time(s.at)} scan was`}
-                      value={choice[s.id]}
-                      onChange={(e) => setChoice((c) => ({ ...c, [s.id]: e.target.value as Choice }))}
-                      style={{ width: 132, flex: "none" }}
-                    >
-                      <option value="">Leave out</option>
-                      <option value="CLOCK_IN">{CHOICE_LABEL.CLOCK_IN}</option>
-                      <option value="CLOCK_OUT">{CHOICE_LABEL.CLOCK_OUT}</option>
-                    </Select>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
-        </div>
-
-        <footer className={`flex flex-col gap-3 px-5 py-3.5 ${styles.foot}`} style={{ borderTop: "1px solid var(--stroke-divider)" }}>
-          {error && <Banner tone="error" body={error} />}
-          <div className={`flex items-center justify-between gap-3 ${styles.footRow}`}>
-            <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-              {picked.length === 0
-                ? "Nothing picked to add"
-                : `Added as approved manual punches, noted as recovered from a refused scan`}
-            </span>
-            <div className={`flex flex-none items-center gap-2 ${styles.footButtons}`}>
-              <Button hierarchy="secondary" size="sm" onClick={close} disabled={saving}>
-                Cancel
-              </Button>
-              <Button pending={saving} size="sm" onClick={() => void save()} disabled={saving || picked.length === 0}>
-                {saving ? "Adding" : picked.length === 1 ? "Add 1 punch" : `Add ${picked.length} punches`}
-              </Button>
-            </div>
-          </div>
-        </footer>
-      </div>
-    </Overlay>
+                    <option value="">Leave out</option>
+                    <option value="CLOCK_IN">{CHOICE_LABEL.CLOCK_IN}</option>
+                    <option value="CLOCK_OUT">{CHOICE_LABEL.CLOCK_OUT}</option>
+                  </Select>
+                </li>
+              ))}
+            </ul>
+          </WindowCard>
+        </section>
+      ))}
+    </Window>
   );
 }

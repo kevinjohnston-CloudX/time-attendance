@@ -55,7 +55,7 @@ const CONFIRM: Record<Confirm, { title: string; text: string; label: string; pen
   lock: {
     title: "Lock pay period?",
     text: "Every timesheet in this period is locked, and the period's accruals and approved leave are posted.",
-    label: "Lock Pay Period",
+    label: "Lock pay period",
     pending: "Locking…",
     tone: "warning",
   },
@@ -218,8 +218,8 @@ export function PayPeriodActions({ payPeriodId, label, status, isPast, canRunPay
               <Button hierarchy="secondary" onClick={() => setReopen(false)} disabled={isPending}>
                 Cancel
               </Button>
-              <Button tone="warning" onClick={handleReopen} disabled={isPending || !reason.trim()}>
-                {isPending ? (status === "LOCKED" ? "Unlocking…" : "Reopening…") : reopenWord}
+              <Button tone="warning" pending={isPending} onClick={handleReopen} disabled={isPending || !reason.trim()}>
+                {isPending ? (status === "LOCKED" ? "Unlocking…" : "Reopening…") : `${reopenWord} pay period`}
               </Button>
             </>
           }

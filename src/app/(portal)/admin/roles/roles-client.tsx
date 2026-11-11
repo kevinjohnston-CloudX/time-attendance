@@ -3,9 +3,7 @@
 import { useState } from "react";
 import { getRoleById } from "@/actions/role.actions";
 import { RoleEditor } from "@/components/admin/role-editor";
-import { RESOURCES, ACTIONS, SCOPES } from "@/lib/validators/role.schema";
-import { Shield, Lock, Plus, Pencil, X } from "lucide-react";
-import { Overlay } from "@/components/ui/overlay";
+import { Shield, Lock, Plus, Pencil } from "lucide-react";
 
 type RoleSummary = {
   id: string;
@@ -40,171 +38,6 @@ type BuiltinRoleSummary = {
 const btnPrimary =
   "rounded-lg bg-[var(--fill-accent)] px-4 py-2 text-sm font-medium text-[var(--text-on-accent)] hover:bg-[var(--fill-accent-hover)]";
 
-const RESOURCE_LABELS: Record<string, string> = {
-  punch: "Punches",
-  timesheet: "Timesheets",
-  leave: "Leave",
-  payroll: "Payroll",
-  employee: "Employees",
-  rules: "Rule Sets",
-  site: "Sites",
-  document: "Documents",
-  report: "Reports",
-  audit: "Audit Log",
-  role: "Roles",
-  presence: "Live Attendance",
-  photo: "Time Clock Photos",
-};
-
-const ACTION_LABELS: Record<string, string> = {
-  read: "Read",
-  write: "Write",
-  execute: "Execute",
-};
-
-const SCOPE_LABELS: Record<string, string> = {
-  own: "Own",
-  team: "Team",
-  all: "All",
-};
-
-function permKey(resource: string, action: string, scope: string) {
-  return `${resource}:${action}:${scope}`;
-}
-
-// ─── Read-only permission matrix modal ────────────────────────────────────────
-
-function PermissionModal({ role, onClose }: { role: BuiltinRoleSummary; onClose: () => void }) {
-  const permSet = new Set(role.permissions.map((p) => permKey(p.resource, p.action, p.scope)));
-
-  return (
-    <Overlay className="z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-[5vh]">
-      <div className="w-full max-w-4xl rounded-xl ta-modal">
-
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-700">
-          <div>
-            <h2 className="wms-card-title">
-              {role.name}
-            </h2>
-            {role.description && (
-              <p className="text-sm text-[var(--text-tertiary)]">{role.description}</p>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-              <Lock className="h-3 w-3" /> Built-in · Read only
-            </span>
-            <button
-              onClick={onClose}
-              className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Body */}
-        <div className="px-6 py-4">
-          {role.key === "SUPER_ADMIN" ? (
-            <p className="text-sm text-[var(--text-tertiary)]">
-              Super Admin skips every permission check and can see and change everything.
-            </p>
-          ) : (
-            <div>
-              <h3 className="mb-3 text-sm font-semibold text-[var(--text-secondary)]">
-                Permissions
-              </h3>
-              <div className="overflow-x-auto rounded-lg border border-[var(--stroke-secondary)]">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/50">
-                      <th className="px-4 py-2 text-left font-medium text-[var(--text-secondary)]">
-                        Resource
-                      </th>
-                      {ACTIONS.map((action) => (
-                        <th
-                          key={action}
-                          colSpan={3}
-                          className="border-l border-zinc-200 px-2 py-2 text-center font-medium text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
-                        >
-                          {ACTION_LABELS[action]}
-                        </th>
-                      ))}
-                    </tr>
-                    <tr className="border-b border-zinc-200 bg-zinc-50/50 dark:border-zinc-700 dark:bg-zinc-800/30">
-                      <th />
-                      {ACTIONS.map((action) =>
-                        SCOPES.map((scope) => (
-                          <th
-                            key={`${action}-${scope}`}
-                            className={`px-2 py-1 text-center text-xs font-normal text-[var(--text-tertiary)] ${
-                              scope === "own" ? "border-l border-[var(--stroke-secondary)]" : ""
-                            }`}
-                          >
-                            {SCOPE_LABELS[scope]}
-                          </th>
-                        ))
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {RESOURCES.map((resource) => (
-                      <tr
-                        key={resource}
-                        className="border-b border-zinc-100 last:border-0 dark:border-zinc-800"
-                      >
-                        <td className="px-4 py-2.5 font-medium text-[var(--text-secondary)]">
-                          {RESOURCE_LABELS[resource]}
-                        </td>
-                        {ACTIONS.map((action) =>
-                          SCOPES.map((scope) => {
-                            const checked = permSet.has(permKey(resource, action, scope));
-                            return (
-                              <td
-                                key={`${resource}-${action}-${scope}`}
-                                className={`px-2 py-2.5 text-center ${
-                                  scope === "own"
-                                    ? "border-l border-[var(--stroke-secondary)]"
-                                    : ""
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  readOnly
-                                  className="h-4 w-4 cursor-default rounded border-zinc-300 text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800"
-                                />
-                              </td>
-                            );
-                          })
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between border-t border-zinc-200 px-6 py-4 dark:border-zinc-700">
-          <p className="text-xs text-zinc-400">
-            Built-in roles cannot be edited. Create a custom role to define custom permissions.
-          </p>
-          <button
-            onClick={onClose}
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          >
-            Close
-          </button>
-        </div>
-      </div>
-    </Overlay>
-  );
-}
-
 // ─── Main client component ─────────────────────────────────────────────────────
 
 export function RolesClient({ roles, builtinRoles }: { roles: RoleSummary[]; builtinRoles: BuiltinRoleSummary[] }) {
@@ -225,7 +58,7 @@ export function RolesClient({ roles, builtinRoles }: { roles: RoleSummary[]; bui
     <div className="mt-6">
       <div className="mb-4 flex items-center justify-end">
         <button onClick={() => setShowCreate(true)} className={btnPrimary + " flex items-center gap-1.5"}>
-          <Plus className="h-4 w-4" /> New Role
+          <Plus className="h-4 w-4" /> New role
         </button>
       </div>
 

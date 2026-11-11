@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Check, CircleCheck, CircleX, EllipsisVertical, UserCheck, UserX, Webhook, X } from "lucide-react";
+import { Check, CircleCheck, CircleX, EllipsisVertical, KeyRound, ListChecks, Pause, Play, Send, Trash2, UserCheck, UserX, Webhook, X } from "lucide-react";
+import { MenuDivider, MenuItem, MenuPanel, useMenuDismiss } from "@/components/ui/menu";
 import { format, isToday } from "date-fns";
 import {
   createWebhook,
@@ -378,23 +379,17 @@ function RowMenu({
   onRemove: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open]);
-  const items: { label: string; danger?: boolean; run: () => void }[] = [
-    { label: "Send test", run: onTest },
-    { label: "Deliveries", run: onDeliveries },
-    hook.isActive ? { label: "Pause", run: onPause } : { label: "Resume", run: onResume },
-    { label: "New secret", run: onSecret },
-    { label: "Remove", danger: true, run: onRemove },
+  const wrapRef = useRef<HTMLSpanElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  useMenuDismiss(open, close, wrapRef);
+  const items: { label: string; icon: ReactNode; run: () => void }[] = [
+    { label: "Send test", icon: <Send />, run: onTest },
+    { label: "Deliveries", icon: <ListChecks />, run: onDeliveries },
+    hook.isActive ? { label: "Pause", icon: <Pause />, run: onPause } : { label: "Resume", icon: <Play />, run: onResume },
+    { label: "New secret", icon: <KeyRound />, run: onSecret },
   ];
   return (
-    <span className="relative flex justify-end">
-      {/* eslint-disable-next-line no-restricted-syntax -- a transparent click catcher for the dropdown beside it; it has to stay in the dropdown's layer, under the menu */}
-      {open && <span className="fixed inset-0 z-40" onClick={() => setOpen(false)} />}
+    <span ref={wrapRef} className="relative flex justify-end">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -409,53 +404,58 @@ function RowMenu({
         <EllipsisVertical className="h-4 w-4" />
       </button>
       {open && (
-        <div
-          role="menu"
-          className="absolute right-0 top-[calc(100%+4px)] z-50 w-[200px] p-1.5"
-          style={{ borderRadius: 12, background: "var(--surface-card)", boxShadow: "var(--ta-menu-shadow)" }}
-        >
+        <MenuPanel role="menu" aria-label="Webhook actions" className="absolute right-0 top-[calc(100%+4px)] z-50 w-[210px]">
           {items.map((it) => (
-            <button
+            <MenuItem
               key={it.label}
-              type="button"
-              role="menuitem"
-              className="ta-hoverable flex h-8 w-full items-center whitespace-nowrap px-2.5 text-left"
-              style={{ border: 0, borderRadius: 8, background: "transparent", cursor: "pointer", font: "var(--type-body2)", color: it.danger ? "var(--text-error)" : "var(--text-primary)" }}
+              icon={it.icon}
               onClick={() => {
                 setOpen(false);
                 it.run();
               }}
             >
               {it.label}
-            </button>
+            </MenuItem>
           ))}
-        </div>
+          <MenuDivider />
+          <MenuItem
+            icon={<Trash2 />}
+            tone="danger"
+            onClick={() => {
+              setOpen(false);
+              onRemove();
+            }}
+          >
+            Remove
+          </MenuItem>
+        </MenuPanel>
       )}
     </span>
   );
 }
 
-const CONFIRM_COPY: Record<Confirm["kind"], { title: string; tone: "danger" | "warning"; confirm: string; pending: string; body: (n: string) => string }> = {
+const CONFIRM_COPY: Record<Confirm["kind"], { title: string; tone: "danger" | "warning"; confirm: string; pending: string; body: string; hint?: string }> = {
   pause: {
-    title: "Pause webhook?",
+    title: "Pause this webhook?",
     tone: "warning",
-    confirm: "Pause",
+    confirm: "Pause webhook",
     pending: "Pausing…",
-    body: (n) => `"${n}" stops being told about terminations and rehires until you resume it. Nothing that happens while it is paused is sent later.`,
+    body: "It stops being told about terminations and rehires until you resume it. Nothing that happens while it is paused is sent later.",
   },
   secret: {
     title: "Make a new secret?",
     tone: "warning",
     confirm: "Make new secret",
     pending: "Making…",
-    body: (n) => `The current secret stops working right away, so "${n}" will refuse CloudTime's messages until it is given the new one.`,
+    body: "The current secret stops working right away. The other system refuses CloudTime's messages until it is given the new one.",
   },
   remove: {
-    title: "Remove webhook?",
+    title: "Remove this webhook?",
     tone: "danger",
-    confirm: "Remove",
+    confirm: "Remove webhook",
     pending: "Removing…",
-    body: (n) => `"${n}" is removed with its delivery history, and the other system stops hearing from CloudTime. This can't be undone.`,
+    body: "It is removed with its delivery history, and the other system stops hearing from CloudTime.",
+    hint: "This cannot be undone.",
   },
 };
 
@@ -656,6 +656,8 @@ export function WebhooksManager({
       {confirm && (
         <ConfirmDialog
           title={CONFIRM_COPY[confirm.kind].title}
+          subtitle={confirm.name}
+          hint={CONFIRM_COPY[confirm.kind].hint}
           tone={CONFIRM_COPY[confirm.kind].tone}
           confirmLabel={CONFIRM_COPY[confirm.kind].confirm}
           pendingLabel={CONFIRM_COPY[confirm.kind].pending}
@@ -664,7 +666,7 @@ export function WebhooksManager({
           onConfirm={doConfirm}
           onCancel={() => setConfirm(null)}
         >
-          {CONFIRM_COPY[confirm.kind].body(confirm.name)}
+          {CONFIRM_COPY[confirm.kind].body}
         </ConfirmDialog>
       )}
 

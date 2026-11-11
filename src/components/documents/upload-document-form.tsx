@@ -2,12 +2,13 @@
 
 import { useState, useRef, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Upload, X, Search } from "lucide-react";
+import { Search, Upload } from "lucide-react";
 import { uploadDocument } from "@/actions/document.actions";
 import { MAX_FILE_SIZE_BYTES } from "@/lib/validators/document.schema";
 import { Banner, Button, Input } from "@/components/ui";
 import styles from "./documents.module.css";
-import { Overlay } from "@/components/ui/overlay";
+import { Window, WindowCard } from "@/components/ui/window";
+import { FileWell, fileSize } from "@/components/ui/file-well";
 
 interface Employee {
   id: string;
@@ -86,25 +87,17 @@ export function UploadDocumentForm({ employees }: Props) {
     reset();
   }
 
-  // Escape closes the dialog, or the typeahead first if that is what is open.
-  // Deliberately re-bound on every render: the handler has to read the current
-  // showDropdown, and a dependency list here would only name every function it
-  // calls and re-run anyway.
-  useEffect(() => {
-    if (!open) return;
-    function handleKey(e: KeyboardEvent) {
-      if (e.key !== "Escape") return;
-      if (showDropdown) setShowDropdown(false);
-      else closeModal();
-    }
-    document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
-  });
+  // Escape closes the typeahead first, then the window. A click on the X or
+  // the scrim has already closed the typeahead on its mousedown.
+  function onWindowClose() {
+    if (showDropdown) setShowDropdown(false);
+    else closeModal();
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedEmployee) { setError("Please select an employee."); return; }
-    if (!file) { setError("Please select a file."); return; }
+    if (!selectedEmployee) { setError("Choose the employee this document is for."); return; }
+    if (!file) { setError("Choose a file to upload."); return; }
     // Checked here too: a file over the limit never reaches the server, which
     // refuses the whole request, so it can only be answered from here.
     if (file.size > MAX_FILE_SIZE_BYTES) { setError("That file is over the 4 MB limit. Choose a smaller one."); return; }
@@ -146,137 +139,91 @@ export function UploadDocumentForm({ employees }: Props) {
       </Button>
 
       {open && (
-        <Overlay className="ta-sheet-scrim z-50 flex items-start justify-center overflow-y-auto p-4 sm:items-center">
-          <div
-            aria-hidden="true"
-            onClick={closeModal}
-            // eslint-disable-next-line no-restricted-syntax -- the dimmed layer inside this window's Overlay; fixed so it stays put while the window scrolls
-            className="fixed inset-0"
-            // The design system's own scrim, not a hand-mixed one: a modal
-            // that dims the page a different amount from every other modal is
-            // the sort of thing nobody names but everybody notices.
-            style={{ background: "var(--wms-overlay-modal)" }}
-          />
-
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="upload-document-title"
-            className="ta-sheet ta-modal relative w-full max-w-[520px] overflow-y-auto rounded-2xl"
-          >
-            <header
-              className="flex items-center justify-between gap-3 px-4 py-3.5"
-              style={{ borderBottom: "1px solid var(--stroke-divider)" }}
-            >
-              <div className="flex min-w-0 flex-col gap-0.5">
-                <h2
-                  id="upload-document-title"
-                  style={{ margin: 0, font: "var(--type-h4)", color: "var(--text-primary)" }}
-                >
-                  Upload Document
-                </h2>
-                <p style={{ margin: 0, font: "var(--type-subtitle)", color: "var(--text-secondary)" }}>
-                  It appears on that employee&apos;s own Documents page straight away.
-                </p>
-              </div>
-              <Button hierarchy="tertiary" size="sm" iconOnly onClick={closeModal} aria-label="Close">
-                <X className="h-4 w-4" />
+        <Window
+          icon={<Upload />}
+          title="Upload document"
+          subtitle="It appears on the employee's own Documents page straight away."
+          size="sm"
+          busy={isPending}
+          onClose={onWindowClose}
+          onSubmit={handleSubmit}
+          foot="PDF, JPG, PNG or Word, up to 4 MB."
+          actions={
+            <>
+              <Button type="button" hierarchy="secondary" onClick={closeModal} disabled={isPending}>
+                {success ? "Close" : "Cancel"}
               </Button>
-            </header>
+              <Button pending={isPending} type="submit" disabled={isPending || !selectedEmployee || !file}>
+                {isPending ? "Uploading…" : "Upload document"}
+              </Button>
+            </>
+          }
+        >
+          {success && <Banner tone="success" body="Document uploaded. Add another, or close this window." />}
+          {error && <Banner tone="error" body={error} />}
 
-            <form onSubmit={handleSubmit} className="flex flex-col gap-3.5 p-4">
-              {success && <Banner tone="success" body="Document uploaded." />}
-              {error && <Banner tone="error" body={error} />}
-
-              <div ref={pickerRef} className="relative">
-                <Input
-                  label="Employee"
-                  required
-                  value={query}
-                  onChange={(e) => {
-                    setQuery(e.target.value);
-                    setSelectedEmployee(null);
-                    setShowDropdown(true);
-                  }}
-                  onFocus={() => setShowDropdown(true)}
-                  placeholder="Search by name…"
-                  autoComplete="off"
-                  leadingIcon={<Search className="h-4 w-4" />}
-                  hint={
-                    query.length > 0 && !selectedEmployee && filtered.length === 0
-                      ? "No employees found."
-                      : undefined
-                  }
-                />
-
-                {showDropdown && filtered.length > 0 && (
-                  <div
-                    className={`ta-modal absolute left-0 right-0 top-full z-20 mt-1 max-h-52 overflow-y-auto rounded-lg ${styles.suggest}`}
-                    style={{ border: "1px solid var(--stroke-secondary)" }}
-                  >
-                    {filtered.map((emp) => (
-                      <button
-                        key={emp.id}
-                        type="button"
-                        // mousedown, not click: the input's blur would tear the
-                        // list down before a click ever landed on it.
-                        onMouseDown={() => selectEmployee(emp)}
-                        className="ta-hoverable w-full px-3 py-2 text-left first:rounded-t-lg last:rounded-b-lg"
-                        style={{ font: "var(--type-body1)", color: "var(--text-primary)" }}
-                      >
-                        {emp.user.name ?? emp.id}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
+          <WindowCard padded>
+            <div ref={pickerRef} className="relative">
               <Input
-                label="Document title"
+                label="Employee"
                 required
-                maxLength={200}
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. Q1 2025 Pay Stub"
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setSelectedEmployee(null);
+                  setShowDropdown(true);
+                }}
+                onFocus={() => setShowDropdown(true)}
+                placeholder="Search by name"
+                autoComplete="off"
+                leadingIcon={<Search className="h-4 w-4" />}
+                hint={query.length > 0 && !selectedEmployee && filtered.length === 0 ? "No employees found." : undefined}
               />
 
-              <div className="flex w-full flex-col gap-1.5">
-                <label
-                  htmlFor="document-file"
-                  style={{ font: "var(--type-button2)", color: "var(--text-secondary)" }}
+              {showDropdown && filtered.length > 0 && (
+                <div
+                  className={`ta-modal absolute left-0 right-0 top-full z-20 mt-1 max-h-52 overflow-y-auto rounded-lg ${styles.suggest}`}
+                  style={{ border: "1px solid var(--stroke-secondary)" }}
                 >
-                  File
-                  <span aria-hidden="true" style={{ color: "var(--text-error)", marginLeft: 3 }}>
-                    *
-                  </span>
-                </label>
-                <input
-                  id="document-file"
-                  ref={fileRef}
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                  required
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                  className={`${styles.file} w-full file:mr-3 file:rounded-md file:border-0 file:bg-[var(--surface-tertiary)] file:px-3 file:py-1.5 file:text-[var(--text-primary)] hover:file:bg-[var(--fill-hover)]`}
-                  style={{ font: "var(--type-body1)", color: "var(--text-secondary)" }}
-                />
-                <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
-                  PDF, JPG, PNG or Word, up to 4 MB.
-                </span>
-              </div>
+                  {filtered.map((emp) => (
+                    <button
+                      key={emp.id}
+                      type="button"
+                      // mousedown, not click: the input's blur would tear the
+                      // list down before a click ever landed on it.
+                      onMouseDown={() => selectEmployee(emp)}
+                      className="ta-hoverable w-full truncate px-3 py-2 text-left first:rounded-t-lg last:rounded-b-lg"
+                      style={{ font: "var(--type-body1)", color: "var(--text-primary)" }}
+                    >
+                      {emp.user.name ?? emp.id}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
-              <div className="ta-sheet-actions flex items-center justify-end gap-2 pt-0.5">
-                <Button type="button" hierarchy="secondary" onClick={closeModal}>
-                  Cancel
-                </Button>
-                <Button pending={isPending} type="submit" disabled={isPending || !selectedEmployee}>
-                  {isPending ? "Uploading…" : "Upload"}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </Overlay>
+            <Input
+              label="Document title"
+              required
+              maxLength={200}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="For example: Pay stub, March"
+            />
+
+            <FileWell
+              label="File"
+              required
+              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+              fileName={file?.name ?? null}
+              detail={file ? fileSize(file.size) : "Or drop it here"}
+              inputRef={fileRef}
+              onFile={setFile}
+            />
+          </WindowCard>
+        </Window>
       )}
     </>
   );
 }
+

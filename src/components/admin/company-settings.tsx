@@ -5,8 +5,7 @@ import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { ArrowRight, BookOpen, CalendarCog, CalendarPlus, CalendarSync, CircleAlert } from "lucide-react";
 import type { PayFrequency } from "@prisma/client";
-import { Badge, Banner, Button, Input, LinkButton, Toast, useToast } from "@/components/ui";
-import { SetupDialog } from "@/components/admin/setup/setup-ui";
+import { Badge, Banner, Button, ConfirmDialog, Input, LinkButton, Toast, useToast } from "@/components/ui";
 import { generateNextPayPeriod, updateTenantSettings } from "@/actions/pay-period.actions";
 import { getPeriodContaining, lastDayOf, periodAfter, periodDays } from "@/lib/pay-period-math";
 import { parseUtcDate } from "@/lib/utils/date";
@@ -406,19 +405,19 @@ export function CompanySettings({
       </div>
 
       {confirming && next && (
-        <SetupDialog
-          title="Generate pay period?"
-          submitLabel="Generate"
+        <ConfirmDialog
+          tone="info"
+          title="Generate the next pay period?"
+          subtitle={nextRange}
+          confirmLabel="Generate pay period"
+          pendingLabel="Generating…"
           pending={generating}
           error={genError}
-          onSubmit={generate}
-          onClose={() => setConfirming(false)}
-          width={440}
+          onConfirm={generate}
+          onCancel={() => setConfirming(false)}
         >
-          <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>
-            This creates {nextRange} as a new open pay period.
-          </p>
-        </SetupDialog>
+          It is created as a new open pay period.
+        </ConfirmDialog>
       )}
       <Toast message={message} />
     </div>

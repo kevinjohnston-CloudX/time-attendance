@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { leaveDayKeys } from "@/lib/leave-days";
 import { parseUtcDate, startOfDayInTz, toSiteClock } from "@/lib/utils/date";
@@ -227,50 +228,65 @@ export const PRESENCE_WINDOW_MS = 36 * 60 * 60 * 1000;
  * at all, which is why the department totals come from a separate count:
  * without it "not in" would silently leave them out.
  */
-export async function getPresence(tenantId: string, supervisorId: string | null, now = new Date()): Promise<Presence> {
+export async function getPresence(
+  tenantId: string,
+  supervisorId: string | null,
+  now = new Date(),
+  /** Company wide only: the buildings to count, or null for all of them. */
+  siteIds: string[] | null = null,
+): Promise<Presence> {
+  // An empty list is no building, not every building.
+  if (siteIds && siteIds.length === 0) siteIds = ["-"];
   // Staff only: visitors are counted on Live Attendance, not here.
+  const atSites = siteIds ? { siteId: { in: siteIds } } : {};
   const scoped = withoutVisitors(
-    supervisorId ? { tenantId, isActive: true, ...directReportsOf(supervisorId) } : { tenantId, isActive: true },
+    supervisorId ? { tenantId, isActive: true, ...directReportsOf(supervisorId) } : { tenantId, isActive: true, ...atSites },
   );
+  const siteClause = siteIds ? Prisma.sql`AND e."siteId" IN (${Prisma.join(siteIds)})` : Prisma.empty;
   const since = new Date(now.getTime() - PRESENCE_WINDOW_MS);
 
-  const [states, headcount] = await Promise.all([
-    supervisorId
-      ? db.$queryRaw<StateRow[]>`
-          SELECT DISTINCT ON (p."employeeId")
-                 p."employeeId"       AS "employeeId",
-                 p."stateAfter"::text AS state
-          FROM "punches" p
-          JOIN "employees" e ON e.id = p."employeeId"
-          WHERE e."tenantId" = ${tenantId}
-            AND e."isActive" = true
-            AND (e."supervisorId" = ${supervisorId}
-                 OR EXISTS (SELECT 1 FROM "employee_supervisors" es
-                            WHERE es."employeeId" = e.id AND es."supervisorId" = ${supervisorId}))
-            AND p."isRejected" = false
-            AND p."correctedById" IS NULL
-            AND p."roundedTime" >= ${since}
-          ORDER BY p."employeeId", p."roundedTime" DESC
-        `
+  // A team's punches are read for exactly the people in its headcount. The
+  // query used to name the supervisor itself, which missed an agency viewer's
+  // people (directReportsOf reaches them through the agency), so their On the
+  // clock always read 0.
+  const readHeadcount = () =>
+    db.employee.findMany({
+      where: scoped,
+      select: { id: true, onLeave: true, department: { select: { name: true } } },
+    });
+  const readTeamStates = (ids: string[]) =>
+    ids.length === 0
+      ? Promise.resolve([] as StateRow[])
       : db.$queryRaw<StateRow[]>`
           SELECT DISTINCT ON (p."employeeId")
                  p."employeeId"       AS "employeeId",
                  p."stateAfter"::text AS state
           FROM "punches" p
-          JOIN "employees" e ON e.id = p."employeeId"
-          WHERE e."tenantId" = ${tenantId}
-            AND e."isActive" = true
+          WHERE p."employeeId" IN (${Prisma.join(ids)})
             AND p."isRejected" = false
             AND p."correctedById" IS NULL
             AND p."roundedTime" >= ${since}
           ORDER BY p."employeeId", p."roundedTime" DESC
-        `,
-    db.employee.findMany({
-      where: scoped,
-      select: { id: true, onLeave: true, department: { select: { name: true } } },
-    }),
-  ]);
-
+        `;
+  const readCompanyStates = () =>
+    db.$queryRaw<StateRow[]>`
+          SELECT DISTINCT ON (p."employeeId")
+                 p."employeeId"       AS "employeeId",
+                 p."stateAfter"::text AS state
+          FROM "punches" p
+          JOIN "employees" e ON e.id = p."employeeId"
+          WHERE e."tenantId" = ${tenantId}
+            AND e."isActive" = true
+            ${siteClause}
+            AND p."isRejected" = false
+            AND p."correctedById" IS NULL
+            AND p."roundedTime" >= ${since}
+          ORDER BY p."employeeId", p."roundedTime" DESC
+        `;
+  // A team needs its people first; the company reads both at once.
+  const [states, headcount] = supervisorId
+    ? await readHeadcount().then(async (h) => [await readTeamStates(h.map((e) => e.id)), h] as const)
+    : await Promise.all([readCompanyStates(), readHeadcount()]);
   const stateById = new Map(states.map((s) => [s.employeeId, s.state]));
 
   const byDept = new Map<string, PresenceDept>();
@@ -330,6 +346,8 @@ export async function getUpcoming(
   now: Date,
   payPeriodEnd: Date | null,
   timezone: string,
+  /** What the pay period's close says for this person, or null to leave it out. */
+  closeLabel: string | null = "Pay period closes, approvals due",
 ): Promise<UpcomingRow[]> {
   // From the start of today, not from this moment. startDate and the holiday
   // date are @db.Date at UTC midnight, so comparing them against a mid-afternoon
@@ -346,7 +364,8 @@ export async function getUpcoming(
       ? db.leaveRequest.findMany({
           where: {
             employeeId,
-            status: { in: ["APPROVED", "PENDING"] },
+            // Waiting on HR is still pending to the person who asked.
+            status: { in: ["APPROVED", "PENDING", "PENDING_HR"] },
             startDate: { gte: from, lte: horizon },
           },
           orderBy: { startDate: "asc" },
@@ -372,11 +391,11 @@ export async function getUpcoming(
 
   const rows: UpcomingRow[] = [];
 
-  if (payPeriodEnd && payPeriodEnd >= from && payPeriodEnd <= horizon) {
+  if (closeLabel && payPeriodEnd && payPeriodEnd >= from && payPeriodEnd <= horizon) {
     rows.push({
       key: "close",
       date: payPeriodEnd,
-      what: "Pay period closes, approvals due",
+      what: closeLabel,
       kind: "Payroll",
       tone: "info",
     });

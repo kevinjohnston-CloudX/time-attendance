@@ -17,6 +17,17 @@ export function isHoursColumn(col: Column): boolean {
   return col.type === "number" && col.id.endsWith("Minutes");
 }
 
+/**
+ * Money: every rate, cost and charge column is named for it (payRate,
+ * chargeCost, regCharge), so exactly those read as dollars, "$840.40", and
+ * not "840.4".
+ */
+export function isMoneyColumn(col: Column): boolean {
+  return col.type === "number" && /(Rate|Cost|Charge)$/.test(col.id);
+}
+
+const DOLLARS = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 /** The value for a spreadsheet cell: hours as a number, yes or no, or the text. */
 export function cellValue(value: unknown, col: Column): string | number | null {
   if (value === null || value === undefined || value === "") return null;
@@ -30,6 +41,7 @@ export function cellText(value: unknown, col: Column): string {
   const v = cellValue(value, col);
   if (v === null) return "";
   if (typeof v === "number" && isHoursColumn(col)) return v.toFixed(2);
+  if (typeof v === "number" && isMoneyColumn(col)) return DOLLARS.format(v);
   return String(v);
 }
 

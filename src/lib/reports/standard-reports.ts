@@ -21,6 +21,7 @@ export type StandardDates =
   | "currentPayPeriod"
   | "previousPayPeriod"
   | "currentWeek"
+  | "previousWeek"
   | "currentMonth"
   | "previousMonth"
   | "currentYear"
@@ -556,6 +557,29 @@ export const STANDARD_REPORTS: StandardReport[] = [
     groupBy: BY_SITE_AND_DEPARTMENT,
     sortBy: BY_NAME_THEN_DAY,
     dates: "previousPayPeriod",
+  },
+  {
+    // Asked for by Bergen payroll (Nedixon Jimenez, Nov 6): NovaTime's
+    // "299 NLS Hours w. Pay Rate & Charge Rate", the week an agency's people
+    // worked, to check the agency's invoice. Pick the agency, and the site.
+    id: "agency-hours-charge",
+    folder: "Payroll",
+    name: "Agency hours with pay and charge rates",
+    novaTimeName: "Detail Report.LC",
+    description: "Last week's days for an agency's people: clock in and out, hours, pay and charge rates, and what each day costs, with each person's totals. Pick the agency and the site.",
+    source: "DAILY_HOURS",
+    columns: [
+      "date", "site", "agency", "department", "payRate", "chargeRate", "clockIn", "clockOut",
+      "regMinutes", "regCharge", "otMinutes", "otCharge", "totalMinutes", "chargeCost",
+    ],
+    // Left empty for the person to pick; an empty filter is skipped until then.
+    filters: [
+      { field: "agencyId", operator: "in", value: [] },
+      { field: "siteId", operator: "in", value: [] },
+    ],
+    groupBy: ["employeeName"],
+    sortBy: BY_DAY,
+    dates: "previousWeek",
   },
   {
     id: "payroll-detail-signoff",

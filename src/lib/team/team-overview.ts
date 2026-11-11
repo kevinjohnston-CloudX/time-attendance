@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { directReportsOf } from "@/lib/get-subordinate-ids";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 /**
  * What Team Overview puts on screen that the dashboard does not already have.
@@ -67,6 +68,58 @@ export async function getTeamQueues(
   ]);
 
   return { exceptions, leavePending, leaveWithHr, upcomingLeave };
+}
+
+/**
+ * Missed punch requests waiting on a decision: a punch the employee reported
+ * (manual, not yet approved or rejected, not a correction) with an open
+ * Missing Punch on the same sheet and the same day on their own clock. That
+ * is how the Exceptions card pairs a request with its exception and offers
+ * Approve and Reject, so the count is what that list shows. Pending requests
+ * are few (one on live, Nov 10), so the day is matched here on a bounded set.
+ */
+export async function countMissedPunchRequests(
+  tenantId: string,
+  employeeId: string | null,
+  isPayroll: boolean,
+): Promise<number> {
+  const asks = await db.punch.findMany({
+    where: {
+      source: "MANUAL",
+      isApproved: false,
+      isRejected: false,
+      correctedById: null,
+      correctsId: null,
+      approvedById: null,
+      timesheet: {
+        employee: scopeOf(tenantId, employeeId, isPayroll),
+        exceptions: { some: { exceptionType: "MISSING_PUNCH", resolvedAt: null } },
+      },
+    },
+    take: 500,
+    select: {
+      punchTime: true,
+      timesheet: {
+        select: {
+          employee: { select: { timeZone: true, site: { select: { timezone: true } } } },
+          exceptions: {
+            where: { exceptionType: "MISSING_PUNCH", resolvedAt: null },
+            select: { occurredAt: true },
+          },
+        },
+      },
+    },
+  });
+  return asks.filter((a) => {
+    const zone = personTimeZone(a.timesheet!.employee);
+    const day = dayIn(a.punchTime, zone);
+    return a.timesheet!.exceptions.some((e) => dayIn(e.occurredAt, zone) === day);
+  }).length;
+}
+
+/** The calendar day an instant falls on in a zone, as YYYY-MM-DD. */
+function dayIn(instant: Date, zone: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: zone }).format(instant);
 }
 
 /** Open exceptions per type, largest first. Counted in SQL, not in a loop. */
