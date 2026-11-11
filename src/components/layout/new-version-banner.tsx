@@ -9,7 +9,7 @@ import { TAB_BUILD, checkLiveBuild, onNewBuild, pageChanged, pageMapFor, type Ve
 import styles from "./new-version-banner.module.css";
 
 /**
- * "CloudTime has been updated": offered when a newer build is live and the
+ * "New version available": offered when a newer build is live and the
  * page this tab is sitting on changed in it (lib/app-build.ts). The same
  * rules as the ticketing system's prompt:
  *
@@ -132,10 +132,8 @@ export function NewVersionBanner() {
         <RefreshCw />
       </span>
       <span className={styles.text}>
-        <span className={styles.title}>CloudTime has been updated</span>
-        <span className={styles.line}>
-          {verdict?.value === "yes" ? "This page changed since you opened it." : "A newer version is ready."}
-        </span>
+        <span className={styles.title}>New version available</span>
+        <span className={styles.line}>CloudTime was updated while this page was open.</span>
       </span>
       <span className={styles.actions}>
         <Button onClick={() => window.location.reload()}>

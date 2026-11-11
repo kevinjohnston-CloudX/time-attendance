@@ -61,7 +61,7 @@ describe("NewVersionBanner", () => {
     serve({ "build-a": OWN, "build-b": { build: "build-b", pages: { ...OWN.pages, "/(portal)/supervisor/on-site/page": "s2" } } });
     const lib = await setup();
     await deploy(lib, "build-b");
-    expect(screen.getByRole("status").textContent).toContain("CloudTime has been updated");
+    expect(screen.getByRole("status").textContent).toContain("New version available");
     expect(screen.getByRole("button", { name: /Refresh page/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Not now" })).toBeTruthy();
   });
