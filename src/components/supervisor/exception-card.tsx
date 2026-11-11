@@ -200,10 +200,12 @@ export function ExceptionCard({
           return;
         }
         closeForm();
-        onDone(`Punches saved and absence resolved for ${row.employeeName}`);
+        onDone(result.data?.pending ? `Sent to HR for approval for ${row.employeeName}` : `Punches saved and absence resolved for ${row.employeeName}`);
         return;
       }
 
+      // A supervisor's fix goes to HR for approval rather than in (11/11).
+      let sent = false;
       if (addsPunches) {
         const sides: {
           value: string;
@@ -256,6 +258,7 @@ export function ExceptionCard({
             return;
           }
           wrote = true;
+          if (result.data?.pending) sent = true;
         }
 
         if (!wrote) {
@@ -278,10 +281,11 @@ export function ExceptionCard({
           setError(result.error ?? "That did not save.");
           return;
         }
+        if (result.data?.pending) sent = true;
       }
 
       closeForm();
-      onDone(`Punch saved and exception resolved for ${row.employeeName}`);
+      onDone(sent ? `Sent to HR for approval for ${row.employeeName}` : `Punch saved and exception resolved for ${row.employeeName}`);
     });
   }
 

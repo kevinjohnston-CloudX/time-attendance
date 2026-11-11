@@ -103,6 +103,11 @@ model Site {
   /// as language codes (lib/languages.ts, "es"). Informational for now.
   primaryLanguage     String?
   additionalLanguages String[] @default([])
+  /// Whether supervisors may edit the timecards of the people here (11/11).
+  /// Off: they make no timecard edits at all. On: they make the changes HR
+  /// makes on rows of regular hours, and every one waits for HR to approve it
+  /// (TimecardEditRequest). Georgia first; switched per site on its page.
+  supervisorTimecardEdits Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -282,6 +287,7 @@ model Employee {
   ruleSetHistory     EmployeeRuleSetHistory[]
   ruleSetHistoryCreated EmployeeRuleSetHistory[] @relation("RuleSetHistoryCreator")
   payRates           EmployeePayRate[]
+  timecardEditsSent  TimecardEditRequest[] @relation("TimecardEditSubmitter")
 
   @@unique([tenantId, employeeCode])
   // The roster, the team scopes and the admin filters. Every one of these

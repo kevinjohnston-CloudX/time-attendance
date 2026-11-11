@@ -1,10 +1,10 @@
 "use server";
 
-import { assertFixerMayChangePunch, assertMissedPunchFix, fixesMissedPunchesOnly, MISSED_PUNCH_ONLY_ERROR } from "@/lib/timecards/missed-punch-fix";
+import { assertSupervisorEditsOn, editsNeedApproval, sendEditsForApproval } from "@/lib/timecards/supervisor-edits";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
-import { MISSED_PUNCH_FIXERS, TIMECARD_EDITORS_COMPANY } from "@/lib/rbac/permissions";
+import { TIMECARD_EDITORS, TIMECARD_EDITORS_COMPANY } from "@/lib/rbac/permissions";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
@@ -162,17 +162,25 @@ export const approveMissedPunch = withRBAC(
     const home = await findOrCreateTimesheet(punch.employeeId, period.id);
     assertEditable(home.status);
 
-    // A supervisor allowed only to fix missed punches (PUNCH_FIX_MISSED_TEAM)
-    // approves the clock in or clock out a missed punch is short of, under the
-    // regular hours pay code, as addMissingPunchForEmployee lets them add it.
-    const fixOnly = await fixesMissedPunchesOnly();
-    if (fixOnly) {
-      if (punch.punchType !== "CLOCK_IN" && punch.punchType !== "CLOCK_OUT") throw new Error(MISSED_PUNCH_ONLY_ERROR);
-      await assertMissedPunchFix(home.id, personTimeZone(owner, "UTC"), [{ punchType: punch.punchType, at: punch.punchTime }]);
+    // A supervisor (PUNCH_FIX_MISSED_TEAM) sends it to HR, as every change of
+    // theirs goes (11/11): HR's approval approves the request itself.
+    if (await editsNeedApproval()) {
+      await assertSupervisorEditsOn(punch.employeeId);
+      const waiting = await db.timecardEditItem.count({ where: { punchId: punch.id, status: "PENDING", request: { status: "PENDING" } } });
+      if (waiting) throw new Error("This request already waits for HR approval.");
+      const tz = personTimeZone(owner, "UTC");
+      await sendEditsForApproval({
+        tenantId: tenantId!,
+        timesheetId: home.id,
+        submittedById: supervisorId!,
+        reason: "Approved the employee's missed punch request",
+        items: [{ kind: "APPROVE_REQUEST", punchId: punch.id, exceptionId, punchType: punch.punchType, at: punch.punchTime, day: new Date(dayAt(punch.punchTime, tz) + "T00:00:00.000Z") }],
+        timeZone: tz,
+      });
+      revalidatePath("/supervisor/exceptions");
+      revalidatePath("/payroll/timecards");
+      return punch;
     }
-    const ruleSetForCode = fixOnly && punch.punchType === "CLOCK_IN"
-      ? await db.ruleSet.findUnique({ where: { id: owner.ruleSetId }, select: { defaultPayCodeId: true } })
-      : null;
 
     const updated = await db.$transaction(async (tx) => {
       const p = await tx.punch.update({
@@ -182,8 +190,6 @@ export const approveMissedPunch = withRBAC(
           isApproved: true,
           approvedById: supervisorId,
           approvedAt: new Date(),
-          // A fixed clock in is regular hours (the rule set's default code).
-          ...(ruleSetForCode ? { payCodeId: ruleSetForCode.defaultPayCodeId ?? null } : {}),
         },
       });
       // The exception this request answers, and no other: it used to resolve
@@ -263,9 +269,8 @@ export const rejectMissedPunch = withRBAC(
 // ─── deletePunch ──────────────────────────────────────────────────────────────
 
 export const deletePunch = withRBAC(
-  // A supervisor who fixes missed punches removes one they entered
-  // themselves (11/11, assertFixerMayChangePunch).
-  MISSED_PUNCH_FIXERS,
+  // A supervisor sends a removal to HR instead (timecard-edit.actions).
+  TIMECARD_EDITORS,
   async (ctx, input: { punchId: string; reason: string }): Promise<void> => {
     const { employeeId: actorId, tenantId } = ctx;
     const { punchId, reason } = deletePunchSchema.parse(input);
@@ -281,7 +286,6 @@ export const deletePunch = withRBAC(
     if (original.correctedById) {
       throw new Error("Punch has already been corrected or deleted.");
     }
-    if (await fixesMissedPunchesOnly()) await assertFixerMayChangePunch(original.id, null, actorId);
 
     const ts = await db.timesheet.findUniqueOrThrow({ where: { id: original.timesheetId! } });
     if (ts.status === "LOCKED" || ts.status === "PAYROLL_APPROVED") {
@@ -345,10 +349,8 @@ export const deletePunch = withRBAC(
 // ─── correctPunch ─────────────────────────────────────────────────────────────
 
 export const correctPunch = withRBAC(
-  // A supervisor who fixes missed punches changes one on a day marked
-  // Missed punch, or one they entered themselves (11/11,
-  // assertFixerMayChangePunch).
-  MISSED_PUNCH_FIXERS,
+  // A supervisor sends a change to HR instead (timecard-edit.actions).
+  TIMECARD_EDITORS,
   async (ctx, input: CorrectPunchInput): Promise<Punch> => {
     const { employeeId: supervisorId } = ctx;
     const { originalPunchId, newPunchTime: newPunchTimeStr, reason } =
@@ -357,7 +359,6 @@ export const correctPunch = withRBAC(
     const scoped = await punchInScope(ctx, originalPunchId, TIMECARD_EDITORS_COMPANY);
     if (scoped.employeeId === supervisorId) throw new Error("You can't change your own punches");
     const newPunchTime = new Date(newPunchTimeStr);
-    if (await fixesMissedPunchesOnly()) await assertFixerMayChangePunch(originalPunchId, newPunchTime, supervisorId);
     const before = await db.punch.findUniqueOrThrow({
       where: { id: originalPunchId },
       select: { punchType: true, punchTime: true, employee: { select: { timeZone: true, site: { select: { timezone: true } } } } },

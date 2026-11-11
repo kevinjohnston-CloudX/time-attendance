@@ -1474,10 +1474,10 @@ export const updateSite = withRBAC(
   "SITE_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: UpdateSiteInput) => {
     if (!tenantId) throw new Error("Tenant context required");
-    const { siteId, isActive, address, primaryLanguage, additionalLanguages, ...rest } = updateSiteSchema.parse(input);
+    const { siteId, isActive, address, primaryLanguage, additionalLanguages, supervisorTimecardEdits, ...rest } = updateSiteSchema.parse(input);
     // Found inside this company first: an id from another one answers the
     // same "not found" as an id that does not exist.
-    const own = await db.site.findFirst({ where: { id: siteId, tenantId }, select: { id: true } });
+    const own = await db.site.findFirst({ where: { id: siteId, tenantId }, select: { id: true, supervisorTimecardEdits: true } });
     if (!own) throw new Error("NOT_FOUND");
     const updated = await db.site.update({
       where: { id: own.id },
@@ -1490,6 +1490,7 @@ export const updateSite = withRBAC(
         // Informational for now. The others never repeat the primary.
         ...(primaryLanguage !== undefined && { primaryLanguage }),
         ...(additionalLanguages !== undefined && { additionalLanguages: cleanLanguages(primaryLanguage, additionalLanguages) }),
+        ...(supervisorTimecardEdits !== undefined && { supervisorTimecardEdits }),
       },
     });
     await writeAuditLog({
@@ -1498,6 +1499,10 @@ export const updateSite = withRBAC(
       entityType: "EMPLOYEE",
       entityId: siteId,
       action: "SITE_UPDATED",
+      // Who let supervisors edit timecards here, or stopped them, and when.
+      ...(supervisorTimecardEdits !== undefined && supervisorTimecardEdits !== own.supervisorTimecardEdits
+        ? { changes: { field: "Supervisors can edit timecards", before: own.supervisorTimecardEdits, after: supervisorTimecardEdits } }
+        : {}),
     });
     // Its tablets offer the new languages straight away on this server.
     forgetTabletLanguages(tenantId);

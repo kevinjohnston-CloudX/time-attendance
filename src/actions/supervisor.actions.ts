@@ -26,7 +26,8 @@ import { dayRange, readOpenExceptions } from "@/lib/exceptions/read-open-excepti
 import type { PunchState, PunchType } from "@prisma/client";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { ownCompany } from "@/lib/rbac/company";
-import { assertMissedPunchFix, fixesMissedPunchesOnly, MISSED_PUNCH_ONLY_ERROR } from "@/lib/timecards/missed-punch-fix";
+import { assertSupervisorEditsOn, editsNeedApproval, resolveEditItem, sendEditsForApproval, timecardForEdits } from "@/lib/timecards/supervisor-edits";
+import type { EditItemInput } from "@/lib/timecards/supervisor-edit-rules";
 import { withoutVisitors } from "@/lib/utils/client-badge";
 
 // Payroll, HR and the admins see the whole company, as does a custom role
@@ -237,6 +238,10 @@ export const addMissingPunchForEmployee = withRBAC(
     const sheet = await timesheetInScope(ctx, timesheetId, "PUNCH_EDIT_ANY");
     if (sheet.employeeId === supervisorId) throw new Error("You can't change your own punches");
     assertEditable(sheet.status);
+    if (await editsNeedApproval()) {
+      if (punchType !== "CLOCK_IN" && punchType !== "CLOCK_OUT") throw new Error("You can add a clock in or a clock out. Ask HR or payroll for a meal or break punch.");
+      return sendFromExceptions(ctx, sheet.employeeId, timesheetId, reason, [{ kind: "ADD_PUNCH", punchType, at: punchTimeStr }]);
+    }
 
     const timesheet = await db.timesheet.findUniqueOrThrow({
       where: { id: timesheetId },
@@ -252,15 +257,6 @@ export const addMissingPunchForEmployee = withRBAC(
     });
 
     const { ruleSet, shift } = timesheet.employee;
-    const fixOnly = await fixesMissedPunchesOnly();
-    if (fixOnly) {
-      const exception = await db.exception.findFirst({
-        where: { id: exceptionId, timesheetId, exceptionType: "MISSING_PUNCH", resolvedAt: null },
-        select: { id: true },
-      });
-      if (!exception || (punchType !== "CLOCK_IN" && punchType !== "CLOCK_OUT")) throw new Error(MISSED_PUNCH_ONLY_ERROR);
-      await assertMissedPunchFix(timesheetId, personTimeZone(timesheet.employee, "UTC"), [{ punchType, at: punchTime }]);
-    }
     const roundedTime = computeRoundedTime(punchTime, punchType, ruleSet, shift, personTimeZone(timesheet.employee, "UTC"));
 
     await db.$transaction(async (tx) => {
@@ -278,8 +274,6 @@ export const addMissingPunchForEmployee = withRBAC(
           approvedById: supervisorId,
           approvedAt: new Date(),
           note: reason,
-          // A fixed clock in is regular hours (the rule set's default code).
-          ...(fixOnly && punchType === "CLOCK_IN" ? { payCodeId: ruleSet.defaultPayCodeId ?? null } : {}),
         },
       });
       // The exception must be this timesheet's.
@@ -301,16 +295,35 @@ export const addMissingPunchForEmployee = withRBAC(
     revalidatePath("/supervisor/exceptions");
     revalidatePath("/time/history");
     revalidatePath(`/time/timesheet/${timesheetId}`);
+    return { pending: false };
   }
 );
 
 /**
+ * A supervisor's change from the Exceptions page, sent to HR as one from the
+ * timecard is (11/11): checked by the same rules, and nothing on the timecard,
+ * the exception included, changes until HR approves it.
+ */
+async function sendFromExceptions(
+  ctx: Parameters<typeof timesheetInScope>[0],
+  employeeId: string,
+  timesheetId: string,
+  reason: string,
+  inputs: EditItemInput[],
+): Promise<{ pending: true }> {
+  await assertSupervisorEditsOn(employeeId);
+  const tc = await timecardForEdits(timesheetId);
+  const items = inputs.map((i) => resolveEditItem(tc, i));
+  await sendEditsForApproval({ tenantId: ctx.tenantId!, timesheetId, submittedById: ctx.employeeId!, reason, items, timeZone: tc.timeZone });
+  revalidatePath("/supervisor/exceptions");
+  revalidatePath("/payroll/timecards");
+  return { pending: true };
+}
+
+/**
  * An Absent day filled from the Exceptions page: its clock in and clock out
- * in one request, and the absence resolved. Added one at a time, as a missing
- * punch is, a supervisor who fixes missed punches only was refused: their rule
- * fills an Absent day with a whole shift (assertMissedPunchFix), and its clock
- * in alone is half of one. The clock in is regular hours for them, as it is on
- * the timecard (saveManualPunches).
+ * in one request, and the absence resolved. A supervisor's goes to HR for
+ * approval, both punches together (sendFromExceptions).
  */
 export const addAbsentDayPunches = withRBAC(
   ["PUNCH_EDIT_TEAM", "PUNCH_FIX_MISSED_TEAM"],
@@ -330,6 +343,12 @@ export const addAbsentDayPunches = withRBAC(
       select: { id: true },
     });
     if (!absence) throw new Error("This absence has already been resolved, or is not on this timecard. Reload the page and try again.");
+    if (await editsNeedApproval()) {
+      return sendFromExceptions(ctx, sheet.employeeId, timesheetId, reason, [
+        { kind: "ADD_PUNCH", punchType: "CLOCK_IN", at: inTime },
+        { kind: "ADD_PUNCH", punchType: "CLOCK_OUT", at: outTime },
+      ]);
+    }
 
     const timesheet = await db.timesheet.findUniqueOrThrow({
       where: { id: timesheetId },
@@ -345,13 +364,6 @@ export const addAbsentDayPunches = withRBAC(
     });
     const { ruleSet, shift } = timesheet.employee;
     const tz = personTimeZone(timesheet.employee, "UTC");
-    const fixOnly = await fixesMissedPunchesOnly();
-    if (fixOnly) {
-      await assertMissedPunchFix(timesheetId, tz, [
-        { punchType: "CLOCK_IN", at: inAt },
-        { punchType: "CLOCK_OUT", at: outAt },
-      ]);
-    }
 
     await db.$transaction(async (tx) => {
       for (const [punchType, punchTime] of [["CLOCK_IN", inAt], ["CLOCK_OUT", outAt]] as const) {
@@ -369,7 +381,6 @@ export const addAbsentDayPunches = withRBAC(
             approvedById: supervisorId,
             approvedAt: new Date(),
             note: reason,
-            ...(fixOnly && punchType === "CLOCK_IN" ? { payCodeId: ruleSet.defaultPayCodeId ?? null } : {}),
           },
         });
       }
@@ -391,12 +402,14 @@ export const addAbsentDayPunches = withRBAC(
     revalidatePath("/supervisor/exceptions");
     revalidatePath("/time/history");
     revalidatePath(`/time/timesheet/${timesheetId}`);
+    return { pending: false };
   }
 );
 
 /** Supervisor corrects a punch time and auto-resolves the exception. */
 export const correctPunchAndResolve = withRBAC(
-  "PUNCH_EDIT_TEAM",
+  // A supervisor's change goes to HR for approval (sendFromExceptions).
+  ["PUNCH_EDIT_TEAM", "PUNCH_FIX_MISSED_TEAM"],
   async (ctx, input: CorrectAndResolveInput) => {
     const { employeeId: supervisorId } = ctx;
     const { originalPunchId, newPunchTime: newPunchTimeStr, reason, exceptionId } =
@@ -405,6 +418,13 @@ export const correctPunchAndResolve = withRBAC(
     // Only a punch of someone the caller manages, and not their own.
     const scoped = await punchInScope(ctx, originalPunchId, "PUNCH_EDIT_ANY");
     if (scoped.employeeId === supervisorId) throw new Error("You can't change your own punches");
+    if (await editsNeedApproval()) {
+      const { timesheetId: onSheet } = await db.punch.findUniqueOrThrow({ where: { id: originalPunchId }, select: { timesheetId: true } });
+      if (!onSheet) throw new Error("This punch is not on a timecard yet. Ask HR or payroll to change it.");
+      const sheet = await timesheetInScope(ctx, onSheet, "PUNCH_EDIT_ANY");
+      assertEditable(sheet.status);
+      return sendFromExceptions(ctx, sheet.employeeId, onSheet, reason, [{ kind: "CHANGE_PUNCH", punchId: originalPunchId, at: newPunchTimeStr }]);
+    }
 
     const { timesheetId, ruleSet } = await db.$transaction(async (tx) => {
       const result = await createCorrectionPunch(tx, {
@@ -425,6 +445,7 @@ export const correctPunchAndResolve = withRBAC(
     revalidatePath("/supervisor/exceptions");
     revalidatePath("/time/history");
     revalidatePath(`/time/timesheet/${timesheetId}`);
+    return { pending: false };
   }
 );
 

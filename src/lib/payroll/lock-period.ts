@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { validatePayPeriodTransition } from "@/lib/state-machines/pay-period-state";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { postAccruals, postLeaveUsage } from "@/lib/engines/accrual-engine";
+import { assertNoPendingEdits } from "@/lib/timecards/pending-edits";
 
 /**
  * Locks a pay period and every timecard in it, then posts the period's
@@ -22,6 +23,8 @@ export async function lockPeriod(
 
   const transition = validatePayPeriodTransition(payPeriod.status, "LOCK");
   if (!transition.valid) throw new Error(transition.error);
+  // Locked over them, supervisors' changes waiting for HR could never go in.
+  await assertNoPendingEdits({ payPeriodId, except: keepOpen });
 
   await db.$transaction([
     db.payPeriod.update({ where: { id: payPeriodId }, data: { status: transition.newStatus } }),
@@ -69,6 +72,7 @@ export async function lockTimecards(
     where: { id: { in: timesheetIds }, status: { not: "LOCKED" }, payPeriod: { tenantId: actor.tenantId } },
     select: { id: true, employeeId: true, payPeriodId: true },
   });
+  await assertNoPendingEdits({ timesheetIds: sheets.map((s) => s.id) });
   const byPeriod = new Map<string, typeof sheets>();
   for (const s of sheets) byPeriod.set(s.payPeriodId, [...(byPeriod.get(s.payPeriodId) ?? []), s]);
 

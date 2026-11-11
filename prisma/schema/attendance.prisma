@@ -47,6 +47,7 @@ model Timesheet {
   mealPremiumWaivers   MealPremiumWaiver[]
   notes                TimesheetNote[]
   dayReasons      TimesheetDayReason[]
+  editRequests    TimecardEditRequest[]
 
   // Every pay-period screen reads a period's sheets by status, and the
   // unique above only helps when the employee is known.

@@ -8,6 +8,8 @@ const posted: { accruals: string[][]; leave: string[][] } = { accruals: [], leav
 
 vi.mock("@/lib/db", () => ({
   db: {
+    // No supervisor changes waiting for HR (lib/timecards/pending-edits).
+    timecardEditRequest: { findMany: async () => [] },
     timesheet: {
       findMany: async ({ where }: { where: { id: { in: string[] } } }) => sheets.filter((s) => where.id.in.includes(s.id) && s.status !== "LOCKED"),
       updateMany: async ({ where }: { where: { id: { in: string[] } } }) => {

@@ -5,7 +5,6 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { MISSED_PUNCH_FIXERS, TIMECARD_EDITORS, TIMECARD_EDITORS_COMPANY } from "@/lib/rbac/permissions";
-import { assertMissedPunchFix, fixesMissedPunchesOnly } from "@/lib/timecards/missed-punch-fix";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
@@ -261,9 +260,8 @@ export const addManualPunchPair = withRBAC(
  * clock out behind (Stephanie Resendiz, 10/19).
  */
 export const addManualPunches = withRBAC(
-  // A supervisor allowed only to fix missed punches adds them here too,
-  // held to the missed punch itself (saveManualPunches).
-  MISSED_PUNCH_FIXERS,
+  // A supervisor sends punches to HR instead (timecard-edit.actions).
+  TIMECARD_EDITORS,
   async (ctx, input: unknown) => {
     const { timesheetId, punches } = z.object({
       timesheetId: z.string().min(1),
@@ -301,17 +299,6 @@ async function saveManualPunches(
   }
 
   const { ruleSet, shift } = ts.employee;
-  // Somebody allowed only to fix missed punches adds the punch a shift is
-  // missing and nothing else, under the regular hours pay code: the rule
-  // set's default (REGULAR HOURS, or the Canadian and Dutch ones).
-  const fixOnly = await fixesMissedPunchesOnly();
-  if (fixOnly) {
-    await assertMissedPunchFix(
-      timesheetId,
-      personTimeZone(ts.employee, "UTC"),
-      punches.map((p) => ({ punchType: p.punchType, at: new Date(p.punchTime) })),
-    );
-  }
   const rows: { punchType: "CLOCK_IN" | "CLOCK_OUT"; punchTime: string; reason?: string; punchDate: Date; roundedTime: Date; inheritedPayCodeId: string | null }[] = [];
   for (const { punchType, punchTime, reason } of punches) {
     const punchDate = new Date(punchTime);
@@ -329,9 +316,7 @@ async function saveManualPunches(
     // For CLOCK_IN punches, inherit pay code from an absent-day marker if one exists,
     // falling back to the rule set's default pay code.
     let inheritedPayCodeId: string | null = null;
-    if (punchType === "CLOCK_IN" && fixOnly) {
-      inheritedPayCodeId = ruleSet.defaultPayCodeId ?? null;
-    } else if (punchType === "CLOCK_IN") {
+    if (punchType === "CLOCK_IN") {
       // The employee's own day, not the UTC one: a clock in typed after 7 or
       // 8 PM Eastern took the next day's pay code marker.
       const local = toSiteClock(punchDate, personTimeZone(ts.employee, "UTC"));

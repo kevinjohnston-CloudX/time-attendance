@@ -5,7 +5,7 @@ import { useRouter } from "@/components/layout/navigation-progress";
 import { Building2, ChevronRight, Plus } from "lucide-react";
 import { createSite, updateSite } from "@/actions/admin.actions";
 import type { Site } from "@prisma/client";
-import { Button, EmptyState, Input, LanguagePicker, LinkButton, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
+import { Button, EmptyState, Input, LanguagePicker, LinkButton, Switch, Table, TBody, TD, TH, THead, TR } from "@/components/ui";
 import {
   AreaPanel,
   Muted,
@@ -65,7 +65,12 @@ export function SitesManager({ sites }: { sites: Site[] }) {
       const result =
         editing === "new"
           ? await createSite(fields)
-          : await updateSite({ ...fields, siteId: (editing as Site).id, isActive: form.get("isActive") === "true" });
+          : await updateSite({
+              ...fields,
+              siteId: (editing as Site).id,
+              isActive: form.get("isActive") === "true",
+              supervisorTimecardEdits: form.get("supervisorTimecardEdits") === "true",
+            });
       if (!result.success) return setError(saveError(result.error));
       close();
       router.refresh();
@@ -206,6 +211,27 @@ function useTimeIn(timeZone: string): string | null {
 }
 
 /**
+ * Whether supervisors may edit the timecards of the people at this site
+ * (11/11). Off, they can't change them at all; on, they make HR's changes on
+ * rows of regular hours and each one waits for HR to approve it. Sent with
+ * the form as "supervisorTimecardEdits".
+ */
+function SupervisorEditsField({ defaultOn }: { defaultOn: boolean }) {
+  const [on, setOn] = useState(defaultOn);
+  return (
+    <div className="flex w-full min-w-0 flex-col gap-1.5">
+      <input type="hidden" name="supervisorTimecardEdits" value={on ? "true" : "false"} />
+      <Switch checked={on} onChange={setOn} label="Supervisors can edit timecards" />
+      <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
+        {on
+          ? "Supervisors change their team's timecards here on rows of regular hours, and every change waits for HR to approve it."
+          : "Supervisors here can see their team's timecards but not change them."}
+      </span>
+    </div>
+  );
+}
+
+/**
  * Add or edit one site. Also used from the site's own page.
  *
  * <p>One column, in the order someone describes a building: what it is
@@ -306,6 +332,7 @@ export function SiteDialog({
         {tabletLanguagesOutcome(primary || null, others)}
         {!TABLETS_USE_LANGUAGES && " Tablets start doing this with their next app update."}
       </p>
+      {site && <SupervisorEditsField defaultOn={site.supervisorTimecardEdits} />}
       {site && (
         <StatusField defaultActive={site.isActive} hint="An inactive site stays on the records that already use it." />
       )}

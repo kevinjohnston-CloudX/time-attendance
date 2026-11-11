@@ -14,7 +14,9 @@ import {
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 import { fromSiteClock, MAX_OVERNIGHT_MS, parseUtcDate, timeZoneAbbrev, toSiteClock } from "@/lib/utils/date";
-import { fixerPunchChangeRefusal, type ChangePunch } from "@/lib/timecards/fixer-punch-change";
+import { onRegularRow as onRegularRowRule, punchChangeRefusal, type EditItemInput, type RowPunch } from "@/lib/timecards/supervisor-edit-rules";
+import { submitTimecardEdits, reviseTimecardEdit, withdrawTimecardEdit } from "@/actions/timecard-edit.actions";
+import { EditRequestsPanel, type EditRequestView } from "@/components/payroll/edit-requests-panel";
 import { periodLastDay } from "@/lib/pay-period-display";
 import type { PayFrequency } from "@prisma/client";
 import { minutesToHoursDecimal } from "@/lib/utils/duration";
@@ -158,6 +160,12 @@ type TimecardPunch = {
   hoursOnly?: boolean;
   /** Entered by the person viewing: typed in, or their correction (source MANUAL, approved by them). */
   enteredByYou?: boolean;
+  /**
+   * A supervisor's change to it waiting for HR (11/11): shown at its new time,
+   * struck through for a removal, or, for one added, a punch not yet saved
+   * (its id "edit:" and the change's).
+   */
+  submitted?: { kind: "add" | "change" | "remove"; itemId: string; was?: string; request?: boolean };
 };
 
 type TimecardSegment = {
@@ -280,11 +288,16 @@ interface TimecardViewerProps {
   userRole: string;
   readOnly?: boolean;
   /**
-   * May fix missed punches and nothing else (PUNCH_FIX_MISSED_TEAM): the
-   * Missing cells take the missing clock in or out; every other control stays
-   * read only, and the server holds the same line (lib/timecards/missed-punch-fix).
+   * A supervisor where the person's site lets supervisors edit timecards
+   * (11/11): they change rows of regular hours as HR does, and Save sends the
+   * changes to HR for approval instead of making them
+   * (lib/timecards/supervisor-edits).
    */
-  missedPunchesOnly?: boolean;
+  sendsForApproval?: boolean;
+  /** A supervisor where the person's site does not (the timecard is read only to them). */
+  supervisorEditsOff?: boolean;
+  /** Supervisors' changes on this timecard waiting for HR, or turned down by HR. */
+  editRequests?: EditRequestView[];
   /** May lock and unlock a single timecard (pay period managers). */
   canLockTimecards?: boolean;
   /** The line under the page title, after the pay frequency: the headcount. */
@@ -797,7 +810,9 @@ export function TimecardViewer({
   selectedDepartmentId,
   userRole,
   readOnly = false,
-  missedPunchesOnly = false,
+  sendsForApproval = false,
+  supervisorEditsOff = false,
+  editRequests = [],
   canLockTimecards = false,
   subtitle,
   headerActions,
@@ -874,6 +889,8 @@ export function TimecardViewer({
   const [pendingWaiverToggles, setPendingWaiverToggles] = useState<Set<string>>(new Set());
   // Map<segmentStart (ISO), segmentDate (yyyy-MM-dd)>
   const [pendingPremiumWaiverToggles, setPendingPremiumWaiverToggles] = useState<Map<string, string>>(new Map());
+  // Punches a supervisor removes, sent to HR with the rest on Save.
+  const [pendingRemovals, setPendingRemovals] = useState<Set<string>>(new Set());
   const [pendingDeletions, setPendingDeletions] = useState<Array<{ punchIds: string[]; dayKey: string; inTime: string | null; outTime: string | null }>>([]);
   // Why the queued corrections and removals were made, asked once in the save
   // bar and kept with each of them. Required whenever one is waiting.
@@ -1112,14 +1129,13 @@ export function TimecardViewer({
   const canChange = !readOnly && !selectedInactive && (timecard
     ? (timecard.status !== "LOCKED" && timecard.status !== "PAYROLL_APPROVED")
     : (!!selectedEmployeeId && !!selectedPeriodId));
-  // Every change on the timecard, or, for a supervisor allowed only that,
-  // the missing clock in or out on a day marked Missed punch.
-  const canEdit = canChange && !missedPunchesOnly;
-  // Someone with no timecard yet too, in an open period (11/11): the first
-  // save makes it (ensureTimesheet), and their Absent days can be filled.
-  const canFixMissed = canChange && (!!timecard || payPeriods.find((pp) => pp.id === selectedPeriodId)?.status === "OPEN");
-  // Add time is HR's and payroll's (11/10).
-  const canAddTime = canEdit;
+  // Every change on the timecard; or, for a supervisor where the person's
+  // site allows it, changes on rows of regular hours that go to HR for
+  // approval (canSend), the first of them making the timecard if there is
+  // none yet, in an open period.
+  const canEdit = canChange && !sendsForApproval;
+  const canSend = canChange && sendsForApproval && (!!timecard || payPeriods.find((pp) => pp.id === selectedPeriodId)?.status === "OPEN");
+  const canAddTime = canEdit || (canSend && (timecard?.status ?? "OPEN") === "OPEN");
   const addTimePeriod = timecard?.payPeriod ?? payPeriods.find((pp) => pp.id === selectedPeriodId);
   const addTimeMin = format(parseUtcDate(addTimePeriod?.startDate ?? new Date().toISOString()), "yyyy-MM-dd");
   const storedEnd = format(parseUtcDate(addTimePeriod?.endDate ?? new Date().toISOString()), "yyyy-MM-dd");
@@ -1128,47 +1144,82 @@ export function TimecardViewer({
   const lastDayKey = addTimePeriod ? format(lastDayOf(addTimePeriod.endDate), "yyyy-MM-dd") : storedEnd;
   const addTimeMax = canEdit ? storedEnd : todayKey < lastDayKey ? todayKey : lastDayKey;
   const regularCode = payCodes.find((pc) => pc.id === timecard?.employee.ruleSet?.defaultPayCodeId);
-  // A supervisor who fixes missed punches does so on rows of regular hours
-  // only (11/10): a shift's code is on its clock in, as the server reads it
-  // (lib/timecards/missed-punch-fix).
+  // What a supervisor may send HR (lib/timecards/supervisor-edit-rules):
+  // rows of regular hours (a shift's code is on its clock in), today or
+  // before, not a day HR put another code on.
   const regularCodeId = timecard?.employee.ruleSet?.defaultPayCodeId ?? null;
-  const onRegularRow = (clockIn: TimecardPunch | null | undefined): boolean => !clockIn?.payCodeId || clockIn.payCodeId === regularCodeId;
-  // Days with a shift or a code on another pay code; a supervisor waives
-  // the meal on the other days, today or before (mealWaiverRefusal). A meal
-  // premium waiver stays with HR and payroll.
-  const otherCodeDayKeys = new Set([
-    ...(timecard?.punches ?? [])
-      .filter((p) => p.punchType === "CLOCK_IN" && !onRegularRow(p))
-      .map((p) => format(toSiteClock(new Date(p.roundedTime), siteTz), "yyyy-MM-dd")),
-    ...(timecard?.segments ?? [])
-      .filter((s) => s.segmentType === "LEAVE" && s.durationMinutes === 0 && s.payCode && s.payCode.id !== regularCodeId)
+  const onRegularCode = (clockIn: TimecardPunch | null | undefined): boolean => !clockIn?.payCodeId || clockIn.payCodeId === regularCodeId;
+  const siteDay = (at: Date | string) => format(toSiteClock(new Date(at), siteTz), "yyyy-MM-dd");
+  const rows: RowPunch[] = (timecard?.punches ?? []).map((p) => ({ id: p.id, punchType: p.punchType, roundedTime: new Date(p.roundedTime), payCodeId: p.payCodeId ?? null }));
+  // A day with hours (or a day marker) on another code than regular hours:
+  // PTO, FMLA, Salary, a code HR put on the day. It is that code's day.
+  const codedDayKeys = new Set(
+    (timecard?.segments ?? [])
+      .filter((s) => (s.segmentType === "WORK" || s.segmentType === "LEAVE") && s.payCode && s.payCode.id !== regularCodeId && !(regularCodeId === null && s.payCode.code === 0))
       .map((s) => s.segmentDate.slice(0, 10)),
+  );
+  // Days with a shift or a code on another pay code: no meal waiver there.
+  const otherCodeDayKeys = new Set([
+    ...codedDayKeys,
+    ...(timecard?.punches ?? []).filter((p) => p.punchType === "CLOCK_IN" && !onRegularCode(p)).map((p) => siteDay(p.roundedTime)),
   ]);
   // Hours entered with Add time (hoursOnly): no clock times to show, and
   // removed and added again to change (the row's bin), not retimed.
   const hoursEntryCell = (
     <span title="Hours entered with Add time, not clock times. To change them, remove the entry and add it again." style={{ color: "var(--text-disabled)" }}>—</span>
   );
-  // Saved punches a supervisor may change (11/11): any on a shift marked
-  // Missed punch, and those they entered themselves, which they may also
-  // remove; regular hours rows only, as the server decides it
-  // (lib/timecards/fixer-punch-change).
-  const missedDayKeys = new Set(
-    (timecard?.exceptions ?? []).filter((e) => e.exceptionType === "MISSING_PUNCH").map((e) => format(toSiteClock(new Date(e.occurredAt), siteTz), "yyyy-MM-dd")),
-  );
-  const asChange = (p: TimecardPunch): ChangePunch => ({ id: p.id, punchType: p.punchType, roundedTime: new Date(p.roundedTime), payCodeId: p.payCodeId ?? null, mine: !!p.enteredByYou });
-  const fixerChange = (p: TimecardPunch, newTime: Date | null): string | null => fixerPunchChangeRefusal({
-    punch: asChange(p),
-    newTime,
-    punches: (timecard?.punches ?? []).map(asChange),
+
+  // Supervisors' changes waiting for HR, drawn on the grid where they go.
+  const waitingItems = editRequests.filter((r) => r.status === "PENDING").flatMap((r) => r.items.filter((i) => i.status === "PENDING"));
+  const waitingDays = new Set(waitingItems.map((i) => i.day));
+  const displayPunches: TimecardPunch[] = (() => {
+    if (!timecard) return [];
+    const onPunch = new Map(waitingItems.filter((i) => i.punchId && (i.kind === "CHANGE_PUNCH" || i.kind === "REMOVE_PUNCH")).map((i) => [i.punchId!, i]));
+    const shown = timecard.punches.map((p): TimecardPunch => {
+      const i = onPunch.get(p.id);
+      if (!i) return p;
+      return i.kind === "CHANGE_PUNCH"
+        ? { ...p, roundedTime: i.at!, submitted: { kind: "change", itemId: i.id, was: p.roundedTime } }
+        : { ...p, submitted: { kind: "remove", itemId: i.id } };
+    });
+    const added = waitingItems.flatMap((i): TimecardPunch[] => {
+      const pseudo = (id: string, punchType: string, at: string, request = false): TimecardPunch => ({ id, punchType, roundedTime: at, source: "MANUAL", submitted: { kind: "add", itemId: i.id, request } });
+      if ((i.kind === "ADD_PUNCH" || i.kind === "APPROVE_REQUEST") && i.at && i.punchType) return [pseudo(`edit:${i.id}`, i.punchType, i.at, i.kind === "APPROVE_REQUEST")];
+      if (i.kind === "ADD_PAIR" && i.at && i.endAt) return [pseudo(`edit:${i.id}:in`, "CLOCK_IN", i.at), pseudo(`edit:${i.id}:out`, "CLOCK_OUT", i.endAt)];
+      return [];
+    });
+    return [...shown, ...added].sort((x, y) => new Date(x.roundedTime).getTime() - new Date(y.roundedTime).getTime());
+  })();
+  const asRow = (p: TimecardPunch): RowPunch => ({ id: p.id, punchType: p.punchType, roundedTime: new Date(p.roundedTime), payCodeId: p.payCodeId ?? null });
+  /** Why a supervisor can't move this punch to `at`, or null. */
+  const sendRefusal = (p: TimecardPunch, at: Date): string | null => punchChangeRefusal({
+    punch: p.submitted?.kind === "add" ? undefined : rows.find((r) => r.id === p.id),
+    landing: [at],
+    days: [siteDay(at)],
+    punches: rows,
     regularCodeId,
-    missedDays: missedDayKeys,
     today: todayKey,
-    dayOf: (at) => format(toSiteClock(at, siteTz), "yyyy-MM-dd"),
+    codedDays: codedDayKeys,
   });
-  const canChangePunch = (p: TimecardPunch): boolean => !!canEdit || (canFixMissed && !p.hoursOnly && fixerChange(p, new Date(p.roundedTime)) === null);
-  const canRemovePunch = (p: TimecardPunch): boolean => !!canEdit || (canFixMissed && !p.hoursOnly && fixerChange(p, null) === null);
-  const canWaiveMeal = (dayKey: string): boolean => !!canEdit || (canFixMissed && dayKey <= todayKey && !otherCodeDayKeys.has(dayKey));
+  const supervisorMay = (p: TimecardPunch): boolean =>
+    canSend && !p.hoursOnly && p.submitted?.kind !== "remove" && !p.submitted?.request && !pendingRemovals.has(p.id) &&
+    siteDay(p.roundedTime) <= todayKey && (p.submitted?.kind === "add" || onRegularRowRule(asRow(p), rows, regularCodeId));
+  const canChangePunch = (p: TimecardPunch): boolean => !!canEdit || supervisorMay(p);
+  const canRemovePunch = (p: TimecardPunch): boolean => !!canEdit || supervisorMay(p);
+  const canAddOnDay = (dayKey: string): boolean => !!canEdit || (canSend && dayKey <= todayKey && !codedDayKeys.has(dayKey));
+  const canWaiveMeal = (dayKey: string): boolean => !!canEdit || (canSend && dayKey <= todayKey && !otherCodeDayKeys.has(dayKey));
+  /** A punch's cell: orange while unsaved, blue while waiting for HR, struck through when removed. */
+  const punchStyle = (p: TimecardPunch): React.CSSProperties => ({
+    ...punchCellStyle(pendingPunchEdits.has(p.id), canChangePunch(p)),
+    ...(p.submitted && !pendingPunchEdits.has(p.id) ? { color: "var(--text-accent)", fontWeight: "var(--weight-medium)" } : {}),
+    ...(pendingRemovals.has(p.id) || p.submitted?.kind === "remove" ? { textDecoration: "line-through" } : {}),
+  });
+  const punchTitle = (p: TimecardPunch): string | undefined =>
+    pendingRemovals.has(p.id) ? "Removed when you save"
+      : p.submitted?.kind === "remove" ? "Removal waiting for HR approval"
+      : p.submitted?.kind === "change" ? `Waiting for HR approval (was ${format(atSite(p.submitted.was!), "h:mm a")})`
+      : p.submitted ? "Waiting for HR approval"
+      : undefined;
 
   const canDeleteManual =
     !!canEdit &&
@@ -1340,7 +1391,7 @@ export function TimecardViewer({
   function punchesForDay(day: Date): TimecardPunch[] {
     if (!timecard) return [];
     const dayStr = format(day, "yyyy-MM-dd");
-    return timecard.punches.filter(
+    return displayPunches.filter(
       (p) => (overnightOutDay.get(p.id) ?? format(atSite(p.roundedTime), "yyyy-MM-dd")) === dayStr
     );
   }
@@ -1395,8 +1446,8 @@ export function TimecardViewer({
     newDate.setHours(hours, minutes, 0, 0);
     const punchId = editingPunchId;
     // A supervisor is told here, not on saving, when the time is one they can't move it to.
-    const editing = canEdit ? null : timecard?.punches.find((p) => p.id === punchId);
-    const refusal = editing ? fixerChange(editing, toMoment(newDate)) : null;
+    const editing = canEdit ? null : displayPunches.find((p) => p.id === punchId);
+    const refusal = editing ? sendRefusal(editing, toMoment(newDate)) : null;
     if (refusal) { setEditError(refusal); return; }
     setPendingPunchEdits((prev) => { const n = new Map(prev); n.set(punchId, newDate); return n; });
     setEditingPunchId(null);
@@ -1445,6 +1496,25 @@ export function TimecardViewer({
   }
 
   function deletePunchDirect(punchId: string, reason: string) {
+    // A supervisor's removal goes to HR with the rest on Save; one of their
+    // own waiting additions is simply taken back.
+    if (canSend) {
+      const p = displayPunches.find((x) => x.id === punchId);
+      if (p?.submitted?.kind === "add") {
+        const itemId = p.submitted.itemId;
+        startTransition(async () => {
+          const result = await withdrawTimecardEdit({ itemId });
+          if (!result.success) { setEditError(result.error); return; }
+          setEditingPunchId(null);
+          router.refresh();
+        });
+        return;
+      }
+      setPendingRemovals((prev) => new Set(prev).add(punchId));
+      setChangeReason((r) => r || reason);
+      setEditingPunchId(null);
+      return;
+    }
     startTransition(async () => {
       const result = await deletePunch({ punchId, reason });
       if (!result.success) { setEditError(result.error); return; }
@@ -1464,7 +1534,7 @@ export function TimecardViewer({
   }
 
   function startAddingPunch(dayKey: string, pairIndex: number, punchType: "CLOCK_IN" | "CLOCK_OUT", day: Date, pairedTime: Date | null = null) {
-    if (!canEdit && !canFixMissed) return;
+    if (!canEdit && !canSend) return;
     setAddingPunch({ dayKey, pairIndex, punchType, pairedTime });
     setEditingPunchId(null);
     setEditTimeStr("");
@@ -1532,6 +1602,11 @@ export function TimecardViewer({
       }
     }
 
+    if (canSend) {
+      const item: EditItemInput = { kind: "ADD_PAIR", day: newEntryDate, at: toMoment(inDate).toISOString(), endAt: toMoment(outDate).toISOString() };
+      sendAddTime(item);
+      return;
+    }
     startTransition(async () => {
       let timesheetId: string = timecard?.timesheetId ?? "";
       if (!timesheetId) {
@@ -1595,6 +1670,26 @@ export function TimecardViewer({
     });
   }
 
+  /** A supervisor's Add time, sent to HR on its own with the note as the reason. */
+  function sendAddTime(item: EditItemInput) {
+    startTransition(async () => {
+      const result = await submitTimecardEdits({
+        employeeId: selectedEmployeeId!,
+        periodId: selectedPeriodId!,
+        reason: newEntryNote.trim() || "Added with Add time",
+        items: [item],
+      });
+      if (!result.success) { setNewEntryError(result.error); return; }
+      setNewInTimeStr("");
+      setNewOutTimeStr("");
+      setNewEntryHours("");
+      setNewEntryNote("");
+      setNewEntryError(null);
+      setShowAddEntryModal(false);
+      router.refresh();
+    });
+  }
+
   function handleAddHoursEntry(e: React.FormEvent) {
     e.preventDefault();
     if (!timecard && (!selectedEmployeeId || !selectedPeriodId)) return;
@@ -1605,6 +1700,11 @@ export function TimecardViewer({
     // hours to 24 a day and says so.
     if (isNaN(hours) || hours < 0 || hours > 999) {
       setNewEntryError("Enter hours between 0 and 999");
+      return;
+    }
+    if (canSend) {
+      if (!(hours > 0)) { setNewEntryError("Enter the hours worked, more than 0."); return; }
+      sendAddTime({ kind: "ADD_HOURS", day: newEntryDate, minutes: Math.round(hours * 60) });
       return;
     }
     startTransition(async () => {
@@ -1725,9 +1825,12 @@ export function TimecardViewer({
     pendingWaiverToggles.size +
     pendingPremiumWaiverToggles.size +
     pendingDeletions.length +
-    pendingHoursEntries.length;
+    pendingHoursEntries.length +
+    pendingRemovals.size;
   const hasPendingChanges = pendingChangeCount > 0;
-  const needsReason = pendingPunchEdits.size > 0 || pendingDeletions.length > 0;
+  // A supervisor's changes all go to HR with a reason; HR's need one for a
+  // changed or removed punch.
+  const needsReason = canSend ? hasPendingChanges : pendingPunchEdits.size > 0 || pendingDeletions.length > 0;
   const reasonMissing = needsReason && !changeReason.trim();
 
   function handleDiscardChanges() {
@@ -1739,6 +1842,7 @@ export function TimecardViewer({
     setPendingPremiumWaiverToggles(new Map());
     setPendingDeletions([]);
     setPendingHoursEntries([]);
+    setPendingRemovals(new Set());
     setChangeReason("");
   }
 
@@ -1748,7 +1852,7 @@ export function TimecardViewer({
    * does closing or reloading the tab. The browser's own Back button is the
    * one way out this cannot stop.
    */
-  const dirty = (!!canEdit || !!canFixMissed) && hasPendingChanges;
+  const dirty = (!!canEdit || !!canSend) && hasPendingChanges;
   const [leaveTo, setLeaveTo] = useState<(() => void) | null>(null);
   const dirtyRef = useRef(dirty);
   const leavingRef = useRef(false);
@@ -1798,15 +1902,71 @@ export function TimecardViewer({
     };
   }, [dirty, router]);
 
+  /**
+   * A supervisor's Save: every change goes to HR as one request
+   * (submitTimecardEdits). A change to something already waiting puts that
+   * one right (reviseTimecardEdit) rather than adding a second.
+   */
+  async function saveForApproval(reason: string) {
+    const byId = new Map(displayPunches.map((p) => [p.id, p]));
+    const items: EditItemInput[] = [];
+    const problems: string[] = [];
+    const run = async (r: Promise<{ success: true } | { success: false; error: string }>) => {
+      const x = await r;
+      if (!x.success) problems.push(x.error);
+    };
+    for (const id of pendingRemovals) {
+      const p = byId.get(id);
+      if (p?.submitted?.kind === "change") await run(withdrawTimecardEdit({ itemId: p.submitted.itemId }));
+      items.push({ kind: "REMOVE_PUNCH", punchId: id });
+    }
+    for (const [id, d] of pendingPunchEdits) {
+      const p = byId.get(id);
+      const at = toMoment(d).toISOString();
+      if (p?.submitted?.kind === "add") await run(reviseTimecardEdit({ itemId: p.submitted.itemId, ...(id.endsWith(":out") ? { endAt: at } : { at }) }));
+      else if (p?.submitted?.kind === "change") await run(reviseTimecardEdit({ itemId: p.submitted.itemId, at }));
+      else items.push({ kind: "CHANGE_PUNCH", punchId: id, at });
+    }
+    for (const n of pendingNewPunches) items.push({ kind: "ADD_PUNCH", punchType: n.punchType, at: toMoment(n.punchDate).toISOString() });
+    for (const day of pendingWaiverToggles) {
+      const waived = !!timecard?.mealWaivers.some((w) => w.segmentDate === day);
+      items.push({ kind: "MEAL_WAIVER", day, waive: !waived });
+    }
+    for (const h of pendingHoursEntries) items.push({ kind: "ADD_HOURS", day: h.dayKey, minutes: Math.round(h.hours * 60) });
+    if (items.length > 0 && selectedEmployeeId && selectedPeriodId) {
+      const sent = await submitTimecardEdits({ employeeId: selectedEmployeeId, periodId: selectedPeriodId, reason, items });
+      if (!sent.success) problems.push(sent.error);
+      else {
+        setPendingRemovals(new Set());
+        setPendingNewPunches([]);
+        setPendingWaiverToggles(new Set());
+        setPendingHoursEntries([]);
+      }
+    }
+    if (problems.length > 0) {
+      setActionError(`Not sent to HR: ${[...new Set(problems)].join(" ")}`);
+      router.refresh();
+      return;
+    }
+    setPendingPunchEdits(new Map());
+    setPendingRemovals(new Set());
+    setChangeReason("");
+    router.refresh();
+  }
+
   function handleSaveChanges() {
     setActionError(null);
     if (reasonMissing) {
-      setActionError("Give a reason for the changed or removed punches, then save.");
+      setActionError(canSend ? "Give a reason for these changes, then save. HR reads it." : "Give a reason for the changed or removed punches, then save.");
       return;
     }
     const reason = changeReason.trim();
     startTransition(async () => {
       try {
+        if (canSend) {
+          await saveForApproval(reason);
+          return;
+        }
         // Resolve timesheetId — create a timesheet on demand if the employee has none yet
         let timesheetId = timecard?.timesheetId ?? null;
         if (!timesheetId && selectedEmployeeId && selectedPeriodId) {
@@ -1951,8 +2111,9 @@ export function TimecardViewer({
     const dayKey = editingHours.dayKey;
     setEditingHours(null);
     setHoursError(null);
-    // Capture the pay code for this day: prefer a pending change, fall back to existing segment
-    const payCodeId =
+    // Capture the pay code for this day: prefer a pending change, fall back to existing segment.
+    // A supervisor adds regular hours (the server sets the code).
+    const payCodeId = !canEdit ? undefined :
       pendingPayCodes.get("absent:" + dayKey) ??
       timecard?.segments.find((s) => {
         try { return format(parseUtcDate(s.segmentDate), "yyyy-MM-dd") === dayKey && !!s.payCode?.id; } catch { return false; }
@@ -2580,12 +2741,12 @@ export function TimecardViewer({
                     )}
                     {/* Said beside the status rather than in a line over the
                         grid: it is a fact about this timecard, like its status. */}
-                    {!canEdit && (canFixMissed ? (
-                      <span title="On rows of regular hours, today or earlier: you can add the missing clock in or clock out and change the times on a day marked Missed punch, add a clock in and clock out on a day marked Absent, change or remove punches you entered yourself, and waive a meal. HR and payroll make every other change, meal premium waivers and Add time included.">
-                        <Badge>Missed punches only</Badge>
+                    {!canEdit && (canSend ? (
+                      <span title="Your changes on rows of regular hours go to HR for approval, and nothing on the timecard changes until HR approves them. Pay codes, reason codes, leave and meal premiums are HR's and payroll's.">
+                        <Badge>Changes go to HR</Badge>
                       </span>
                     ) : (
-                      <span title="These hours cannot be changed from here.">
+                      <span title={supervisorEditsOff ? "Supervisors can't change this person's timecard: their site doesn't allow it yet, they're salaried, or they rank above you. Ask HR or payroll." : "These hours cannot be changed from here."}>
                         <Badge>Read only</Badge>
                       </span>
                     ))}
@@ -2706,7 +2867,7 @@ export function TimecardViewer({
                       {timecard && <RecalculateButton timesheetId={timecard.timesheetId} />}
                     </>
                   )}
-                  {!canAddTime && canFixMissed && timecard && <RecalculateButton timesheetId={timecard.timesheetId} />}
+                  {!canAddTime && canSend && timecard && <RecalculateButton timesheetId={timecard.timesheetId} />}
                 </div>
               </div>
                 );
@@ -2735,6 +2896,9 @@ export function TimecardViewer({
                   </span>
                 </div>
               )}
+
+              {/* Supervisors' changes waiting for HR, and those HR turned down. */}
+              <EditRequestsPanel requests={editRequests} mode={canEdit ? "decide" : canSend ? "send" : "view"} onChanged={() => router.refresh()} />
 
               {/* Scans refused before this person was in CloudTime, which
                   payroll can add back. Renders nothing when there are none. */}
@@ -2943,7 +3107,9 @@ export function TimecardViewer({
                                 what needs attention on it. */}
                             <td className="px-3 py-2">
                               {(() => {
-                                const tag = isAbsent
+                                const tag = waitingDays.has(dayKey)
+                                  ? { text: "Waiting for HR", bg: "var(--surface-info)", fg: "var(--text-accent)" }
+                                  : isAbsent
                                   ? { text: "Absent", bg: "var(--surface-error)", fg: "var(--text-error)" }
                                   : hasMissingPunch
                                     ? { text: "Missed punch", bg: "var(--surface-warning)", fg: "var(--text-warning)" }
@@ -3019,7 +3185,7 @@ export function TimecardViewer({
                                   type="button"
                                   onClick={() => startEditing(firstIn)}
                                   disabled={!canChangePunch(firstIn)}
-                                  className={canChangePunch(firstIn) ? gridCellButtonClass : "bg-transparent"} style={punchCellStyle(pendingPunchEdits.has(firstIn.id), canChangePunch(firstIn))}
+                                  className={canChangePunch(firstIn) ? gridCellButtonClass : "bg-transparent"} style={punchStyle(firstIn)} title={punchTitle(firstIn)}
                                 >
                                   {pendingPunchEdits.has(firstIn.id) ? format(pendingPunchEdits.get(firstIn.id)!, "h:mm a") : format(atSite(firstIn.roundedTime), "h:mm a")}
                                 </button>
@@ -3031,7 +3197,7 @@ export function TimecardViewer({
                                     <button type="button" onClick={() => setPendingNewPunches((prev) => prev.filter((p) => !(p.dayKey === dayKey && p.pairIndex === 0 && p.punchType === "CLOCK_IN")))} className="rounded bg-transparent p-0.5 ta-hoverable" style={{ border: 0, cursor: "pointer", color: "var(--icon-error)" }} title="Remove pending"><X className="h-2.5 w-2.5" /></button>
                                   </div>
                                 );
-                                return hasMissingPunch && (canEdit || canFixMissed) ? (
+                                return hasMissingPunch && canAddOnDay(dayKey) ? (
                                   <button
                                     type="button"
                                     onClick={() => startAddingPunch(dayKey, 0, "CLOCK_IN", day, lastOut ? (pendingPunchEdits.get(lastOut.id) ?? atSite(lastOut.roundedTime)) : null)}
@@ -3043,7 +3209,7 @@ export function TimecardViewer({
                                   </button>
                                 ) : hasMissingPunch ? (
                                   <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-warning)" }}>Missing</span>
-                                ) : canEdit || (canFixMissed && isAbsent) ? (
+                                ) : canAddOnDay(dayKey) ? (
                                   <button
                                     type="button"
                                     onClick={() => startAddingPunch(dayKey, 0, "CLOCK_IN", day)}
@@ -3088,7 +3254,7 @@ export function TimecardViewer({
                                   type="button"
                                   onClick={() => startEditing(lastOut)}
                                   disabled={!canChangePunch(lastOut)}
-                                  className={canChangePunch(lastOut) ? gridCellButtonClass : "bg-transparent"} style={punchCellStyle(pendingPunchEdits.has(lastOut.id), canChangePunch(lastOut))}
+                                  className={canChangePunch(lastOut) ? gridCellButtonClass : "bg-transparent"} style={punchStyle(lastOut)} title={punchTitle(lastOut)}
                                 >
                                   {pendingPunchEdits.has(lastOut.id) ? format(pendingPunchEdits.get(lastOut.id)!, "h:mm a") : format(atSite(lastOut.roundedTime), "h:mm a")}
                                 </button>
@@ -3100,7 +3266,7 @@ export function TimecardViewer({
                                     <button type="button" onClick={() => setPendingNewPunches((prev) => prev.filter((p) => !(p.dayKey === dayKey && p.pairIndex === 0 && p.punchType === "CLOCK_OUT")))} className="rounded bg-transparent p-0.5 ta-hoverable" style={{ border: 0, cursor: "pointer", color: "var(--icon-error)" }} title="Remove pending"><X className="h-2.5 w-2.5" /></button>
                                   </div>
                                 );
-                                return hasMissingPunch && (canEdit || (canFixMissed && onRegularRow(firstIn))) ? (
+                                return hasMissingPunch && canAddOnDay(dayKey) && (!!canEdit || onRegularCode(firstIn)) ? (
                                   <button
                                     type="button"
                                     onClick={() => startAddingPunch(dayKey, 0, "CLOCK_OUT", day, firstIn ? (pendingPunchEdits.get(firstIn.id) ?? atSite(firstIn.roundedTime)) : null)}
@@ -3112,7 +3278,7 @@ export function TimecardViewer({
                                   </button>
                                 ) : hasMissingPunch ? (
                                   <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-warning)" }}>Missing</span>
-                                ) : canEdit || (canFixMissed && isAbsent) ? (
+                                ) : canAddOnDay(dayKey) ? (
                                   <button
                                     type="button"
                                     onClick={() => startAddingPunch(dayKey, 0, "CLOCK_OUT", day)}
@@ -3127,7 +3293,7 @@ export function TimecardViewer({
 
                             {/* Reg */}
                             {(() => {
-                              const canAddHours = canEdit && timecard && dayPunches.length === 0 && reg === 0 && !isSalaryVirtualDay && !isTodayRow;
+                              const canAddHours = canAddOnDay(dayKey) && (!!timecard || canSend) && dayPunches.length === 0 && reg === 0 && !isSalaryVirtualDay && !isTodayRow;
                               const isEditingThis = editingHours?.dayKey === dayKey;
                               const pendingHours = pendingHoursEntries.find((e) => e.dayKey === dayKey)?.hours;
                               return (
@@ -3259,9 +3425,14 @@ export function TimecardViewer({
                               const dbWaiver = timecard?.mealWaivers.find((w) => w.segmentDate === dayStr);
                               const waiverToggled = pendingWaiverToggles.has(dayStr);
                               const effectiveHasWaiver = waiverToggled ? !dbWaiver : !!dbWaiver;
+                              const waiverWaiting = waitingItems.find((i) => i.kind === "MEAL_WAIVER" && i.day === dayStr);
                               return (
                                 <td className="px-3 py-1 text-left" onClick={(e) => e.stopPropagation()}>
-                                  {hoursEnteredOnly || totalWorkForThreshold <= effectiveMealBreakAfterMinutes ? (
+                                  {waiverWaiting ? (
+                                    <span title="Waiting for HR approval">
+                                      <Badge tone="info" size="sm">{waiverWaiting.waive ? "Waive: with HR" : "Unwaive: with HR"}</Badge>
+                                    </span>
+                                  ) : hoursEnteredOnly || totalWorkForThreshold <= effectiveMealBreakAfterMinutes ? (
                                     <span style={{ font: "var(--type-body2)", color: "var(--text-disabled)" }}>—</span>
                                   ) : effectiveHasWaiver ? (
                                     <div className="flex items-center gap-1.5">
@@ -3332,7 +3503,8 @@ export function TimecardViewer({
 
                                   // Missed-punch day: past day with punches but no work segments and no marker.
                                   // Excludes today — an open clock-in (still working) is not a missed punch.
-                                  const isMissedPunchDay = !isTodayRow && dayPunches.length > 0 && daySegments.filter(s => s.segmentType === "WORK").length === 0 && !isMarker;
+                                  // Punches only waiting for HR are not on the timecard yet: no missed punch, so no Absent.
+                                  const isMissedPunchDay = !isTodayRow && dayPunches.some((p) => p.submitted?.kind !== "add") && daySegments.filter(s => s.segmentType === "WORK").length === 0 && !isMarker;
 
 
                                   if (isAbsent || isMarker || isMissedPunchDay || (isSalaryVirtualDay && daySegments.length === 0)) {
@@ -3631,7 +3803,7 @@ export function TimecardViewer({
                                   ) : pairIn?.hoursOnly ? (
                                 hoursEntryCell
                               ) : pairIn ? (
-                                    <button type="button" onClick={() => startEditing(pairIn)} disabled={!canChangePunch(pairIn)} className={canChangePunch(pairIn) ? gridCellButtonClass : "bg-transparent"} style={punchCellStyle(pendingPunchEdits.has(pairIn.id), canChangePunch(pairIn))}>{pendingPunchEdits.has(pairIn.id) ? format(pendingPunchEdits.get(pairIn.id)!, "h:mm a") : format(atSite(pairIn.roundedTime), "h:mm a")}</button>
+                                    <button type="button" onClick={() => startEditing(pairIn)} disabled={!canChangePunch(pairIn)} className={canChangePunch(pairIn) ? gridCellButtonClass : "bg-transparent"} style={punchStyle(pairIn)} title={punchTitle(pairIn)}>{pendingPunchEdits.has(pairIn.id) ? format(pendingPunchEdits.get(pairIn.id)!, "h:mm a") : format(atSite(pairIn.roundedTime), "h:mm a")}</button>
                                   ) : (() => {
                                     const pendingNewPairIn = pendingNewPunches.find((p) => p.dayKey === dayKey && p.pairIndex === pairIdx && p.punchType === "CLOCK_IN");
                                     if (pendingNewPairIn) return (
@@ -3640,7 +3812,7 @@ export function TimecardViewer({
                                         <button type="button" onClick={() => setPendingNewPunches((prev) => prev.filter((p) => !(p.dayKey === dayKey && p.pairIndex === pairIdx && p.punchType === "CLOCK_IN")))} className="rounded bg-transparent p-0.5 ta-hoverable" style={{ border: 0, cursor: "pointer", color: "var(--icon-error)" }} title="Remove pending"><X className="h-2.5 w-2.5" /></button>
                                       </div>
                                     );
-                                    return canEdit ? (
+                                    return canAddOnDay(dayKey) ? (
                                       <button type="button" onClick={() => startAddingPunch(dayKey, pairIdx, "CLOCK_IN", day)} className={gridCellButtonClass}
                                     style={{ ...punchCellStyle(false, true), color: "var(--text-disabled)" }}>—</button>
                                     ) : (
@@ -3674,7 +3846,7 @@ export function TimecardViewer({
                                   ) : pairOut?.hoursOnly ? (
                                 hoursEntryCell
                               ) : pairOut ? (
-                                    <button type="button" onClick={() => startEditing(pairOut)} disabled={!canChangePunch(pairOut)} className={canChangePunch(pairOut) ? gridCellButtonClass : "bg-transparent"} style={punchCellStyle(pendingPunchEdits.has(pairOut.id), canChangePunch(pairOut))}>{pendingPunchEdits.has(pairOut.id) ? format(pendingPunchEdits.get(pairOut.id)!, "h:mm a") : format(atSite(pairOut.roundedTime), "h:mm a")}</button>
+                                    <button type="button" onClick={() => startEditing(pairOut)} disabled={!canChangePunch(pairOut)} className={canChangePunch(pairOut) ? gridCellButtonClass : "bg-transparent"} style={punchStyle(pairOut)} title={punchTitle(pairOut)}>{pendingPunchEdits.has(pairOut.id) ? format(pendingPunchEdits.get(pairOut.id)!, "h:mm a") : format(atSite(pairOut.roundedTime), "h:mm a")}</button>
                                   ) : (() => {
                                     const pendingNewPairOut = pendingNewPunches.find((p) => p.dayKey === dayKey && p.pairIndex === pairIdx && p.punchType === "CLOCK_OUT");
                                     if (pendingNewPairOut) return (
@@ -3686,7 +3858,7 @@ export function TimecardViewer({
                                     // A later pair left open reads as missing too, as the
                                     // first pair does, and adding it starts from that pair's in.
                                     if (hasMissingPunch) {
-                                      return canEdit || (canFixMissed && onRegularRow(pairIn)) ? (
+                                      return canAddOnDay(dayKey) && (!!canEdit || onRegularCode(pairIn)) ? (
                                         <button
                                           type="button"
                                           onClick={() => startAddingPunch(dayKey, pairIdx, "CLOCK_OUT", day, pairIn ? (pendingPunchEdits.get(pairIn.id) ?? atSite(pairIn.roundedTime)) : null)}
@@ -3700,7 +3872,7 @@ export function TimecardViewer({
                                         <span style={{ font: "var(--type-body1)", fontWeight: "var(--weight-medium)", color: "var(--text-warning)" }}>Missing</span>
                                       );
                                     }
-                                    return canEdit ? (
+                                    return canAddOnDay(dayKey) ? (
                                       <button type="button" onClick={() => startAddingPunch(dayKey, pairIdx, "CLOCK_OUT", day)} className={gridCellButtonClass}
                                     style={{ ...punchCellStyle(false, true), color: "var(--text-disabled)" }}>—</button>
                                     ) : null;
@@ -4315,7 +4487,7 @@ export function TimecardViewer({
                   Edits in the grid are queued, not written, so the way to
                   write them sits where the eye ends up after making one, and
                   says how many are waiting. */}
-              {(canEdit || canFixMissed) && hasPendingChanges && (
+              {(canEdit || canSend) && hasPendingChanges && (
                 <div
                   className={`${grid.saveBar} flex shrink-0 flex-wrap items-center gap-3 px-5 py-3`}
                   style={{ borderTop: "1px solid var(--stroke-warning)", background: "var(--surface-warning)" }}
@@ -4326,7 +4498,9 @@ export function TimecardViewer({
                       {pendingChangeCount} unsaved {pendingChangeCount === 1 ? "change" : "changes"}
                     </span>
                     <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
-                      {needsReason
+                      {canSend
+                        ? "These go to HR for approval with the reason you give. Nothing changes until HR approves."
+                        : needsReason
                         ? "A changed or removed punch needs a reason. It is kept with the punch history."
                         : "Save them to update this timecard, or discard them to put it back as it was."}
                     </span>
@@ -4388,16 +4562,16 @@ export function TimecardViewer({
             try { return format(parseISO(noteDay), "EEE MM/dd/yyyy"); } catch { return noteDay; }
           })()}`}
           busy={noteSaving}
-          initialFocus={canEdit || canFixMissed ? noteFieldRef : undefined}
-          foot={canEdit || canFixMissed ? "Kept with the timecard." : undefined}
+          initialFocus={canEdit || canSend ? noteFieldRef : undefined}
+          foot={canEdit || canSend ? "Kept with the timecard." : undefined}
           onClose={() => { setNoteDay(null); setNoteText(""); }}
           onSubmit={
-            canEdit || canFixMissed
+            canEdit || canSend
               ? (e) => { e.preventDefault(); handleSaveNote(); }
               : undefined
           }
           actions={
-            canEdit || canFixMissed ? (
+            canEdit || canSend ? (
               <>
                 <Button hierarchy="secondary" onClick={() => { setNoteDay(null); setNoteText(""); }} disabled={noteSaving}>
                   Close
@@ -4450,7 +4624,7 @@ export function TimecardViewer({
           })()}
           {/* For anyone who may change this timecard, a supervisor who only
               fixes missed punches included. */}
-          {(canEdit || canFixMissed) && (
+          {(canEdit || canSend) && (
             <WindowCard padded ref={noteFieldRef}>
               <Textarea
                 label="New note"

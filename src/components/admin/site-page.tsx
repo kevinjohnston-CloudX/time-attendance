@@ -76,6 +76,7 @@ export function SitePage({
         address: String(form.get("address") ?? ""),
         ...siteLanguages(form),
         isActive: form.get("isActive") === "true",
+        supervisorTimecardEdits: form.get("supervisorTimecardEdits") === "true",
       });
       if (!result.success) return setEditError(saveError(result.error));
       setEditing(false);

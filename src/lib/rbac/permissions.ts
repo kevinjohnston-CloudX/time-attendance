@@ -6,9 +6,9 @@ export const PERMISSIONS = [
   "PUNCH_VIEW_TEAM",
   "PUNCH_EDIT_TEAM",
   "PUNCH_EDIT_ANY",
-  // Fix a missed punch on your team's timecards and nothing else: add the
-  // missing clock in or clock out on a day marked Missed punch, under the
-  // person's regular hours pay code (lib/timecards/missed-punch-fix).
+  // Change your team's timecards on rows of regular hours, each change sent
+  // to HR for approval, where the person's site allows it (11/11,
+  // lib/timecards/supervisor-edits). The key keeps its first name.
   "PUNCH_FIX_MISSED_TEAM",
   // Timesheet
   "TIMESHEET_SUBMIT_OWN",
@@ -81,11 +81,9 @@ export const TIMECARD_EDITORS: Permission[] = ["PAY_PERIOD_MANAGE", "PUNCH_EDIT_
 /** Of those, who reaches the whole company rather than their own team. */
 export const TIMECARD_EDITORS_COMPANY: Permission[] = ["PAY_PERIOD_MANAGE", "PUNCH_EDIT_ANY", "TIMECARD_EDIT_ANY"];
 /**
- * Who may fix a missed punch on a timecard: every editor, and a role allowed
- * that alone (Bergen's supervisors, 11/05: HR keeps every other change; 11/10
- * on regular hours rows only, and meal waivers but not meal premium waivers).
- * The actions that take it hold a fixer to the missed punch itself
- * (lib/timecards/missed-punch-fix).
+ * Every editor, and the supervisors' role (PUNCH_FIX_MISSED_TEAM), whose
+ * timecard changes go to HR for approval (11/11, lib/timecards/supervisor-edits):
+ * notes, Recalculate, and the Exceptions page fixes, which send rather than save.
  */
 export const MISSED_PUNCH_FIXERS: Permission[] = [...TIMECARD_EDITORS, "PUNCH_FIX_MISSED_TEAM"];
 /** Who may open Rules Setup and its Company Setup areas: to change them, or only to look. */

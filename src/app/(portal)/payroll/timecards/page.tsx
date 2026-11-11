@@ -16,6 +16,8 @@ import { getPayCodes } from "@/actions/pay-code.actions";
 import { availabilityFor, payCodeAllowed } from "@/lib/pay-code-availability";
 import { getReasonCodes } from "@/actions/reason-code.actions";
 import { TimecardViewer } from "@/components/payroll/timecard-viewer";
+import { editRequestsFor } from "@/lib/timecards/supervisor-edits";
+import { canSendEditsFor } from "@/actions/timecard-edit.actions";
 import { Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import { Users } from "lucide-react";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
@@ -72,13 +74,15 @@ export default async function TimecardsPage({
 
   const isAllScope = canViewAll || canEditAll;
   const canEdit = canEditTeam || canEditAll;
-  // A supervisor allowed only to fix missed punches: the grid offers the
-  // missing clock in or out and nothing else (lib/timecards/missed-punch-fix).
-  const missedPunchesOnly = !canEdit && canFixMissed;
+  // A supervisor (PUNCH_FIX_MISSED_TEAM, none of the editors' permissions):
+  // where the person's site lets supervisors edit timecards, their changes
+  // go to HR for approval (lib/timecards/supervisor-edits); elsewhere the
+  // timecard is read only to them.
+  const isSupervisor = !canEdit && canFixMissed;
   // Pay rates and pay are for people who edit timecards or run payroll; a
   // read-only team viewer (an agency) sees hours only. A supervisor fixing
   // missed punches saw them as an editor and still does.
-  const canSeePay = canEdit || missedPunchesOnly || canRunPayroll || isAllScope;
+  const canSeePay = canEdit || isSupervisor || canRunPayroll || isAllScope;
 
   const t = ownCompany(session.user.tenantId);
 
@@ -187,7 +191,7 @@ export default async function TimecardsPage({
   const sheetRefsRead = Promise.all([
     getPayCodes({}),
     getReasonCodes(),
-    db.employee.findUnique({ where: { id: selectedEmployeeId }, select: { timeZone: true, site: { select: { timezone: true } } } }),
+    db.employee.findUnique({ where: { id: selectedEmployeeId }, select: { timeZone: true, site: { select: { timezone: true, supervisorTimecardEdits: true } } } }),
   ]);
   sheetRefsRead.catch(() => {});
 
@@ -238,6 +242,12 @@ export default async function TimecardsPage({
     (pc) => payCodeAllowed(available, pc.id) || usedHere.has(pc.id),
   );
   const reasonCodes = reasonCodesResult.success ? reasonCodesResult.data : [];
+  // Not for someone ranked above them, or themselves: Save would be refused.
+  const sendsForApproval = isSupervisor && !!siteOfEmployee?.site.supervisorTimecardEdits &&
+    await canSendEditsFor({ employeeId: selectedEmployeeId }).then((r) => r.success && r.data);
+  const zone = siteOfEmployee ? personTimeZone(siteOfEmployee) : "UTC";
+  // Supervisors' changes on this timecard: waiting for HR, or turned down.
+  const editRequests = timecard ? await editRequestsFor(timecard.id, zone) : [];
 
   // The pay rate in effect during this period, from the pay rate history.
   const periodRateRow = timecard
@@ -338,7 +348,7 @@ export default async function TimecardsPage({
   const activeCount = employees.filter((e) => e.isActive).length;
   const subtitle = [
     `${activeCount.toLocaleString()} active ${activeCount === 1 ? "employee" : "employees"}`,
-    canEdit ? null : missedPunchesOnly ? "Missed punches only" : "Read only",
+    canEdit ? null : sendsForApproval ? "Changes go to HR for approval" : "Read only",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -364,8 +374,10 @@ export default async function TimecardsPage({
         siteTimezone={siteOfEmployee ? personTimeZone(siteOfEmployee) : null}
         payFrequency={payFrequency}
         userRole={session.user.role ?? "EMPLOYEE"}
-        readOnly={!canEdit && !missedPunchesOnly}
-        missedPunchesOnly={missedPunchesOnly}
+        readOnly={!canEdit && !sendsForApproval}
+        sendsForApproval={sendsForApproval}
+        supervisorEditsOff={isSupervisor && !sendsForApproval}
+        editRequests={editRequests}
         canLockTimecards={canRunPayroll}
         customStart={sp.customStart ?? null}
         customEnd={sp.customEnd ?? null}
