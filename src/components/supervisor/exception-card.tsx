@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { format } from "date-fns";
 import type { PunchType } from "@prisma/client";
 import {
+  addAbsentDayPunches,
   addMissingPunchForEmployee,
   correctPunchAndResolve,
   getExceptionPunches,
@@ -142,7 +143,8 @@ export function ExceptionCard({
       setInValue(start.text);
       setInHalf(start.text ? start.meridiem : splitTime(row.scheduled.start).meridiem);
       setOutValue(end.text);
-      setOutHalf(end.text ? end.meridiem : (splitTime(row.scheduled.end).meridiem || "PM"));
+      // With no schedule, a clock out is in the afternoon (splitTime alone says AM).
+      setOutHalf(end.text ? end.meridiem : row.scheduled.end ? splitTime(row.scheduled.end).meridiem : "PM");
       const first = rows[0];
       if (first) {
         setPunchId(first.id);
@@ -177,6 +179,30 @@ export function ExceptionCard({
 
     startTransition(async () => {
       setError(null);
+
+      // An Absent day's shift, both times typed: one request, so a supervisor
+      // who fixes missed punches only is held to the whole shift rather than
+      // refused its clock in alone (addAbsentDayPunches). A clock out earlier
+      // than the clock in is after midnight.
+      if (isAbsent && !existingIn && !existingOut && inValue.trim() && outValue.trim()) {
+        const inParsed = parseTimeOfDay(inValue.trim(), inHalf);
+        const outParsed = parseTimeOfDay(outValue.trim(), outHalf);
+        if (!inParsed || !outParsed) {
+          setError(`${!inParsed ? "Clock in" : "Clock out"} is not a time. Try 8:00 or 830.`);
+          return;
+        }
+        const inTime = at(row.occurredAt, inParsed, row.zone);
+        let outTime = at(row.occurredAt, outParsed, row.zone);
+        if (outTime <= inTime) outTime = at(new Date(new Date(row.occurredAt).getTime() + 24 * 60 * 60 * 1000), outParsed, row.zone);
+        const result = await addAbsentDayPunches({ timesheetId: row.timesheetId, exceptionId: row.id, inTime, outTime, reason: reasonText });
+        if (!result.success) {
+          setError(result.error ?? "That did not save.");
+          return;
+        }
+        closeForm();
+        onDone(`Punches saved and absence resolved for ${row.employeeName}`);
+        return;
+      }
 
       if (addsPunches) {
         const sides: {

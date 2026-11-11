@@ -1,10 +1,10 @@
 "use server";
 
-import { assertMissedPunchFix, fixesMissedPunchesOnly, MISSED_PUNCH_ONLY_ERROR } from "@/lib/timecards/missed-punch-fix";
+import { assertFixerMayChangePunch, assertMissedPunchFix, fixesMissedPunchesOnly, MISSED_PUNCH_ONLY_ERROR } from "@/lib/timecards/missed-punch-fix";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
-import { TIMECARD_EDITORS, TIMECARD_EDITORS_COMPANY } from "@/lib/rbac/permissions";
+import { MISSED_PUNCH_FIXERS, TIMECARD_EDITORS_COMPANY } from "@/lib/rbac/permissions";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
@@ -263,7 +263,9 @@ export const rejectMissedPunch = withRBAC(
 // ─── deletePunch ──────────────────────────────────────────────────────────────
 
 export const deletePunch = withRBAC(
-  TIMECARD_EDITORS,
+  // A supervisor who fixes missed punches removes one they entered
+  // themselves (11/11, assertFixerMayChangePunch).
+  MISSED_PUNCH_FIXERS,
   async (ctx, input: { punchId: string; reason: string }): Promise<void> => {
     const { employeeId: actorId, tenantId } = ctx;
     const { punchId, reason } = deletePunchSchema.parse(input);
@@ -279,6 +281,7 @@ export const deletePunch = withRBAC(
     if (original.correctedById) {
       throw new Error("Punch has already been corrected or deleted.");
     }
+    if (await fixesMissedPunchesOnly()) await assertFixerMayChangePunch(original.id, null, actorId);
 
     const ts = await db.timesheet.findUniqueOrThrow({ where: { id: original.timesheetId! } });
     if (ts.status === "LOCKED" || ts.status === "PAYROLL_APPROVED") {
@@ -342,7 +345,10 @@ export const deletePunch = withRBAC(
 // ─── correctPunch ─────────────────────────────────────────────────────────────
 
 export const correctPunch = withRBAC(
-  TIMECARD_EDITORS,
+  // A supervisor who fixes missed punches changes one on a day marked
+  // Missed punch, or one they entered themselves (11/11,
+  // assertFixerMayChangePunch).
+  MISSED_PUNCH_FIXERS,
   async (ctx, input: CorrectPunchInput): Promise<Punch> => {
     const { employeeId: supervisorId } = ctx;
     const { originalPunchId, newPunchTime: newPunchTimeStr, reason } =
@@ -351,6 +357,7 @@ export const correctPunch = withRBAC(
     const scoped = await punchInScope(ctx, originalPunchId, TIMECARD_EDITORS_COMPANY);
     if (scoped.employeeId === supervisorId) throw new Error("You can't change your own punches");
     const newPunchTime = new Date(newPunchTimeStr);
+    if (await fixesMissedPunchesOnly()) await assertFixerMayChangePunch(originalPunchId, newPunchTime, supervisorId);
     const before = await db.punch.findUniqueOrThrow({
       where: { id: originalPunchId },
       select: { punchType: true, punchTime: true, employee: { select: { timeZone: true, site: { select: { timezone: true } } } } },
