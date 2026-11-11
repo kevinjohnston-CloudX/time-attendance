@@ -1,0 +1,137 @@
+/* A date field's calendar on a computer (date-calendars.tsx), on the shared
+   menu's look: the month and its arrows, the week from Sunday, the days, and
+   Today and Clear at the foot. Fixed to the window above every window. */
+
+.panel {
+  position: fixed;
+  z-index: 90;
+  width: 300px;
+  padding: 10px;
+  animation: drop 120ms ease-out;
+}
+.panel[data-up] {
+  transform: translateY(-100%);
+  animation-name: rise;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 0 6px;
+}
+.month {
+  font: var(--weight-semibold) 14px/20px var(--font-sans);
+  color: var(--text-primary);
+}
+.nav {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--icon-secondary);
+  cursor: pointer;
+}
+.nav svg {
+  width: 16px;
+  height: 16px;
+}
+.nav:disabled {
+  color: var(--icon-disabled);
+  cursor: default;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+.dow {
+  padding: 2px 0 4px;
+  font: var(--type-caption1);
+  color: var(--text-tertiary);
+  text-align: center;
+}
+.day {
+  height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  font: var(--type-body1);
+  cursor: pointer;
+}
+.day:hover {
+  background: var(--fill-hover);
+}
+.day[data-outside] {
+  color: var(--text-tertiary);
+}
+/* Today is a hairline, never a fill, so it is not mistaken for the date set. */
+.day[aria-current="date"] {
+  box-shadow: inset 0 0 0 1px var(--stroke-accent);
+  color: var(--text-accent);
+  font-weight: var(--weight-semibold);
+}
+.day[aria-selected="true"] {
+  background: var(--fill-accent);
+  box-shadow: none;
+  color: var(--text-on-accent);
+  font-weight: var(--weight-semibold);
+}
+.day[data-cursor] {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: -2px;
+}
+/* Faint in both themes: the disabled text colour alone sits too close to
+   the days that can be picked in dark mode. */
+.day:disabled {
+  background: transparent;
+  color: var(--text-tertiary);
+  opacity: 0.4;
+  cursor: default;
+}
+
+.foot {
+  display: flex;
+  justify-content: space-between;
+  margin: 8px -10px 0;
+  padding: 8px 10px 0;
+  border-top: 1px solid var(--stroke-divider);
+}
+.footBtn {
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-accent);
+  font: var(--weight-medium) 14px/20px var(--font-sans);
+  cursor: pointer;
+}
+.footBtn:disabled {
+  color: var(--text-disabled);
+  cursor: default;
+}
+
+@keyframes drop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(calc(-100% + 4px));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel {
+    animation: none;
+  }
+}
