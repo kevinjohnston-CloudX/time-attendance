@@ -125,6 +125,19 @@ export function mealWaiverRefusal(o: { day: string; today: string; otherCodeDays
   return null;
 }
 
+/**
+ * The changes HR is looking at, as they stood when the page loaded: each
+ * waiting change and when it last changed. HR's decision carries it, and is
+ * refused if a supervisor put a change right, or took one back, meanwhile
+ * (John, 11/11): HR would otherwise approve a time they never saw.
+ */
+export function editsSeen(items: { id: string; updatedAt: string }[]): string {
+  return items.map((i) => `${i.id}@${i.updatedAt}`).sort().join(",");
+}
+
+export const EDITS_CHANGED_ERROR =
+  "The supervisor changed these after you opened them. Reload the page to see the changes, then decide.";
+
 // ─── The changes themselves ──────────────────────────────────────────────────
 
 /** A change as the timecard sends it. Times are ISO moments; days "yyyy-MM-dd". */

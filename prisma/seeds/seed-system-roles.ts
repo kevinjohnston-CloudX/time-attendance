@@ -20,6 +20,8 @@ const SYSTEM_ROLES: {
   rank: number;
   legacyRole: string;
   canViewAs?: boolean;
+  /** Off: nobody is moved onto it (a role sharing another's built-in role). */
+  linkEmployees?: boolean;
   permissions: PermissionEntry[];
 }[] = [
   {
@@ -47,6 +49,32 @@ const SYSTEM_ROLES: {
       { resource: "timesheet", action: "write", scope: "own" },
       { resource: "timesheet", action: "execute", scope: "team" },
       { resource: "leave", action: "write", scope: "own" },
+      { resource: "leave", action: "execute", scope: "team" },
+      { resource: "document", action: "read", scope: "own" },
+      { resource: "accrual", action: "read", scope: "own" },
+      { resource: "accrual", action: "read", scope: "team" },
+    ],
+  },
+  {
+    // A supervisor who changes their people's timecards directly and approves
+    // supervisors' changes (src/lib/rbac/manager-role.ts). Supervisor's rank:
+    // ranks are whole numbers and Payroll Admin's is the next.
+    name: "Manager",
+    description: "Supervisor who changes their people's timecards directly and approves supervisors' changes; may see whole departments or sites",
+    rank: 1,
+    legacyRole: "SUPERVISOR",
+    linkEmployees: false,
+    permissions: [
+      { resource: "punch", action: "write", scope: "own" },
+      { resource: "punch", action: "read", scope: "team" },
+      { resource: "punch", action: "write", scope: "team" },
+      { resource: "punch", action: "execute", scope: "team" },
+      { resource: "timecard", action: "read", scope: "team" },
+      { resource: "timecard", action: "write", scope: "team" },
+      { resource: "timesheet", action: "write", scope: "own" },
+      { resource: "timesheet", action: "execute", scope: "team" },
+      { resource: "leave", action: "write", scope: "own" },
+      { resource: "leave", action: "write", scope: "team" },
       { resource: "leave", action: "execute", scope: "team" },
       { resource: "document", action: "read", scope: "own" },
       { resource: "accrual", action: "read", scope: "own" },
@@ -206,6 +234,7 @@ async function main() {
       });
 
       // Link employees with matching legacy role
+      if (roleDef.linkEmployees === false) continue;
       const updated = await prisma.employee.updateMany({
         where: {
           tenantId: tenant.id,

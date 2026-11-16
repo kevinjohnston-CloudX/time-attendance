@@ -224,7 +224,7 @@ function SupervisorEditsField({ defaultOn }: { defaultOn: boolean }) {
       <Switch checked={on} onChange={setOn} label="Supervisors can edit timecards" />
       <span style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
         {on
-          ? "Supervisors change their team's timecards here on rows of regular hours, and every change waits for HR to approve it."
+          ? "Supervisors change their team's timecards here on rows of regular hours, and every change waits for a manager or HR to approve it."
           : "Supervisors here can see their team's timecards but not change them."}
       </span>
     </div>

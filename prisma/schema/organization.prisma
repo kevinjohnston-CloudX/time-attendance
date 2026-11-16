@@ -135,6 +135,7 @@ model Department {
   tenant    Tenant           @relation(fields: [tenantId], references: [id])
   sites     DepartmentSite[]
   employees Employee[]
+  managerAccess ManagerDepartmentAccess[]
 
   @@map("departments")
 }
@@ -284,6 +285,7 @@ model Employee {
   badges             EmployeeBadge[]
   legacySyncLogs     LegacySyncLog[]
   siteAccess         HrSiteAccess[]
+  managerDepartments ManagerDepartmentAccess[]
   ruleSetHistory     EmployeeRuleSetHistory[]
   ruleSetHistoryCreated EmployeeRuleSetHistory[] @relation("RuleSetHistoryCreator")
   payRates           EmployeePayRate[]
@@ -348,6 +350,22 @@ model HrSiteAccess {
 
   @@unique([employeeId, siteId])
   @@map("hr_site_access")
+}
+
+/// A department a Manager sees everyone in (src/lib/rbac/manager-role.ts),
+/// at their checked sites (HrSiteAccess), or at every site with none checked.
+/// Read only while the person is on the Manager role.
+model ManagerDepartmentAccess {
+  id           String   @id @default(cuid())
+  employeeId   String
+  departmentId String
+  createdAt    DateTime @default(now())
+
+  employee   Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, departmentId])
+  @@map("manager_department_access")
 }
 
 enum ShiftCycle {

@@ -324,7 +324,7 @@ export default async function TimecardsPage({
             ? { id: s.leaveRequest.id, leaveType: s.leaveRequest.leaveType }
             : null,
           payCode: s.payCode
-            ? { id: s.payCode.id, code: s.payCode.code, label: s.payCode.label }
+            ? { id: s.payCode.id, code: s.payCode.code, label: s.payCode.label, isPaid: s.payCode.isPaid }
             : null,
         })),
         overtimeBuckets: timecard.overtimeBuckets.map((b) => ({
@@ -348,7 +348,7 @@ export default async function TimecardsPage({
   const activeCount = employees.filter((e) => e.isActive).length;
   const subtitle = [
     `${activeCount.toLocaleString()} active ${activeCount === 1 ? "employee" : "employees"}`,
-    canEdit ? null : sendsForApproval ? "Changes go to HR for approval" : "Read only",
+    canEdit ? null : sendsForApproval ? "Changes go for approval" : "Read only",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -379,6 +379,8 @@ export default async function TimecardsPage({
         supervisorEditsOff={isSupervisor && !sendsForApproval}
         editRequests={editRequests}
         canLockTimecards={canRunPayroll}
+        // HR's and payroll's: a Manager edits their people's timecards but leaves premiums alone.
+        waivesMealPremiums={canEditAll}
         customStart={sp.customStart ?? null}
         customEnd={sp.customEnd ?? null}
         payCodes={payCodes.map((pc) => ({

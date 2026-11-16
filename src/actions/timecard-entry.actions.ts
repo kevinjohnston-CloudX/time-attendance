@@ -8,6 +8,7 @@ import { MISSED_PUNCH_FIXERS, TIMECARD_EDITORS, TIMECARD_EDITORS_COMPANY } from 
 import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
+import { placeLeave, recalculateAfterLeave } from "@/lib/engines/leave-recalc";
 import { computeRoundedTime, MAX_OVERNIGHT_MS, snapToLocalTime, toSiteClock } from "@/lib/utils/date";
 import {
   manualPunchPairSchema,
@@ -421,7 +422,9 @@ export const addPayrollLeaveEntry = withRBAC(
       ),
     );
 
-    for (const req of requests) await syncLeaveSegments(req.id);
+    const placed: string[] = [];
+    for (const req of requests) placed.push(...(await syncLeaveSegments(req.id)));
+    await recalculateAfterLeave(placed);
     const type = await db.leaveType.findUnique({ where: { id: leaveTypeId }, select: { name: true } });
     await noteTimecardChange({ timesheetId, day: date, actorId, change: `Added ${hoursLabel(hours)} ${type?.name ?? "time off"}`, note });
     revalidatePath("/payroll/timecards");
@@ -482,7 +485,7 @@ export const removePayrollLeaveEntry = withRBAC(
       changes: { before: { leaveRequestId, status: request.status } },
     });
 
-    await syncLeaveSegments(leaveRequestId);
+    await placeLeave(leaveRequestId);
     if (timesheetId) {
       const type = await db.leaveType.findUnique({ where: { id: request.leaveTypeId }, select: { name: true } });
       await noteTimecardChange({
@@ -761,7 +764,8 @@ export const addManualHoursEntry = withRBAC(
         ),
       );
 
-      for (const req of requests) await syncLeaveSegments(req.id);
+      const placed: string[] = [];
+      for (const req of requests) placed.push(...(await syncLeaveSegments(req.id)));
 
       // If the caller chose a specific pay code (e.g. PTO CARRYOVER vs PTO),
       // override what the policy resolver picked for the resulting LEAVE
@@ -773,6 +777,8 @@ export const addManualHoursEntry = withRBAC(
           data: { payCodeId },
         });
       }
+      // The day's other hours around the leave (a salaried day's 8 h less it).
+      await recalculateAfterLeave(placed);
     } else {
       // Non-leave pay code: a punch pair that only carries the hours, from
       // local midnight, or from where the day's entered hours end

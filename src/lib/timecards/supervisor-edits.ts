@@ -133,7 +133,7 @@ export function resolveEditItem(tc: Timecard, input: EditItemInput): EditItemDat
     const p = tc.punches.find((x) => x.id === punchId);
     if (!p) throw new Error("That punch has changed since the page loaded. Reload the page and try again.");
     if (p.hoursOnly) throw new Error("Hours entered with Add time are changed by HR or payroll.");
-    if (tc.pendingPunchIds.has(punchId)) throw new Error("A change to this punch already waits for HR. Change that one instead.");
+    if (tc.pendingPunchIds.has(punchId)) throw new Error("A change to this punch already waits for approval. Change that one instead.");
     return p;
   };
   switch (input.kind) {
@@ -202,7 +202,7 @@ export async function sendEditsForApproval(o: {
     byDay.set(day, [...(byDay.get(day) ?? []), describeEditItem(item, o.timeZone)]);
   }
   for (const [day, changes] of byDay) {
-    await noteTimecardChange({ timesheetId: o.timesheetId, day, actorId: o.submittedById, change: `Sent for HR approval: ${changes.join("; ")}`, note: o.reason });
+    await noteTimecardChange({ timesheetId: o.timesheetId, day, actorId: o.submittedById, change: `Sent for approval: ${changes.join("; ")}`, note: o.reason });
   }
   return { requestId: request.id };
 }
@@ -240,6 +240,7 @@ export async function editRequestsFor(timesheetId: string, timeZone: string) {
       day: i.day.toISOString().slice(0, 10),
       minutes: i.minutes,
       waive: i.waive,
+      updatedAt: i.updatedAt.toISOString(),
       text: describeEditItem(i, timeZone),
     })),
   }));

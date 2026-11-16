@@ -167,7 +167,7 @@ export const approveMissedPunch = withRBAC(
     if (await editsNeedApproval()) {
       await assertSupervisorEditsOn(punch.employeeId);
       const waiting = await db.timecardEditItem.count({ where: { punchId: punch.id, status: "PENDING", request: { status: "PENDING" } } });
-      if (waiting) throw new Error("This request already waits for HR approval.");
+      if (waiting) throw new Error("This request already waits for approval.");
       const tz = personTimeZone(owner, "UTC");
       await sendEditsForApproval({
         tenantId: tenantId!,

@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
 import Link from "next/link";
-import { updateAdditionalSupervisors, updateEmployee, updateHrSiteAccess } from "@/actions/admin.actions";
+import { updateAdditionalSupervisors, updateEmployee, updateHrSiteAccess, updateManagerDepartmentAccess } from "@/actions/admin.actions";
+import { isManagerRole } from "@/lib/rbac/manager-role";
 import { setTemporaryPassword } from "@/actions/password.actions";
 import type { Site, Department, RuleSet, Employee } from "@prisma/client";
 import {
@@ -129,6 +130,8 @@ interface Props {
     fields: Array<{ field: string; before: string; after: string }>;
   }>;
   hrSiteAccess: string[];
+  /** A Manager's departments (manager-role.ts): with their sites, who they see besides their reports. */
+  managerDepartmentAccess?: string[];
   /** Supervisors besides the supervisor of record. */
   additionalSupervisors?: { id: string; name: string; isActive: boolean }[];
   actorRole: string;
@@ -364,6 +367,7 @@ export function EditEmployeeForm({
   agencies,
   logs,
   hrSiteAccess,
+  managerDepartmentAccess = [],
   additionalSupervisors = [],
   actorRole,
   canManageRules = false,
@@ -455,15 +459,19 @@ export function EditEmployeeForm({
     [employee, roleId],
   );
   const savedAccess = useMemo(() => new Set(hrSiteAccess), [hrSiteAccess]);
+  const savedDepts = useMemo(() => new Set(managerDepartmentAccess), [managerDepartmentAccess]);
   const savedExtra = useMemo(() => additionalSupervisors.map((s) => s.id), [additionalSupervisors]);
 
   const [draft, setDraft] = useState<Values>(saved);
   const [draftAccess, setDraftAccess] = useState<Set<string>>(savedAccess);
+  const [draftDepts, setDraftDepts] = useState<Set<string>>(savedDepts);
+  const [deptSearch, setDeptSearch] = useState("");
   const [draftExtra, setDraftExtra] = useState<string[]>(savedExtra);
 
   // Read mode always shows what is saved; edit mode shows the draft.
   const v = editing ? draft : saved;
   const access = editing ? draftAccess : savedAccess;
+  const depts = editing ? draftDepts : savedDepts;
   // An account on a role limited to Live Attendance gets the same section: its
   // ticked buildings are the ones its Live Attendance can switch between.
   // Read off the role in the form, so picking that role shows it at once.
@@ -472,16 +480,22 @@ export function EditEmployeeForm({
   // A custom role at Payroll Admin's rank or above, such as Payroll Admin NL,
   // is held to its sites as Payroll Admin is (site-limit.ts).
   const adminCustomRole = !!pickedRole && !pickedRole.isSystem && pickedRole.rank >= ROLE_RANK.PAYROLL_ADMIN;
-  const showsSiteAccess = employeeIsHrOrSysAdmin || limitedToLiveAttendance || adminCustomRole;
+  // A Manager's card adds departments: who they see besides their reports.
+  const isManager = isManagerRole(pickedRole);
+  const showsSiteAccess = employeeIsHrOrSysAdmin || limitedToLiveAttendance || adminCustomRole || isManager;
 
   const changed = (Object.keys(saved) as Key[]).filter((k) => draft[k] !== saved[k]);
   const accessChanged =
     canManageSiteAccess &&
     showsSiteAccess &&
     (draftAccess.size !== savedAccess.size || [...draftAccess].some((id) => !savedAccess.has(id)));
+  const deptsChanged =
+    canManageSiteAccess &&
+    isManager &&
+    (draftDepts.size !== savedDepts.size || [...draftDepts].some((id) => !savedDepts.has(id)));
   const extraChanged =
     draftExtra.length !== savedExtra.length || draftExtra.some((id) => !savedExtra.includes(id));
-  const changeCount = changed.length + (accessChanged ? 1 : 0) + (extraChanged ? 1 : 0);
+  const changeCount = changed.length + (accessChanged ? 1 : 0) + (deptsChanged ? 1 : 0) + (extraChanged ? 1 : 0);
   const dirty = editing && changeCount > 0;
 
   // Leaving the page with unsaved edits asks first.
@@ -580,6 +594,8 @@ export function EditEmployeeForm({
   function startEditing() {
     setDraft(saved);
     setDraftAccess(new Set(savedAccess));
+    setDraftDepts(new Set(savedDepts));
+    setDeptSearch("");
     setDraftExtra(savedExtra);
     setError(null);
     setEditing(true);
@@ -676,6 +692,18 @@ export function EditEmployeeForm({
           changed.length > 0
             ? `The record was saved, but site access was not: ${result.error ?? "it could not be saved."}`
             : result.error ?? "Site access could not be saved.",
+        );
+        router.refresh();
+        return;
+      }
+    }
+    if (deptsChanged) {
+      const result = await updateManagerDepartmentAccess({ employeeId: employee.id, departmentIds: Array.from(draftDepts) });
+      if (!result.success) {
+        setError(
+          changed.length > 0 || accessChanged
+            ? `The other changes were saved, but the manager's departments were not: ${result.error ?? "they could not be saved."}`
+            : result.error ?? "The manager's departments could not be saved.",
         );
         router.refresh();
         return;
@@ -1538,12 +1566,26 @@ export function EditEmployeeForm({
                 icon={Building2}
                 title="Site Access"
                 subtitle={
-                  limitedToLiveAttendance
+                  isManager
+                    ? "Who this manager sees besides the people who report to them"
+                    : limitedToLiveAttendance
                     ? "Which buildings this account can see on Live Attendance"
                     : "Which sites this HR user can see employees from"
                 }
               >
-                {editing && canManageSiteAccess ? (
+                {isManager ? (
+                  <ManagerAccess
+                    editing={editing && canManageSiteAccess}
+                    sites={sites}
+                    departments={departments}
+                    siteIds={access}
+                    departmentIds={depts}
+                    search={deptSearch}
+                    onSearch={setDeptSearch}
+                    onSites={setDraftAccess}
+                    onDepartments={setDraftDepts}
+                  />
+                ) : editing && canManageSiteAccess ? (
                   <div className={styles.accessEdit}>
                     <p className={styles.hint} style={{ margin: 0, font: "var(--type-body2)" }}>
                       {limitedToLiveAttendance
@@ -1835,5 +1877,97 @@ export function EditEmployeeForm({
         </Window>
       )}
     </>
+  );
+}
+
+/** What a Manager sees through what is checked on their card (manager-role.ts). */
+export function managerScopeText(sites: number, departments: number): string {
+  if (sites === 0 && departments === 0) return "Nothing checked, so this manager sees only the people who report to them.";
+  if (departments === 0) return "Everyone at the checked sites, and the people who report to them.";
+  if (sites === 0) return "The checked departments at every site, and the people who report to them.";
+  return "The checked departments at the checked sites only, and the people who report to them.";
+}
+
+/**
+ * A Manager's Site Access card: sites and departments. With sites checked,
+ * the departments offered are those at them (and any already checked).
+ */
+function ManagerAccess({
+  editing,
+  sites,
+  departments,
+  siteIds,
+  departmentIds,
+  search,
+  onSearch,
+  onSites,
+  onDepartments,
+}: {
+  editing: boolean;
+  sites: Site[];
+  departments: (Department & { sites: { site: Pick<Site, "id" | "name"> }[] })[];
+  siteIds: Set<string>;
+  departmentIds: Set<string>;
+  search: string;
+  onSearch: (q: string) => void;
+  onSites: (next: Set<string>) => void;
+  onDepartments: (next: Set<string>) => void;
+}) {
+  const summary = managerScopeText(siteIds.size, departmentIds.size);
+  if (!editing) {
+    const chips = (names: string[]) =>
+      names.length === 0 ? "None" : <span className={styles.chips}>{names.map((n) => <span key={n} className={styles.chip}>{n}</span>)}</span>;
+    const siteChips = chips(sites.filter((s) => siteIds.has(s.id)).map((s) => s.name));
+    const deptChips = chips(departments.filter((d) => departmentIds.has(d.id)).map((d) => d.name).sort());
+    return (
+      <div className={styles.grid}>
+        {/* The value in edit mode too: a Payroll Admin editing the record reads it, and only HR changes it. */}
+        <Field label="Sites" read={siteChips}>{siteChips}</Field>
+        <Field label="Departments" read={deptChips}>{deptChips}</Field>
+        <p className={styles.hint} style={{ margin: 0, gridColumn: "1 / -1" }}>{summary}</p>
+      </div>
+    );
+  }
+  const toggle = (set: Set<string>, id: string, on: boolean) => {
+    const next = new Set(set);
+    if (on) next.add(id);
+    else next.delete(id);
+    return next;
+  };
+  const q = search.trim().toLowerCase();
+  const offered = departments
+    .filter((d) => departmentIds.has(d.id) || siteIds.size === 0 || d.sites.some((s) => siteIds.has(s.site.id)))
+    .filter((d) => !q || d.name.toLowerCase().includes(q))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return (
+    <div className={styles.accessEdit}>
+      <p className={styles.hint} style={{ margin: 0, font: "var(--type-body2)" }}>{summary}</p>
+      <div className={styles.subLabel}>Sites</div>
+      <div className={styles.checks}>
+        {sites.map((s) => (
+          <div key={s.id} className="flex items-center py-1.5">
+            <Checkbox id={`manager-site-${s.id}`} label={s.name} checked={siteIds.has(s.id)} onChange={(on) => onSites(toggle(siteIds, s.id, on))} />
+          </div>
+        ))}
+      </div>
+      <div className={styles.subLabel}>
+        Departments{departmentIds.size > 0 ? ` (${departmentIds.size} checked)` : ""}
+      </div>
+      <Input
+        aria-label="Find a department"
+        placeholder={siteIds.size > 0 ? "Find a department at the checked sites" : "Find a department"}
+        value={search}
+        onChange={(e) => onSearch(e.target.value)}
+        autoComplete="off"
+      />
+      <div className={styles.checks}>
+        {offered.map((d) => (
+          <div key={d.id} className="flex items-center py-1.5">
+            <Checkbox id={`manager-dept-${d.id}`} label={d.name} checked={departmentIds.has(d.id)} onChange={(on) => onDepartments(toggle(departmentIds, d.id, on))} />
+          </div>
+        ))}
+        {offered.length === 0 && <p className={styles.hint} style={{ margin: 0 }}>No departments match.</p>}
+      </div>
+    </div>
   );
 }

@@ -190,6 +190,8 @@ type TimecardSegment = {
     id: string;
     code: number;
     label: string;
+    /** Off: a code payroll does not pay (FMLA). The ADP file leaves it out. */
+    isPaid?: boolean;
   } | null;
 };
 
@@ -300,6 +302,8 @@ interface TimecardViewerProps {
   editRequests?: EditRequestView[];
   /** May lock and unlock a single timecard (pay period managers). */
   canLockTimecards?: boolean;
+  /** Waive a CA meal premium: HR and payroll (company-wide editors), not a Manager (11/16). */
+  waivesMealPremiums?: boolean;
   /** The line under the page title, after the pay frequency: the headcount. */
   subtitle?: string;
   /** Page actions drawn at the end of the title row, after the pay period. */
@@ -814,6 +818,7 @@ export function TimecardViewer({
   supervisorEditsOff = false,
   editRequests = [],
   canLockTimecards = false,
+  waivesMealPremiums = true,
   subtitle,
   headerActions,
   siteTimezone,
@@ -1216,9 +1221,9 @@ export function TimecardViewer({
   });
   const punchTitle = (p: TimecardPunch): string | undefined =>
     pendingRemovals.has(p.id) ? "Removed when you save"
-      : p.submitted?.kind === "remove" ? "Removal waiting for HR approval"
-      : p.submitted?.kind === "change" ? `Waiting for HR approval (was ${format(atSite(p.submitted.was!), "h:mm a")})`
-      : p.submitted ? "Waiting for HR approval"
+      : p.submitted?.kind === "remove" ? "Removal waiting for approval"
+      : p.submitted?.kind === "change" ? `Waiting for approval (was ${format(atSite(p.submitted.was!), "h:mm a")})`
+      : p.submitted ? "Waiting for approval"
       : undefined;
 
   const canDeleteManual =
@@ -1944,7 +1949,7 @@ export function TimecardViewer({
       }
     }
     if (problems.length > 0) {
-      setActionError(`Not sent to HR: ${[...new Set(problems)].join(" ")}`);
+      setActionError(`Not sent for approval: ${[...new Set(problems)].join(" ")}`);
       router.refresh();
       return;
     }
@@ -1957,7 +1962,7 @@ export function TimecardViewer({
   function handleSaveChanges() {
     setActionError(null);
     if (reasonMissing) {
-      setActionError(canSend ? "Give a reason for these changes, then save. HR reads it." : "Give a reason for the changed or removed punches, then save.");
+      setActionError(canSend ? "Give a reason for these changes, then save. Your manager or HR reads it." : "Give a reason for the changed or removed punches, then save.");
       return;
     }
     const reason = changeReason.trim();
@@ -2742,8 +2747,8 @@ export function TimecardViewer({
                     {/* Said beside the status rather than in a line over the
                         grid: it is a fact about this timecard, like its status. */}
                     {!canEdit && (canSend ? (
-                      <span title="Your changes on rows of regular hours go to HR for approval, and nothing on the timecard changes until HR approves them. Pay codes, reason codes, leave and meal premiums are HR's and payroll's.">
-                        <Badge>Changes go to HR</Badge>
+                      <span title="Your changes on rows of regular hours go to a manager or HR for approval, and nothing on the timecard changes until they're approved. Pay codes, reason codes, leave and meal premiums are for managers, HR and payroll.">
+                        <Badge>Changes need approval</Badge>
                       </span>
                     ) : (
                       <span title={supervisorEditsOff ? "Supervisors can't change this person's timecard: their site doesn't allow it yet, they're salaried, or they rank above you. Ask HR or payroll." : "These hours cannot be changed from here."}>
@@ -2898,7 +2903,7 @@ export function TimecardViewer({
               )}
 
               {/* Supervisors' changes waiting for HR, and those HR turned down. */}
-              <EditRequestsPanel requests={editRequests} mode={canEdit ? "decide" : canSend ? "send" : "view"} onChanged={() => router.refresh()} />
+              <EditRequestsPanel timesheetId={timecard?.timesheetId ?? null} requests={editRequests} mode={canEdit ? "decide" : canSend ? "send" : "view"} onChanged={() => router.refresh()} />
 
               {/* Scans refused before this person was in CloudTime, which
                   payroll can add back. Renders nothing when there are none. */}
@@ -3003,6 +3008,12 @@ export function TimecardViewer({
                       const leaveSegments = daySegments.filter(
                         (s) => s.segmentType === "LEAVE"
                       );
+                      // The line the day row stands for (its pay code cell's): the
+                      // day's other leave lines show beneath it without opening the
+                      // day, so a day of FMLA and Unpaid Time Off shows both (11/12).
+                      const dayRowSeg =
+                        daySegments.find((s) => (s.segmentType === "WORK" || s.segmentType === "LEAVE") && s.durationMinutes > 0) ??
+                        daySegments.find((s) => s.segmentType === "WORK" || s.segmentType === "LEAVE");
 
                       const hasActivity =
                         dayPunches.length > 0 || daySegments.length > 0;
@@ -3108,7 +3119,7 @@ export function TimecardViewer({
                             <td className="px-3 py-2">
                               {(() => {
                                 const tag = waitingDays.has(dayKey)
-                                  ? { text: "Waiting for HR", bg: "var(--surface-info)", fg: "var(--text-accent)" }
+                                  ? { text: "Waiting for approval", bg: "var(--surface-info)", fg: "var(--text-accent)" }
                                   : isAbsent
                                   ? { text: "Absent", bg: "var(--surface-error)", fg: "var(--text-error)" }
                                   : hasMissingPunch
@@ -3429,8 +3440,8 @@ export function TimecardViewer({
                               return (
                                 <td className="px-3 py-1 text-left" onClick={(e) => e.stopPropagation()}>
                                   {waiverWaiting ? (
-                                    <span title="Waiting for HR approval">
-                                      <Badge tone="info" size="sm">{waiverWaiting.waive ? "Waive: with HR" : "Unwaive: with HR"}</Badge>
+                                    <span title="Waiting for approval">
+                                      <Badge tone="info" size="sm">{waiverWaiting.waive ? "Waive: waiting" : "Unwaive: waiting"}</Badge>
                                     </span>
                                   ) : hoursEnteredOnly || totalWorkForThreshold <= effectiveMealBreakAfterMinutes ? (
                                     <span style={{ font: "var(--type-body2)", color: "var(--text-disabled)" }}>—</span>
@@ -3992,8 +4003,9 @@ export function TimecardViewer({
                             );
                           })}
 
-                          {/* Leave rows — one per leave segment, shown only when expanded */}
-                          {isExpanded && leaveSegments.map((seg) => (
+                          {/* Leave rows: one per leave segment. Those beside another line
+                              always show; the one the day row already is, when opened. */}
+                          {leaveSegments.filter((seg) => isExpanded || seg.id !== dayRowSeg?.id).map((seg) => (
                             <tr
                               data-row="leave"
                               key={`${dayKey}-leave-${seg.id}`}
@@ -4115,7 +4127,7 @@ export function TimecardViewer({
                                 </td>
                                 {showMealColumn && (
                                   <td className="px-3 py-1 text-left" onClick={(e) => e.stopPropagation()}>
-                                    {effectiveAutoDeductMeal ? null : canEdit ? (
+                                    {effectiveAutoDeductMeal ? null : canEdit && waivesMealPremiums ? (
                                       <button
                                         type="button"
                                         onClick={() => handleTogglePremiumWaiver(segStart, dayKey)}
@@ -4366,7 +4378,9 @@ export function TimecardViewer({
                                   : PAY_BUCKET_LABEL[eb as PayBucketValue] ?? eb;
                               const line = (byCode[key] = byCode[key] ?? { label: key, reg: 0, ot: 0, dt: 0, total: 0, premium: 0, unpaid: 0 });
                               if (seg.segmentType === "MEAL_PREMIUM") { line.premium += seg.durationMinutes; continue; }
-                              if (!seg.isPaid) { line.unpaid += seg.durationMinutes; line.total += seg.durationMinutes; continue; }
+                              // A Not paid pay code (FMLA) is unpaid too: the payroll file leaves
+                              // it out, and the summary showed its hours paid as Regular (11/12).
+                              if (!seg.isPaid || seg.payCode?.isPaid === false) { line.unpaid += seg.durationMinutes; line.total += seg.durationMinutes; continue; }
                               line.total += seg.durationMinutes;
                               if (eb === "REG" || PAID_LEAVE_BUCKETS.has(eb)) line.reg += seg.durationMinutes;
                               else if (eb === "OT") line.ot += seg.durationMinutes;
@@ -4499,7 +4513,7 @@ export function TimecardViewer({
                     </span>
                     <span style={{ font: "var(--type-body2)", color: "var(--text-secondary)" }}>
                       {canSend
-                        ? "These go to HR for approval with the reason you give. Nothing changes until HR approves."
+                        ? "These go to a manager or HR for approval with the reason you give. Nothing changes until they're approved."
                         : needsReason
                         ? "A changed or removed punch needs a reason. It is kept with the punch history."
                         : "Save them to update this timecard, or discard them to put it back as it was."}

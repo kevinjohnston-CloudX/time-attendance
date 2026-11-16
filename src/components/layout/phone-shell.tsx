@@ -53,7 +53,7 @@ import styles from "./phone-shell.module.css";
  */
 
 /** Pages reached from Approvals, so the Approvals tab stays lit on them. */
-const APPROVAL_QUEUES = ["/supervisor/leave", "/supervisor/exceptions"];
+const APPROVAL_QUEUES = ["/approvals", "/supervisor/leave", "/supervisor/exceptions"];
 
 const noSubscribe = () => () => {};
 const useHydrated = () => useSyncExternalStore(noSubscribe, () => true, () => false);

@@ -2,6 +2,7 @@ import { cache } from "react";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { SIGN_IN_ONLY_ROLE } from "@/lib/sign-in-only";
+import { MANAGER_ROLE_NAME, managerAccessOf } from "@/lib/rbac/manager-role";
 
 /**
  * The people who report to a supervisor directly: those whose supervisor of
@@ -23,6 +24,8 @@ export function directReportsOf(supervisorEmployeeId: string): Prisma.EmployeeWh
           { additionalSupervisors: { some: { supervisorId: supervisorEmployeeId } } },
           // An agency viewer (sign-in-only.ts) sees everyone in its agency.
           { agencyRef: { is: { employees: { some: { id: supervisorEmployeeId, customRole: { is: SIGN_IN_ONLY_ROLE } } } } } },
+          // A Manager, the departments and sites on their record too (manager-role.ts).
+          managerAccessOf(supervisorEmployeeId),
         ],
       },
       { id: { not: supervisorEmployeeId } },
@@ -81,10 +84,32 @@ const subtree = cache(async (actorId: string, tenantId: string | null): Promise<
                WHERE  p."customRoleId" = cr.id AND p.resource = 'punch' AND p.action = 'write' AND p.scope = 'own'
              )
         AND  (${tenantId}::text IS NULL OR e."tenantId" = ${tenantId})
+    ),
+    -- A Manager: the departments and sites on their record, the same test as
+    -- managerAccessOf in manager-role.ts. Sites only, everyone at them;
+    -- departments only, those departments everywhere; both, those
+    -- departments at those sites; neither, nobody here.
+    mgr AS (
+      SELECT m.id,
+             EXISTS (SELECT 1 FROM "hr_site_access" s WHERE s."employeeId" = m.id) AS "hasSites",
+             EXISTS (SELECT 1 FROM "manager_department_access" d WHERE d."employeeId" = m.id) AS "hasDepts",
+             m."tenantId"
+      FROM   "employees" m
+      JOIN   "custom_roles" cr ON cr.id = m."customRoleId" AND cr."isSystem" AND cr."isActive" AND cr.name = ${MANAGER_ROLE_NAME}
+      WHERE  m.id = ${actorId}
+    ),
+    managed AS (
+      SELECT e.id
+      FROM   "employees" e
+      JOIN   mgr ON e."tenantId" = mgr."tenantId" AND (mgr."hasSites" OR mgr."hasDepts")
+      WHERE  (NOT mgr."hasSites" OR e."siteId" IN (SELECT s."siteId" FROM "hr_site_access" s WHERE s."employeeId" = mgr.id))
+        AND  (NOT mgr."hasDepts" OR e."departmentId" IN (SELECT d."departmentId" FROM "manager_department_access" d WHERE d."employeeId" = mgr.id))
     )
     SELECT id FROM reports WHERE id <> ${actorId}
     UNION
     SELECT id FROM agency WHERE id <> ${actorId}
+    UNION
+    SELECT id FROM managed WHERE id <> ${actorId}
   `;
   return rows.map((r) => r.id);
 });

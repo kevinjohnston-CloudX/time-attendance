@@ -133,7 +133,8 @@ export const SECTIONS: NavSection[] = [
       { label: "Team Members", href: "/supervisor/team", icon: IdCard, permission: ["EMPLOYEE_VIEW_TEAM", "EMPLOYEE_MANAGE"] },
       { label: "Live Attendance", href: "/supervisor/on-site", icon: DoorOpen, permission: "PRESENCE_VIEW_ANY" },
       { label: "Exceptions", href: "/supervisor/exceptions", icon: AlertTriangle, permission: "TIMESHEET_APPROVE_TEAM" },
-      { label: "Leave Requests", href: "/supervisor/leave", icon: CalendarClock, permission: "LEAVE_APPROVE_TEAM" },
+      // Leave requests and supervisors' timecard edits waiting for HR (11/11).
+      { label: "Approvals", href: "/approvals", icon: CalendarClock, permission: ["LEAVE_APPROVE_TEAM", "PAY_PERIOD_MANAGE", "PUNCH_EDIT_TEAM", "TIMECARD_EDIT_TEAM", "PUNCH_FIX_MISSED_TEAM"] },
       { label: "Team Punch History", href: "/supervisor/punch-history", icon: History, permission: "PUNCH_VIEW_TEAM" },
     ],
   },

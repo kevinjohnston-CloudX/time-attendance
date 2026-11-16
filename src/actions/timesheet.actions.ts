@@ -232,7 +232,9 @@ const mealPremiumWaiverSchema = z.object({
 });
 
 export const toggleMealPremiumWaiver = withRBAC(
-  TIMECARD_EDITORS,
+  // HR and payroll only (11/16): a Manager changes their people's timecards
+  // (team-wide editing) but a CA meal premium stays HR's to waive.
+  TIMECARD_EDITORS_COMPANY,
   async (ctx, input: unknown): Promise<{ success: boolean; waived: boolean }> => {
     const { employeeId: actorId, tenantId } = ctx;
     const { timesheetId, segmentDate, segmentStart } = mealPremiumWaiverSchema.parse(input);

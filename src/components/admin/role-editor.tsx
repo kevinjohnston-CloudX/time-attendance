@@ -85,7 +85,7 @@ const RESOURCE_INFO: Record<string, PermInfo> = {
       "read:team":  "View your team's current punch status and punch history.",
       "write:team": "Manually add, edit, or delete punch records for your team members.",
       "write:all":  "Manually add, edit, or delete punch records for any employee.",
-      "execute:team": "Change your team's timecards on rows of regular hours, where the person's site lets supervisors edit timecards: add, change and remove punches, Add time and meal waivers, each change sent to HR for approval before it counts. Pay codes, reason codes, leave and meal premiums need Write. Give Timecards Read too, to open the timecards.",
+      "execute:team": "Change your team's timecards on rows of regular hours, where the person's site lets supervisors edit timecards: add, change and remove punches, Add time and meal waivers, each change sent to a manager or HR for approval before it counts. Pay codes, reason codes, leave and meal premiums need Write. Give Timecards Read too, to open the timecards.",
     },
   },
   timesheet: {

@@ -200,7 +200,7 @@ export function ExceptionCard({
           return;
         }
         closeForm();
-        onDone(result.data?.pending ? `Sent to HR for approval for ${row.employeeName}` : `Punches saved and absence resolved for ${row.employeeName}`);
+        onDone(result.data?.pending ? `Sent for approval for ${row.employeeName}` : `Punches saved and absence resolved for ${row.employeeName}`);
         return;
       }
 
@@ -285,7 +285,7 @@ export function ExceptionCard({
       }
 
       closeForm();
-      onDone(sent ? `Sent to HR for approval for ${row.employeeName}` : `Punch saved and exception resolved for ${row.employeeName}`);
+      onDone(sent ? `Sent for approval for ${row.employeeName}` : `Punch saved and exception resolved for ${row.employeeName}`);
     });
   }
 

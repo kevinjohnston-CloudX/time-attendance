@@ -376,9 +376,9 @@ export default async function DashboardPage({
   // answer. The rest only when something is in them.
   const leaveCount = (st: string) => leaveStatusCounts.find((l) => l.status === st)?._count._all ?? 0;
   const LEAVE_LINES: { status: string; label: string; href?: string; always?: boolean }[] = [
-    { status: "PENDING", label: "Waiting on supervisor", href: "/supervisor/leave?tab=pending", always: true },
-    { status: "PENDING_HR", label: "Waiting on HR", href: "/supervisor/leave?tab=hr-pending", always: true },
-    { status: "APPROVED", label: "Approved", href: "/supervisor/leave?tab=upcoming" },
+    { status: "PENDING", label: "Waiting on supervisor", href: "/approvals?view=leave&tab=pending", always: true },
+    { status: "PENDING_HR", label: "Waiting on HR", href: "/approvals?view=leave&tab=hr-pending", always: true },
+    { status: "APPROVED", label: "Approved", href: "/approvals?view=leave&tab=upcoming" },
     { status: "POSTED", label: "Posted to timesheets" },
     { status: "DRAFT", label: "Draft, not sent" },
     { status: "REJECTED", label: "Rejected" },
@@ -421,7 +421,7 @@ export default async function DashboardPage({
             phoneLabel: "Leave to decide",
             phoneDetail: hasPayrollAccess ? "Waiting on a supervisor" : "Time off your team asked for",
             count: queues.leavePending,
-            href: "/supervisor/leave?tab=pending",
+            href: "/approvals?view=leave&tab=pending",
             actionable: true,
             tone: "warning" as const,
           },
@@ -435,7 +435,7 @@ export default async function DashboardPage({
                   phoneLabel: "Leave waiting on HR",
                   phoneDetail: "Approved by a supervisor",
                   count: queues.leaveWithHr,
-                  href: "/supervisor/leave?tab=hr-pending",
+                  href: "/approvals?view=leave&tab=hr-pending",
                   actionable: true,
                   tone: "warning" as const,
                 },
@@ -958,7 +958,7 @@ export default async function DashboardPage({
                     )}
                     {/* Time Off Ahead beside it carries the same link. */}
                     {canApproveTeam && !timeOffAhead && (
-                      <LinkButton href="/supervisor/leave" hierarchy="tertiary" size="sm">
+                      <LinkButton href="/approvals?view=leave" hierarchy="tertiary" size="sm">
                         Team Calendar
                       </LinkButton>
                     )}
@@ -1000,7 +1000,7 @@ export default async function DashboardPage({
             />
             <OverviewColumn
               title="Time Off"
-              link={{ href: "/supervisor/leave", label: "Open leave requests" }}
+              link={{ href: "/approvals?view=leave", label: "Open leave requests" }}
               figure={leaveWaiting}
               caption="waiting for approval"
               detail={

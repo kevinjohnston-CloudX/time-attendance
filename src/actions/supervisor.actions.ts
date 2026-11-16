@@ -487,6 +487,9 @@ export const getTeamLeaveRequests = withRBAC(
           select: {
             user: { select: { name: true } },
             department: { select: { id: true, name: true } },
+            // The building: a department is the same one at every site, so
+            // only someone in it at the same site clashes (leave-tabs).
+            site: { select: { id: true } },
           },
         },
         leaveType: true,
@@ -537,23 +540,28 @@ export const getTeamHeadcount = withRBAC(
       employeeFilter = { id: { in: subordinateIds }, tenantId: t };
     }
 
+    // By department at each site: a department is the same one at every
+    // site, and who covers the work is the people in it in the same building.
     const grouped = await db.employee.groupBy({
-      by: ["departmentId"],
+      by: ["departmentId", "siteId"],
       where: withoutVisitors({ ...employeeFilter, isActive: true }),
       _count: { _all: true },
     });
 
-    const names = await db.department.findMany({
-      where: { id: { in: grouped.map((g) => g.departmentId) } },
-      select: { id: true, name: true },
-    });
+    const [names, sites] = await Promise.all([
+      db.department.findMany({ where: { id: { in: grouped.map((g) => g.departmentId) } }, select: { id: true, name: true } }),
+      db.site.findMany({ where: { id: { in: grouped.map((g) => g.siteId) } }, select: { id: true, name: true } }),
+    ]);
     const nameById = new Map(names.map((d) => [d.id, d.name]));
+    const siteById = new Map(sites.map((s) => [s.id, s.name]));
 
     return {
       total: grouped.reduce((sum, g) => sum + g._count._all, 0),
       byDepartment: grouped.map((g) => ({
         id: g.departmentId,
         name: nameById.get(g.departmentId) ?? "Unassigned",
+        siteId: g.siteId,
+        siteName: siteById.get(g.siteId) ?? "",
         count: g._count._all,
       })),
     };
@@ -599,6 +607,9 @@ export const getHrPendingLeave = withRBAC(
           select: {
             user: { select: { name: true } },
             department: { select: { id: true, name: true } },
+            // The building: a department is the same one at every site, so
+            // only someone in it at the same site clashes (leave-tabs).
+            site: { select: { id: true } },
           },
         },
         leaveType: true,
@@ -653,6 +664,9 @@ export const getUpcomingTeamLeave = withRBAC(
           select: {
             user: { select: { name: true } },
             department: { select: { id: true, name: true } },
+            // The building: a department is the same one at every site, so
+            // only someone in it at the same site clashes (leave-tabs).
+            site: { select: { id: true } },
           },
         },
         leaveType: true,

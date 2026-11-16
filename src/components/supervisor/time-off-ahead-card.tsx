@@ -28,7 +28,7 @@ export function TimeOffAheadCard({
           : `${plural(timeOff.offToday, "person", "people")} off today, ${plural(timeOff.total, "absence")} in the next 14 days`
       }
       actions={
-        <LinkButton href="/supervisor/leave?tab=upcoming" hierarchy="tertiary" size="sm" className={linkClassName}>
+        <LinkButton href="/approvals?view=leave&tab=upcoming" hierarchy="tertiary" size="sm" className={linkClassName}>
           Team Calendar
         </LinkButton>
       }
@@ -74,7 +74,7 @@ export function TimeOffAheadCard({
           })}
           {timeOff.total > timeOff.rows.length && (
             <Link
-              href="/supervisor/leave?tab=upcoming"
+              href="/approvals?view=leave&tab=upcoming"
               className="pt-2.5"
               style={{ font: "var(--type-body2)", color: "var(--text-accent)", textDecoration: "none" }}
             >

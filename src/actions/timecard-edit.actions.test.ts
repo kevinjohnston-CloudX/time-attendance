@@ -47,16 +47,16 @@ vi.mock("@/actions/timecard-entry.actions", () => ({ addManualPunches: h.addManu
 vi.mock("@/actions/timesheet.actions", () => ({ toggleMealWaiver: h.toggleMealWaiver }));
 vi.mock("@/lib/db", () => ({
   db: {
-    timecardEditRequest: { findUnique: vi.fn(async () => h.request), update: h.requestUpdate },
+    timecardEditRequest: { findMany: vi.fn(async () => [h.request]), update: h.requestUpdate },
     timecardEditItem: { update: vi.fn(async ({ where, data }: { where: { id: string }; data: { status: string; error?: string | null } }) => { h.itemUpdates.push({ id: where.id, ...data }); return {}; }) },
     mealWaiver: { findUnique: vi.fn(async () => null) },
   },
 }));
 
-import { decideTimecardEdits } from "./timecard-edit.actions";
+import { decideTimesheetEdits } from "./timecard-edit.actions";
 
 const d = (iso: string) => new Date(iso);
-const item = (id: string, kind: string, extra: object) => ({ id, kind, status: "PENDING", punchId: null, exceptionId: null, punchType: null, at: null, endAt: null, before: null, minutes: null, waive: null, day: d("2026-11-10T00:00:00Z"), ...extra });
+const item = (id: string, kind: string, extra: object) => ({ id, kind, status: "PENDING", updatedAt: d("2026-11-11T14:00:00Z"), punchId: null, exceptionId: null, punchType: null, at: null, endAt: null, before: null, minutes: null, waive: null, day: d("2026-11-10T00:00:00Z"), ...extra });
 
 describe("HR deciding a supervisor's changes (11/11)", () => {
   beforeEach(() => {
@@ -80,7 +80,7 @@ describe("HR deciding a supervisor's changes (11/11)", () => {
   });
 
   it("applies what it approves in order, marks what failed, and turns down the rest with the note", async () => {
-    const r = await decideTimecardEdits({ requestId: "r1", rejectItemIds: ["hrs"], note: "Those hours are PTO" });
+    const r = await decideTimesheetEdits({ timesheetId: "ts1", rejectItemIds: ["hrs"], note: "Those hours are PTO" });
     expect(r.success).toBe(true);
     // Times changed, then removed, then added, then meal waivers; the rejected hours never.
     expect(h.order).toEqual(["change", "remove", "add", "waiver"]);
@@ -94,8 +94,20 @@ describe("HR deciding a supervisor's changes (11/11)", () => {
     expect(r.success && r.data).toEqual({ approved: 3, rejected: 1, failed: [{ id: "rm", error: "Punch has already been corrected or deleted." }] });
   });
 
+  // 11/11: the supervisor put a time right while HR had the request open.
+  it("decides nothing a supervisor changed after HR opened it", async () => {
+    const seenBefore = "add@2026-11-11T13:00:00.000Z,chg@2026-11-11T14:00:00.000Z,hrs@2026-11-11T14:00:00.000Z,meal@2026-11-11T14:00:00.000Z,rm@2026-11-11T14:00:00.000Z";
+    const r = await decideTimesheetEdits({ timesheetId: "ts1", seen: seenBefore });
+    expect(r.success).toBe(false);
+    expect(!r.success && r.error).toMatch(/changed these after you opened them/);
+    expect(h.order).toEqual([]);
+    const seenNow = "add@2026-11-11T14:00:00.000Z,chg@2026-11-11T14:00:00.000Z,hrs@2026-11-11T14:00:00.000Z,meal@2026-11-11T14:00:00.000Z,rm@2026-11-11T14:00:00.000Z";
+    const ok = await decideTimesheetEdits({ timesheetId: "ts1", rejectItemIds: ["hrs"], note: "PTO", seen: seenNow });
+    expect(ok.success).toBe(true);
+  });
+
   it("turns nothing down without saying why", async () => {
-    const r = await decideTimecardEdits({ requestId: "r1", rejectItemIds: ["hrs"] });
+    const r = await decideTimesheetEdits({ timesheetId: "ts1", rejectItemIds: ["hrs"] });
     expect(r.success).toBe(false);
     expect(!r.success && r.error).toMatch(/Say why/);
     expect(h.order).toEqual([]);

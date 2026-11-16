@@ -2,15 +2,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 
-const { fn, addManualPunches, ensureTimesheet, submitTimecardEdits, withdrawTimecardEdit, decideTimecardEdits } = vi.hoisted(() => ({
+const { fn, addManualPunches, ensureTimesheet, submitTimecardEdits, withdrawTimecardEdit, decideTimesheetEdits } = vi.hoisted(() => ({
   fn: () => vi.fn(async () => ({ success: true, data: {} })),
   addManualPunches: vi.fn(async () => ({ success: true, data: undefined })),
   ensureTimesheet: vi.fn(async () => ({ success: true, data: { timesheetId: "t1" } })),
   submitTimecardEdits: vi.fn(async () => ({ success: true, data: { requestId: "r9", timesheetId: "t1" } })),
   withdrawTimecardEdit: vi.fn(async () => ({ success: true, data: undefined })),
-  decideTimecardEdits: vi.fn(async () => ({ success: true, data: { approved: 1, rejected: 1, failed: [] } })),
+  decideTimesheetEdits: vi.fn(async () => ({ success: true, data: { approved: 1, rejected: 1, failed: [] } })),
 }));
-vi.mock("@/actions/timecard-edit.actions", () => ({ submitTimecardEdits, withdrawTimecardEdit, decideTimecardEdits, reviseTimecardEdit: vi.fn(async () => ({ success: true, data: undefined })) }));
+vi.mock("@/actions/timecard-edit.actions", () => ({ submitTimecardEdits, withdrawTimecardEdit, decideTimesheetEdits, reviseTimecardEdit: vi.fn(async () => ({ success: true, data: undefined })) }));
 vi.mock("@/actions/punch.actions", () => ({ correctPunch: fn(), deletePunch: fn() }));
 vi.mock("@/actions/timesheet.actions", () => ({ toggleMealWaiver: fn(), toggleMealPremiumWaiver: fn(), authorizeTimecardOt: fn(), recalculateSegmentsAdmin: fn() }));
 vi.mock("@/actions/timecard-entry.actions", () => ({ removePayrollLeaveEntry: fn(), getLeaveTypesForTimecard: vi.fn(async () => ({ success: true, data: [] })), saveTimesheetNote: fn(), addManualPunchPair: fn(), addManualPunches, deleteManualPunchPair: fn(), addManualHoursEntry: fn() }));
@@ -162,6 +162,58 @@ describe("the summary of a period with unpaid leave", () => {
     expect(cells(/^Totals$/)).toEqual(["Totals", "8.00", "—", "—", "16.00", "24.00", "$15.00", "$120.00", "—", "—", "$120.00"]);
     vi.useRealTimers();
   });
+
+  // 11/12: HR enters FMLA as two lines on a day, the FMLA hours and the same
+  // hours as Unpaid Time Off. Only the first showed until the day was opened,
+  // and the summary paid the FMLA hours though FMLA is Not paid.
+  it("shows both lines of an FMLA day, and pays neither", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-21T16:00:00Z"));
+    const fmla = { id: "pc11", code: 11, label: "FMLA", isPaid: false };
+    const uto = { id: "pc13", code: 13, label: "Unpaid time off" };
+    const seg = (id: string, type: string, isPaid: boolean, payBucket: string, payCode: object) => ({
+      id, segmentType: type, startTime: "2026-10-19T04:00:00.000Z", endTime: "2026-10-19T12:00:00.000Z", durationMinutes: 480,
+      segmentDate: "2026-10-19T00:00:00.000Z", payBucket, payBucketOverride: null, isPaid, payCode,
+    });
+    render(
+      <TimecardViewer
+        payPeriods={[{ id: "p1", startDate: "2026-10-11T00:00:00.000Z", endDate: "2026-10-25T00:00:00.000Z", status: "OPEN" }]}
+        selectedPeriodId="p1"
+        employees={[{ employeeId: "e1", name: "Test Person", employeeCode: "T1", wmsId: "605247", department: "Vas", siteId: "s1", siteName: "Site", isActive: true, payType: "HOURLY" }]}
+        selectedEmployeeId="e1"
+        timecard={{
+          timesheetId: "t1", status: "OPEN", otAuthorized: false, exceptionCount: 0, exceptions: [],
+          payPeriod: { startDate: "2026-10-11T00:00:00.000Z", endDate: "2026-10-25T00:00:00.000Z", status: "OPEN" },
+          employee: {
+            user: { name: "Test Person" }, department: { name: "Vas" }, employeeCode: "T1", wmsId: "605247", payRate: 22, payType: "HOURLY", startedOn: "2020-01-01", shift: null,
+            ruleSet: { overtimeRequiresAuth: false, allowTimesheetOtAuth: false, defaultPayCodeId: null },
+          },
+          punches: [],
+          segments: [
+            seg("w1", "WORK", true, "REG", fmla),
+            { ...seg("l1", "LEAVE", false, "UNPAID", uto), leaveRequest: { id: "lr1", leaveType: { name: "UnPaid Time Off", category: "UNPAID", payCode: uto } } },
+          ] as never,
+          overtimeBuckets: [], mealWaivers: [], mealPremiumWaivers: [], notes: [], dayReasons: [],
+        }}
+        payFrequency="BIWEEKLY"
+        payCodes={[fmla, uto]}
+        reasonCodes={[]}
+        sites={[]}
+        selectedSiteId={null}
+        departments={[]}
+        selectedDepartmentId={null}
+        userRole="SYSTEM_ADMIN"
+        siteTimezone="America/New_York"
+      />,
+    );
+    // The Unpaid Time Off line shows under the FMLA day without opening it.
+    expect(document.querySelectorAll("tr[data-row=\"leave\"]").length).toBe(1);
+    const rows = screen.getAllByRole("row");
+    const cells = (label: RegExp) => [...rows.find((r) => r.querySelector("td") && label.test(r.querySelector("td")!.textContent ?? ""))!.querySelectorAll("td")].map((c) => c.textContent);
+    // FMLA is Not paid: under Unpaid, no pay, as the payroll file has it.
+    expect(cells(/^FMLA/)).toEqual(["FMLA (11)", "—", "—", "—", "8.00", "8.00", "$22.00", "—", "—", "—", "$0.00"]);
+    vi.useRealTimers();
+  });
 });
 
 // Bergen's supervisors, 11/11: where the person's site lets supervisors edit
@@ -174,7 +226,7 @@ describe("a supervisor whose changes go to HR", { timeout: 20_000 }, () => {
   const tuesdayWork = { id: "w2", segmentType: "WORK", startTime: "2026-10-13T12:00:00.000Z", endTime: "2026-10-13T20:30:00.000Z", durationMinutes: 510, segmentDate: "2026-10-13T00:00:00.000Z", payBucket: "REGULAR", payBucketOverride: null, isPaid: true, payCode: null };
   const waiting = (items: object[], status = "PENDING") => [{ id: "r1", status, submittedBy: "Flavio Morales", createdAt: "2026-10-15T14:00:00.000Z", reason: "Forgot to punch", decisionNote: null, items }];
   const item = (id: string, extra: object) => ({ id, status: "PENDING", error: null, punchId: null, punchType: null, at: null, endAt: null, minutes: null, waive: null, ...extra });
-  function renderSup(o: { mealConfig?: object; segments?: object[]; punches?: object[]; editRequests?: object[]; off?: boolean; hr?: boolean; timecard?: null; period?: string } = {}) {
+  function renderSup(o: { mealConfig?: object; segments?: object[]; punches?: object[]; editRequests?: object[]; off?: boolean; hr?: boolean; premiums?: boolean; timecard?: null; period?: string } = {}) {
     render(
       <TimecardViewer
         payPeriods={[{ id: "p1", startDate: "2026-10-11T00:00:00.000Z", endDate: "2026-10-25T00:00:00.000Z", status: o.period ?? "OPEN" }]}
@@ -211,6 +263,7 @@ describe("a supervisor whose changes go to HR", { timeout: 20_000 }, () => {
         readOnly={!o.hr && !!o.off}
         sendsForApproval={!o.hr && !o.off}
         supervisorEditsOff={!o.hr && !!o.off}
+        waivesMealPremiums={o.premiums ?? true}
         editRequests={(o.editRequests ?? []) as never}
         siteTimezone="America/New_York"
       />,
@@ -237,7 +290,7 @@ describe("a supervisor whose changes go to HR", { timeout: 20_000 }, () => {
     const { correctPunch } = await import("@/actions/punch.actions");
     (correctPunch as unknown as { mockClear: () => void }).mockClear();
     renderSup();
-    expect(screen.getByText("Changes go to HR")).not.toBeNull();
+    expect(screen.getByText("Changes need approval")).not.toBeNull();
     // No reason code or pay code offered anywhere.
     expect([...document.querySelectorAll("tr select:not([disabled])")].length).toBe(0);
     const type = (button: HTMLElement, value: string) => {
@@ -285,10 +338,10 @@ describe("a supervisor whose changes go to HR", { timeout: 20_000 }, () => {
     at("2026-10-15T16:00:00Z");
     withdrawTimecardEdit.mockClear();
     renderSup({ editRequests: waiting([item("a1", { kind: "ADD_PUNCH", punchType: "CLOCK_OUT", at: "2026-10-12T20:30:00.000Z", day: "2026-10-12", text: "Add clock out 4:30 PM" })]) });
-    expect(row(/Mon, Oct 12/).textContent).toMatch(/Waiting for HR/);
+    expect(row(/Mon, Oct 12/).textContent).toMatch(/Waiting for approval/);
     expect(times(/Mon, Oct 12/).map((b) => b.textContent)).toContain("4:30 PM");
     // One line until opened.
-    expect(screen.getByText("1 change waiting for HR approval from Flavio Morales.")).not.toBeNull();
+    expect(screen.getByText("1 change waiting for approval from Flavio Morales.")).not.toBeNull();
     expect(screen.queryByText(/Mon, Oct 12: Add clock out 4:30 PM/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Show" }));
     expect(screen.getByText(/Mon, Oct 12: Add clock out 4:30 PM/)).not.toBeNull();
@@ -298,7 +351,7 @@ describe("a supervisor whose changes go to HR", { timeout: 20_000 }, () => {
 
   it("lets HR approve, or turn some down with a note", async () => {
     at("2026-10-15T16:00:00Z");
-    decideTimecardEdits.mockClear();
+    decideTimesheetEdits.mockClear();
     renderSup({
       hr: true,
       editRequests: waiting([
@@ -310,10 +363,10 @@ describe("a supervisor whose changes go to HR", { timeout: 20_000 }, () => {
     fireEvent.click(screen.getByLabelText(/Tue, Oct 13: Change clock in/));
     fireEvent.click(screen.getByRole("button", { name: "Approve 1, turn down 1" }));
     expect(screen.getByRole("alert").textContent).toMatch(/Say why/);
-    expect(decideTimecardEdits).not.toHaveBeenCalled();
+    expect(decideTimesheetEdits).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText("Why the changes are turned down"), { target: { value: "She clocked in at 8:00" } });
     fireEvent.click(screen.getByRole("button", { name: "Approve 1, turn down 1" }));
-    await vi.waitFor(() => expect(decideTimecardEdits).toHaveBeenCalledWith({ requestId: "r1", rejectItemIds: ["a2"], note: "She clocked in at 8:00" }));
+    await vi.waitFor(() => expect(decideTimesheetEdits).toHaveBeenCalledWith(expect.objectContaining({ timesheetId: "t1", rejectItemIds: ["a2"], note: "She clocked in at 8:00" })));
   });
 
   it("sends Add time to HR as regular hours", async () => {
@@ -354,6 +407,18 @@ describe("a supervisor whose changes go to HR", { timeout: 20_000 }, () => {
     expect(screen.queryAllByRole("button", { name: /^Waive/ }).length).toBe(0);
   });
 
+  // 11/16: a Manager changes their people's timecards directly, but a CA meal premium stays HR's.
+  it("offers Waive on a meal premium to HR and payroll, not to a Manager", () => {
+    at("2026-10-15T16:00:00Z");
+    const premium = { ...tuesdayWork, id: "mp2", segmentType: "MEAL_PREMIUM", startTime: "2026-10-13T20:30:00.000Z", endTime: "2026-10-13T21:30:00.000Z", durationMinutes: 60, payCode: { id: "pcMp", code: 20, label: "Meal premium" } };
+    renderSup({ hr: true, segments: [tuesdayWork, premium] });
+    expect(screen.queryAllByRole("button", { name: /^Waive/ }).length).toBe(1);
+    cleanup();
+    renderSup({ hr: true, premiums: false, segments: [tuesdayWork, premium] });
+    expect(screen.getAllByText(/Meal premium/).length).toBeGreaterThan(0);
+    expect(screen.queryAllByRole("button", { name: /^Waive/ }).length).toBe(0);
+  });
+
   it("shows hours entered with Add time without clock times, and no meal to waive", () => {
     at("2026-10-15T16:00:00Z");
     // 8 hours entered on Tuesday: kept from 12:00 AM to 8:00 AM Eastern.
@@ -377,7 +442,7 @@ describe("a supervisor whose changes go to HR", { timeout: 20_000 }, () => {
     expect(screen.getByText("Read only")).not.toBeNull();
     cleanup();
     renderSup({ timecard: null });
-    expect(screen.getByText("Changes go to HR")).not.toBeNull();
+    expect(screen.getByText("Changes need approval")).not.toBeNull();
     const wednesday = () => row(/Wed, Oct 14/);
     const type = (value: string) => {
       fireEvent.click([...wednesday().querySelectorAll("button")].filter((b) => b.textContent === "—")[0]!);

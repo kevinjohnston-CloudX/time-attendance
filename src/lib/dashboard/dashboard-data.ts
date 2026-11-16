@@ -496,8 +496,8 @@ export async function getWaitingOnYou({
   ]);
 
   return [
-    { label: "Leave to approve",      count: leaveToApprove,  href: "/supervisor/leave" },
-    { label: "Leave waiting on HR",   count: waitingOnHr,     href: "/supervisor/leave?tab=hr-pending" },
+    { label: "Leave to approve",      count: leaveToApprove,  href: "/approvals?view=leave" },
+    { label: "Leave waiting on HR",   count: waitingOnHr,     href: "/approvals?view=leave&tab=hr-pending" },
     { label: "Open exceptions",       count: openExceptions,  href: "/supervisor/exceptions" },
     { label: "Unsent leave requests", count: myDrafts,        href: "/leave" },
   ].filter((i) => i.count > 0);

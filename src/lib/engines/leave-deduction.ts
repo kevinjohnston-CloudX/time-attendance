@@ -1,6 +1,7 @@
 import { getYear } from "date-fns";
 import { db } from "@/lib/db";
 import type { LeaveCategory, PayBucket } from "@prisma/client";
+import { CATEGORY_TO_BUCKET } from "@/lib/engines/leave-segment-builder";
 
 function categoryToPayBucket(category: LeaveCategory): PayBucket | null {
   const map: Partial<Record<LeaveCategory, PayBucket>> = {
@@ -208,6 +209,11 @@ export async function reconcileSalarySegmentDeduction(
   }
 
   const newDuration = segment.durationMinutes;
+  // The line becomes the new leave's: paid or not, and its pay bucket. A line
+  // of Unpaid Time Off changed to PTO kept "unpaid", so its 8 h came off the
+  // PTO balance and were left out of payroll (Wilbert Villar Vizcaino, 10/26).
+  const kind = await db.leaveType.findUniqueOrThrow({ where: { id: newLeaveType.id }, select: { isPaid: true, category: true } });
+  const asLeave = { isPaid: kind.isPaid, payBucket: CATEGORY_TO_BUCKET[kind.category] };
 
   if (!existing || existing.status === "CANCELLED") {
     // No prior active request — create and debit
@@ -225,7 +231,7 @@ export async function reconcileSalarySegmentDeduction(
       },
     });
     await debitBalance(employeeId, newLeaveType.id, req.id, newDuration * 60, accrualYear, actorId);
-    await db.workSegment.update({ where: { id: segmentId }, data: { leaveRequestId: req.id } });
+    await db.workSegment.update({ where: { id: segmentId }, data: { leaveRequestId: req.id, ...asLeave } });
     return;
   }
 
@@ -252,7 +258,7 @@ export async function reconcileSalarySegmentDeduction(
       },
     });
     await debitBalance(employeeId, newLeaveType.id, req.id, newDuration * 60, accrualYear, actorId);
-    await db.workSegment.update({ where: { id: segmentId }, data: { leaveRequestId: req.id } });
+    await db.workSegment.update({ where: { id: segmentId }, data: { leaveRequestId: req.id, ...asLeave } });
     return;
   }
 

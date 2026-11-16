@@ -2,7 +2,7 @@ import { redirect, notFound } from "next/navigation";
 import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { userHasPermission, manageOrView } from "@/lib/rbac/check-permission";
-import { getEmployeeById, getAdminRefData, getEmployeeAuditLogs, getHrSiteAccess, getAdditionalSupervisors } from "@/actions/admin.actions";
+import { getEmployeeById, getAdminRefData, getEmployeeAuditLogs, getHrSiteAccess, getManagerDepartmentAccess, getAdditionalSupervisors } from "@/actions/admin.actions";
 import { EditEmployeeForm } from "@/components/admin/edit-employee-form";
 import { getPayRates } from "@/actions/pay-rate.actions";
 import { photoUrls } from "@/lib/presence/photos";
@@ -27,13 +27,14 @@ export default async function EditEmployeePage({
   // A link to the rule or policy: to change it, or with Rule Sets on Read to look at it.
   const canManageRules = (await manageOrView(session.user, "RULES_MANAGE", "RULES_VIEW")) !== null;
 
-  const [empResult, refResult, logsResult, siteAccessResult, payRatesResult, extraResult] = await Promise.all([
+  const [empResult, refResult, logsResult, siteAccessResult, payRatesResult, extraResult, deptAccessResult] = await Promise.all([
     getEmployeeById({ employeeId: id }),
     getAdminRefData(),
     getEmployeeAuditLogs({ employeeId: id }),
     getHrSiteAccess({ employeeId: id }),
     getPayRates({ employeeId: id }),
     getAdditionalSupervisors({ employeeId: id }),
+    getManagerDepartmentAccess({ employeeId: id }),
   ]);
 
   if (!empResult.success) notFound();
@@ -89,6 +90,7 @@ export default async function EditEmployeePage({
         agencies={agencies ?? []}
         logs={logs}
         hrSiteAccess={hrSiteAccess}
+        managerDepartmentAccess={deptAccessResult.success ? deptAccessResult.data : []}
         additionalSupervisors={extraResult.success ? extraResult.data : []}
         actorRole={actorRole ?? "EMPLOYEE"}
         canManageRules={canManageRules}

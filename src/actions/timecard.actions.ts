@@ -194,7 +194,7 @@ export const getTimecardByEmployeeAndPeriod = withRBAC(
                 },
               },
             },
-            payCode: { select: { id: true, code: true, label: true } },
+            payCode: { select: { id: true, code: true, label: true, isPaid: true } },
           },
         },
         overtimeBuckets: true,
@@ -385,7 +385,7 @@ export const getTimecardDetail = withRBAC(
               },
             },
             payCode: {
-              select: { id: true, code: true, label: true },
+              select: { id: true, code: true, label: true, isPaid: true },
             },
           },
         },

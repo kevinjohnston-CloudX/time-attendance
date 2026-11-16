@@ -75,6 +75,7 @@ interface LeaveRequestRow {
   employee: {
     user: { name: string | null } | null;
     department: { id: string; name: string } | null;
+    site?: { id: string } | null;
   };
   leaveType: { name: string };
 }
@@ -85,7 +86,8 @@ type Queue = "pending" | "hr-pending" | "upcoming";
 /** Active headcount in the approver's scope, for the coverage figure. */
 interface Headcount {
   total: number;
-  byDepartment: { id: string; name: string; count: number }[];
+  /** A department at one site: departments are shared across sites. */
+  byDepartment: { id: string; name: string; count: number; siteId?: string; siteName?: string }[];
 }
 
 interface LeaveTabsProps {
@@ -105,6 +107,11 @@ interface LeaveTabsProps {
   selectedSiteId?: string;
   selectedDepartmentId?: string;
   selectedShiftId?: string;
+  /**
+   * Drawn in place of the "Leave Requests" title: the Approvals page puts its
+   * own title and its Leave requests and Timecard edits switch there (11/11).
+   */
+  heading?: ReactNode;
 }
 
 type Tab = "all" | "pending" | "hr-pending" | "upcoming";
@@ -232,6 +239,7 @@ export function LeaveTabs({
   selectedSiteId,
   selectedDepartmentId,
   selectedShiftId,
+  heading,
 }: LeaveTabsProps) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>(initialTab ?? "pending");
@@ -386,7 +394,7 @@ export function LeaveTabs({
     if (next.departmentId) params.set("departmentId", next.departmentId);
     if (next.shiftId) params.set("shiftId", next.shiftId);
     params.set("tab", tab);
-    return `/supervisor/leave?${params.toString()}`;
+    return `/approvals?${params.toString()}`;
   }
 
   function navigate(next: { siteId?: string; departmentId?: string; shiftId?: string }) {
@@ -476,6 +484,7 @@ export function LeaveTabs({
     employeeId: string;
     leaveType: string;
     departmentId: string | null;
+    siteId: string | null;
   };
   const approvedMap = new Map<string, Entry[]>();
   for (const req of upcoming) {
@@ -486,6 +495,7 @@ export function LeaveTabs({
         employeeId: req.employeeId,
         leaveType: req.leaveType.name,
         departmentId: req.employee.department?.id ?? null,
+        siteId: req.employee.site?.id ?? null,
       });
     }
   }
@@ -499,13 +509,19 @@ export function LeaveTabs({
         employeeId: req.employeeId,
         leaveType: req.leaveType.name,
         departmentId: req.employee.department?.id ?? null,
+        siteId: req.employee.site?.id ?? null,
       });
     }
   }
 
   /**
-   * Which pending requests overlap approved leave belonging to somebody else,
-   * and who that somebody is.
+   * Which pending requests overlap approved leave belonging to somebody else
+   * in the same department at the same site, and who that somebody is.
+   *
+   * <p>It used to name everyone off those days that the approver can see:
+   * for HR, the whole company, about 30 names for three weeks over the
+   * holidays (Andres Londono, 11/12). A department is the same one at every
+   * site, so the site is part of it.
    *
    * <p>The screen used to say only that an overlap existed. "Overlap" with no
    * name behind it sends you to the calendar to work out who, which is the one
@@ -516,7 +532,8 @@ export function LeaveTabs({
     const names = new Set<string>();
     for (const key of leaveDayKeys(req)) {
       for (const a of approvedMap.get(key) ?? []) {
-        if (a.employeeId !== req.employeeId) names.add(a.name);
+        const sameTeam = a.departmentId === (req.employee.department?.id ?? null) && a.siteId === (req.employee.site?.id ?? null);
+        if (a.employeeId !== req.employeeId && sameTeam) names.add(a.name);
       }
     }
     if (names.size > 0) conflictNames.set(req.id, [...names]);
@@ -573,7 +590,11 @@ export function LeaveTabs({
     : [];
   const focusedDaySet = new Set(focusedDays);
 
-  const inScope = (e: Entry) => !scopedToDept || e.departmentId === focusedDept!.id;
+  // The focused request's own building, always: a department is the same one
+  // at every site, and HR sees every site (11/12).
+  const focusedSite = focused?.employee.site?.id ?? null;
+  const inScope = (e: Entry) =>
+    (!focusedSite || e.siteId === focusedSite) && (!scopedToDept || e.departmentId === focusedDept!.id);
   // The day listed under the month on a phone: the one tapped, else today when
   // today is in the month on screen, else the month's first day.
   const pickedKey =
@@ -598,9 +619,14 @@ export function LeaveTabs({
     for (const e of pendingMap.get(key) ?? []) if (inScope(e)) offOnFocusedDays.add(e.employeeId);
   }
 
-  const scopeSize = scopedToDept
-    ? (headcount.byDepartment.find((d) => d.id === focusedDept!.id)?.count ?? 0)
-    : headcount.total;
+  const scopeSize = focusedSite
+    ? headcount.byDepartment
+        .filter((d) => d.siteId === focusedSite && (!scopedToDept || d.id === focusedDept!.id))
+        .reduce((n, d) => n + d.count, 0)
+    : scopedToDept
+      ? headcount.byDepartment.filter((d) => d.id === focusedDept!.id).reduce((n, d) => n + d.count, 0)
+      : headcount.total;
+  const focusedSiteName = focusedSite ? headcount.byDepartment.find((d) => d.siteId === focusedSite)?.siteName : undefined;
   const offCount = offOnFocusedDays.size;
   const onShift = Math.max(scopeSize - offCount, 0);
   const scopeName = scopedToDept ? focusedDept!.name : "the team";
@@ -667,18 +693,20 @@ export function LeaveTabs({
       >
         <div className="flex flex-wrap items-end gap-3" style={{ paddingBottom: 12 }}>
           <div className="flex min-w-60 flex-1 flex-col gap-0.5">
-            <h1
-              style={{
-                margin: 0,
-                fontSize: 30,
-                lineHeight: "36px",
-                fontWeight: "var(--weight-bold)",
-                letterSpacing: "-0.02em",
-                color: "var(--text-primary)",
-              }}
-            >
-              Leave Requests
-            </h1>
+            {heading ?? (
+              <h1
+                style={{
+                  margin: 0,
+                  fontSize: 30,
+                  lineHeight: "36px",
+                  fontWeight: "var(--weight-bold)",
+                  letterSpacing: "-0.02em",
+                  color: "var(--text-primary)",
+                }}
+              >
+                Leave Requests
+              </h1>
+            )}
             <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>
               {`${pending.length} awaiting you \u00b7 ${hrPending.length} with HR \u00b7 ${upcoming.length} approved upcoming`}
             </p>
@@ -1008,7 +1036,7 @@ export function LeaveTabs({
           title="Coverage"
           subtitle={
             focused
-              ? `${scopedToDept ? focusedDept!.name : "All departments"}, around ${
+              ? `${scopedToDept ? focusedDept!.name : "All departments"}${focusedSiteName ? ` at ${focusedSiteName}` : ""}, around ${
                   focused.employee.user?.name ?? "the selected request"
                 }`
               : tab === "pending"

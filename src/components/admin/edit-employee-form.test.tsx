@@ -3,10 +3,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 const updateEmployee = vi.fn(async (_input: unknown) => ({ success: true }));
+const updateHrSiteAccess = vi.fn(async (_input: unknown) => ({ success: true }));
+const updateManagerDepartmentAccess = vi.fn(async (_input: unknown) => ({ success: true }));
 vi.mock("@/actions/admin.actions", () => ({
   updateEmployee: (input: unknown) => updateEmployee(input),
   updateAdditionalSupervisors: vi.fn(),
-  updateHrSiteAccess: vi.fn(),
+  updateHrSiteAccess: (input: unknown) => updateHrSiteAccess(input),
+  updateManagerDepartmentAccess: (input: unknown) => updateManagerDepartmentAccess(input),
 }));
 vi.mock("@/actions/password.actions", () => ({ setTemporaryPassword: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }) }));
@@ -138,5 +141,37 @@ describe("Employee record", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Set temporary password" })).toBeNull();
     expect(setTemporaryPassword).not.toHaveBeenCalled();
+  });
+
+  // HR, 11/16: a Manager sees their reports, and the sites and departments checked here.
+  it("a Manager's Site Access: departments at the checked sites, saved with them", async () => {
+    const rutherford = { id: "s2", name: "0299 Rutherford", timezone: "America/New_York" };
+    render(
+      <EditEmployeeForm
+        {...props}
+        employee={{ ...employee, role: "SUPERVISOR", customRoleId: "mgr" } as never}
+        sites={[site, rutherford] as never[]}
+        departments={[
+          { id: "d1", name: "Shipping", sites: [{ site }] },
+          { id: "d2", name: "Packing", sites: [{ site: rutherford }] },
+        ] as never[]}
+        customRoles={[...props.customRoles, { id: "mgr", name: "Manager", isSystem: true, rank: 1 }]}
+      />,
+    );
+    expect(screen.getByText("Who this manager sees besides the people who report to them")).toBeTruthy();
+    expect(screen.getByText("Nothing checked, so this manager sees only the people who report to them.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByLabelText("0299 Rutherford"));
+    expect(screen.getByText("Everyone at the checked sites, and the people who report to them.")).toBeTruthy();
+    // Only the departments at the checked site are offered.
+    expect(screen.queryByLabelText("Shipping")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Packing"));
+    expect(screen.getByText("The checked departments at the checked sites only, and the people who report to them.")).toBeTruthy();
+
+    fireEvent.submit(control("name").form!);
+    await vi.waitFor(() => expect(updateManagerDepartmentAccess).toHaveBeenCalled());
+    expect(updateHrSiteAccess).toHaveBeenCalledWith({ employeeId: "e1", siteIds: ["s2"] });
+    expect(updateManagerDepartmentAccess).toHaveBeenCalledWith({ employeeId: "e1", departmentIds: ["d2"] });
   });
 });
