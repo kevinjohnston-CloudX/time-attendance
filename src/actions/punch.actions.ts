@@ -2,6 +2,8 @@
 
 import { assertFixerMayChangePunch, assertMissedPunchFix, fixesMissedPunchesOnly, MISSED_PUNCH_ONLY_ERROR } from "@/lib/timecards/missed-punch-fix";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
+import { alertMissedPunchDecided, alertMissedPunchRequested } from "@/lib/push/punch-alerts";
 import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { MISSED_PUNCH_FIXERS, TIMECARD_EDITORS_COMPANY } from "@/lib/rbac/permissions";
@@ -122,6 +124,7 @@ export const requestMissedPunch = withRBAC(
     revalidatePath("/time/punch");
     revalidatePath("/time/history");
     revalidatePath("/supervisor/exceptions");
+    after(() => alertMissedPunchRequested(punch.id));
     return punch;
   }
 );
@@ -222,6 +225,7 @@ export const approveMissedPunch = withRBAC(
     revalidatePath("/time/history");
     revalidatePath("/supervisor/exceptions");
     revalidatePath(`/time/timesheet/${updated.timesheetId!}`);
+    after(() => alertMissedPunchDecided(updated.id));
     return updated;
   }
 );
@@ -257,6 +261,7 @@ export const rejectMissedPunch = withRBAC(
 
     revalidatePath("/time/history");
     revalidatePath("/supervisor/exceptions");
+    after(() => alertMissedPunchDecided(scoped.id));
   }
 );
 
