@@ -71,6 +71,14 @@
     {
       "path": "/api/cron/dispatch-webhooks",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/approval-reminders",
+      "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/cron/approval-summary",
+      "schedule": "0 13 * * 1"
     }
   ]
 }

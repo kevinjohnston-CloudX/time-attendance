@@ -88,6 +88,16 @@ export function approvalEmailText(m: ApprovalEmail, base: string): string {
   return [m.heading, "", m.line, ...(details ? ["", details] : []), "", `${m.button}: ${base}${m.href}`, "", "This is an automated email from CloudTime. Replies are not read."].join("\n");
 }
 
+/**
+ * An address no mail can ever reach: the reserved test endings (RFC 2606 and
+ * 6761) the Demo and Sandbox companies use. Sending there only bounces back
+ * to the support mailbox.
+ */
+export function undeliverable(address: string): boolean {
+  const domain = address.split("@")[1]?.toLowerCase() ?? "";
+  return !domain || /\.(test|example|invalid|localhost)$/.test(domain) || /(^|\.)example\.(com|net|org)$/.test(domain);
+}
+
 /** Sends the email to each of these people on their own. */
 export async function emailUsers(userIds: string[], m: ApprovalEmail): Promise<void> {
   const ids = [...new Set(userIds.filter(Boolean))];
@@ -100,7 +110,7 @@ export async function emailUsers(userIds: string[], m: ApprovalEmail): Promise<v
     await Promise.all(
       people.map(async (p) => {
         const to = (p.workEmail || p.email || "").trim();
-        if (!to) return;
+        if (!to || undeliverable(to)) return;
         try {
           await sendMail({ to: [to], subject: m.subject, html, text });
         } catch (e) {

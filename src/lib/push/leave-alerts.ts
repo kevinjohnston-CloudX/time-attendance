@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { hasPermissionByLegacy } from "@/lib/rbac/permission-resolver";
+import { hrApprovers } from "@/lib/notify/approvers";
 import { emailUsers, leaveDays, leaveHours, type ApprovalEmail } from "@/lib/notify/approval-email";
 import { pushToUsers } from "./send";
 
@@ -96,18 +96,11 @@ export async function alertLeaveWaitingOnHr(leaveRequestId: string, actorEmploye
   const request = await requestWithOwner(leaveRequestId).catch(() => null);
   if (request?.status !== "PENDING_HR" || !request.employee.tenantId) return;
 
-  const candidates = await db.employee.findMany({
-    where: { tenantId: request.employee.tenantId, isActive: true, customRoleId: { not: null }, NOT: { id: { in: [request.employee.id, actorEmployeeId ?? ""] } } },
-    select: { userId: true, customRoleId: true },
-  });
-  // One check per role, not per person: a company has a handful of roles.
-  const roles = [...new Set(candidates.map((c) => c.customRoleId!))];
-  const approving = new Set<string>();
-  for (const role of roles) if (await hasPermissionByLegacy(role, "LEAVE_APPROVE_ANY")) approving.add(role);
+  const approvers = await hrApprovers(request.employee.tenantId, [request.employee.id, actorEmployeeId]);
 
   const name = fullName(request.employee.user?.name);
   await tell(
-    candidates.filter((c) => approving.has(c.customRoleId!)).map((c) => c.userId),
+    approvers.map((a) => a.userId),
     {
       title: "Time off waiting on HR",
       body: `${firstName(request.employee.user?.name)}'s time off request is ready for HR approval.`,

@@ -36,8 +36,9 @@ describe("approval emails", () => {
       { workEmail: "sup@company.com", email: "sup@gmail.com" },
       { workEmail: null, email: "hr@gmail.com" },
       { workEmail: null, email: null },
+      { workEmail: "robin@cloudtime-demo.test", email: null },
     ];
-    await emailUsers(["a", "b", "c"], message);
+    await emailUsers(["a", "b", "c", "d"], message);
     expect(mails.map((m) => m.to)).toEqual([["sup@company.com"], ["hr@gmail.com"]]);
   });
 
@@ -61,8 +62,8 @@ describe("approval emails", () => {
   });
 
   it("finds the site's address from the server settings", () => {
-    expect(appBaseUrl({ AUTH_URL: "http://127.0.0.1:3000/" } as NodeJS.ProcessEnv)).toBe("http://127.0.0.1:3000");
-    expect(appBaseUrl({ VERCEL_PROJECT_PRODUCTION_URL: "time.example.com" } as NodeJS.ProcessEnv)).toBe("https://time.example.com");
+    expect(appBaseUrl({ AUTH_URL: "http://127.0.0.1:3000/" } as unknown as NodeJS.ProcessEnv)).toBe("http://127.0.0.1:3000");
+    expect(appBaseUrl({ VERCEL_PROJECT_PRODUCTION_URL: "time.example.com" } as unknown as NodeJS.ProcessEnv)).toBe("https://time.example.com");
   });
 
   it("writes days, hours and times the way people read them", () => {
