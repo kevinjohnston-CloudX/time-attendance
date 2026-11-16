@@ -141,6 +141,15 @@
 .row:active {
   background: var(--ta-row-hover);
 }
+/* A setting row: nothing to press but its switch. */
+.setting:active {
+  background: none;
+}
+.settingFailure {
+  margin: 8px 4px 0;
+  font: var(--type-body2);
+  color: var(--text-error);
+}
 .rowTile {
   display: grid;
   flex: none;

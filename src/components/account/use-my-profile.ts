@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { signOut } from "next-auth/react";
 import { useRouter } from "@/components/layout/navigation-progress";
-import { loadMyProfile } from "@/actions/profile.actions";
+import { loadMyProfile, setApprovalEmails } from "@/actions/profile.actions";
 import { changeOwnPassword } from "@/actions/password.actions";
 import type { MyProfile } from "@/lib/account/my-profile.service";
 
@@ -112,3 +112,31 @@ export function usePasswordChange() {
 
 export const PASSWORD_RULES = "At least 8 characters, with an uppercase letter, a number and a symbol.";
 export const PASSWORD_AFTER = "You will be signed out on every device, then sign in again with the new password.";
+
+/**
+ * The approval emails switch: shows the new state at once, saves it, and
+ * puts it back with a message if the save fails, so the switch never claims
+ * a setting the server does not have.
+ */
+export function useApprovalEmails(profile: MyProfile | null) {
+  const [on, setOn] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const value = on ?? profile?.approvalEmails ?? true;
+
+  async function change(next: boolean) {
+    if (saving) return;
+    const before = value;
+    setOn(next);
+    setSaving(true);
+    setFailure(null);
+    const r = await setApprovalEmails(next).catch(() => ({ success: false as const, message: "That setting could not be saved. Try again." }));
+    setSaving(false);
+    if (!r.success) {
+      setOn(before);
+      setFailure(r.message);
+    }
+  }
+
+  return { on: value, saving, failure, change };
+}

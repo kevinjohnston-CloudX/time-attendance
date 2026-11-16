@@ -105,6 +105,33 @@
   color: var(--text-primary);
 }
 
+/* A setting: what it is on the left, its switch on the right. */
+.setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.settingText {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.settingTitle {
+  font: var(--weight-medium) 14px/20px var(--font-sans);
+  color: var(--text-primary);
+}
+.settingLine {
+  font: var(--type-body2);
+  color: var(--text-secondary);
+}
+.settingFailure {
+  margin: 0;
+  font: var(--type-body2);
+  color: var(--text-error);
+}
+
 /* Two columns of label over value, so the eye reads down a column the way
    it reads a printed form. */
 .grid {

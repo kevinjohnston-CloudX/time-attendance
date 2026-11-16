@@ -1,6 +1,7 @@
 "use server";
 
 import { auth } from "@/lib/auth";
+import { db } from "@/lib/db";
 import { getMyProfile, type MyProfile } from "@/lib/account/my-profile.service";
 
 /**
@@ -21,5 +22,26 @@ export async function loadMyProfile(): Promise<{ success: true; data: MyProfile 
   } catch (err) {
     console.error("[profile] load failed", err instanceof Error ? err.message : err);
     return { success: false, message: "Your profile could not be opened. Try again." };
+  }
+}
+
+/**
+ * Turns the person's own approval emails on or off (lib/notify). Phone
+ * alerts are not affected.
+ *
+ * <p>Open to anyone signed in, like loading the profile, because it only ever
+ * changes the caller's own sign in: it takes no id, the one it writes comes
+ * from the session.
+ */
+export async function setApprovalEmails(on: boolean): Promise<{ success: true } | { success: false; message: string }> {
+  const session = await auth();
+  if (!session?.user?.id) return { success: false, message: "Your session has ended. Sign in again." };
+  if (typeof on !== "boolean") return { success: false, message: "That setting could not be saved. Try again." };
+  try {
+    await db.user.update({ where: { id: session.user.id }, data: { approvalEmails: on } });
+    return { success: true };
+  } catch (err) {
+    console.error("[profile] approval emails not saved", err instanceof Error ? err.message : err);
+    return { success: false, message: "That setting could not be saved. Try again." };
   }
 }

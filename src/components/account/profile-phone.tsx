@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
-import { ChevronLeft, ChevronRight, KeyRound, QrCode } from "lucide-react";
-import { Banner, Button, Input } from "@/components/ui";
+import { ChevronLeft, ChevronRight, KeyRound, Mail, QrCode } from "lucide-react";
+import { Banner, Button, Input, Switch } from "@/components/ui";
 import {
   NOT_ON_FILE,
   PASSWORD_AFTER,
@@ -11,6 +11,7 @@ import {
   dateWords,
   initials,
   signInMethod,
+  useApprovalEmails,
   useMyProfile,
   usePasswordChange,
 } from "./use-my-profile";
@@ -92,6 +93,7 @@ export function PhoneProfileScreen({
   onLeave: () => void;
 }) {
   const { profile: p, loadError, retry } = useMyProfile();
+  const emails = useApprovalEmails(p);
   const e = p?.employee ?? null;
   const photo = p?.badge?.photo ?? null;
   const loading = !p && !loadError;
@@ -194,6 +196,32 @@ export function PhoneProfileScreen({
             </button>
           )}
         </div>
+      </section>
+
+      <section aria-label="Notifications">
+        <h3 className={styles.groupLabel}>Notifications</h3>
+        <div className={styles.card}>
+          <div className={`${styles.row} ${styles.setting}`}>
+            <span className={styles.rowTile} aria-hidden="true">
+              <Mail />
+            </span>
+            <span className={styles.rowText}>
+              <span className={styles.rowLabel}>Approval emails</span>
+              <span className={styles.rowBody}>Requests, decisions and reminders. Phone alerts stay on.</span>
+            </span>
+            {p ? (
+              <Switch
+                checked={emails.on}
+                disabled={emails.saving}
+                onChange={emails.change}
+                label={<span className="sr-only">Approval emails</span>}
+              />
+            ) : (
+              <span className={styles.wait} style={{ width: 38, height: 22, borderRadius: 999 }} />
+            )}
+          </div>
+        </div>
+        {emails.failure && <p className={styles.settingFailure} role="alert">{emails.failure}</p>}
       </section>
 
       <p className={styles.foot}>To correct any of these details, contact HR.</p>

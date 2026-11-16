@@ -77,7 +77,7 @@ export function approvalEmailHtml(m: ApprovalEmail, base: string): string {
       }
       <a href="${esc(url)}" style="display:inline-block;background:${ACCENT};color:#ffffff;text-decoration:none;font-size:15px;line-height:20px;font-weight:600;padding:12px 20px;border-radius:8px;">${esc(m.button)}</a>
     </div>
-    <p style="margin:16px 4px 0;font-size:12px;line-height:18px;color:${QUIET};">This is an automated email from CloudTime. Replies are not read.</p>
+    <p style="margin:16px 4px 0;font-size:12px;line-height:18px;color:${QUIET};">This is an automated email from CloudTime. Replies are not read. You can turn these emails off in My profile.</p>
   </div>
 </body>
 </html>`;
@@ -85,7 +85,7 @@ export function approvalEmailHtml(m: ApprovalEmail, base: string): string {
 
 export function approvalEmailText(m: ApprovalEmail, base: string): string {
   const details = (m.details ?? []).map(([label, value]) => `${label}: ${value}`).join("\n");
-  return [m.heading, "", m.line, ...(details ? ["", details] : []), "", `${m.button}: ${base}${m.href}`, "", "This is an automated email from CloudTime. Replies are not read."].join("\n");
+  return [m.heading, "", m.line, ...(details ? ["", details] : []), "", `${m.button}: ${base}${m.href}`, "", "This is an automated email from CloudTime. Replies are not read. You can turn these emails off in My profile."].join("\n");
 }
 
 /**
@@ -103,7 +103,8 @@ export async function emailUsers(userIds: string[], m: ApprovalEmail): Promise<v
   const ids = [...new Set(userIds.filter(Boolean))];
   if (ids.length === 0 || !isEmailConfigured()) return;
   try {
-    const people = await db.user.findMany({ where: { id: { in: ids } }, select: { workEmail: true, email: true } });
+    // Someone who turned approval emails off in My profile gets the phone alert only.
+    const people = await db.user.findMany({ where: { id: { in: ids }, approvalEmails: true }, select: { workEmail: true, email: true } });
     const base = appBaseUrl();
     const html = approvalEmailHtml(m, base);
     const text = approvalEmailText(m, base);

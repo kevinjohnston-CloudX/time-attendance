@@ -22,6 +22,10 @@ model User {
   /// A super admin's last company, entered again by itself at the next sign
   /// in. Not a relation on purpose: a removed company is simply skipped.
   lastTenantId        String?
+  /// Approval emails: requests waiting on them, the decision on their own
+  /// requests, and the reminders (lib/notify). On until the person turns
+  /// them off in My profile. Phone alerts are not affected.
+  approvalEmails      Boolean   @default(true)
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 

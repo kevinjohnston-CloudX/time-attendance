@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CreditCard, FileText, IdCard, KeyRound, Printer, UserRound, X } from "lucide-react";
-import { Banner, Button, Input } from "@/components/ui";
+import { Banner, Button, Input, Switch } from "@/components/ui";
 import { Overlay } from "@/components/ui/overlay";
 import { IdBadge } from "@/components/badge/id-badge";
 import { ID_PAPER_BODY, ID_PAPER_LABEL, printIdBadge, type IdBadgePaper } from "@/components/badge/print-id-badge";
-import { NOT_ON_FILE, PASSWORD_AFTER, PASSWORD_RULES, dateWords, initials, signInMethod, useMyProfile, usePasswordChange } from "./use-my-profile";
+import { NOT_ON_FILE, PASSWORD_AFTER, PASSWORD_RULES, dateWords, initials, signInMethod, useApprovalEmails, useMyProfile, usePasswordChange } from "./use-my-profile";
 import frame from "@/components/presence/export-window.module.css";
 import styles from "./profile-window.module.css";
 
@@ -56,6 +56,7 @@ export function ProfileWindow({ onClose }: { onClose: () => void }) {
 
   const { profile, loadError, retry: load } = useMyProfile();
   const pw = usePasswordChange();
+  const emails = useApprovalEmails(profile);
   const { current, setCurrent, next, setNext, confirm, setConfirm, saving, failure, filled } = pw;
 
   const closeRef = useRef(onClose);
@@ -131,7 +132,7 @@ export function ProfileWindow({ onClose }: { onClose: () => void }) {
               {passwordView ? "Change password" : "My profile"}
             </h2>
             <span className={`${frame.subtitle} truncate`}>
-              {passwordView ? "The password you sign in to CloudTime with" : "Your details, badge and sign in"}
+              {passwordView ? "The password you sign in to CloudTime with" : "Your details, badge, sign in and notifications"}
             </span>
           </span>
           <Button hierarchy="tertiary" size="sm" iconOnly onClick={onClose} aria-label="Close">
@@ -294,6 +295,29 @@ export function ProfileWindow({ onClose }: { onClose: () => void }) {
                         ) : undefined}
                       </Cell>
                     </dl>
+                  </div>
+
+                  <div className={styles.section}>
+                    <h3 className={styles.sectionLabel}>Notifications</h3>
+                    <div className={styles.setting}>
+                      <span className={styles.settingText}>
+                        <span className={styles.settingTitle}>Approval emails</span>
+                        <span className={styles.settingLine}>
+                          Requests waiting on you, decisions on your own requests, and reminders. Phone alerts stay on.
+                        </span>
+                      </span>
+                      {p ? (
+                        <Switch
+                          checked={emails.on}
+                          disabled={emails.saving}
+                          onChange={emails.change}
+                          label={<span className="sr-only">Approval emails</span>}
+                        />
+                      ) : (
+                        <span className={styles.wait} style={{ width: 38, height: 22, borderRadius: 999 }} />
+                      )}
+                    </div>
+                    {emails.failure && <p className={styles.settingFailure} role="alert">{emails.failure}</p>}
                   </div>
                 </>
               )}

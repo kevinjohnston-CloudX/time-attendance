@@ -18,6 +18,8 @@ export type MyProfile = {
   personalEmail: string | null;
   /** False for a Google only sign in, which has no CloudTime password to change. */
   hasPassword: boolean;
+  /** Approval emails (lib/notify): on until the person turns them off here. */
+  approvalEmails: boolean;
   /** Null for a sign in with no employee record (a super admin, for one). */
   employee: {
     employeeId: string;
@@ -60,7 +62,7 @@ function addressLines(p: {
 export async function getMyProfile(userId: string, employeeId: string | null | undefined): Promise<MyProfile | null> {
   const user = await db.user.findUnique({
     where: { id: userId },
-    select: { name: true, username: true, email: true, workEmail: true, passwordHash: true },
+    select: { name: true, username: true, email: true, workEmail: true, passwordHash: true, approvalEmails: true },
   });
   if (!user) return null;
 
@@ -100,6 +102,7 @@ export async function getMyProfile(userId: string, employeeId: string | null | u
     workEmail: user.workEmail?.trim() || null,
     personalEmail: user.email?.trim() || null,
     hasPassword: !!user.passwordHash,
+    approvalEmails: user.approvalEmails,
     employee: pii
       ? {
           employeeId: pii.employeeCode,
