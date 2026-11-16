@@ -14,7 +14,7 @@ const state = vi.hoisted(() => ({
 vi.mock("@/lib/db", () => ({
   db: {
     user: {
-      findUnique: async () => ({ name: "Alex Rivera", username: null, email: "alex@home.test", workEmail: null, passwordHash: "x" }),
+      findUnique: async () => ({ name: "Alex Rivera", username: null, email: "alex@home.test", workEmail: null, passwordHash: "x", approvalEmails: true, accounts: [{ provider: "microsoft-entra-id" }] }),
     },
     employee: {
       findFirst: async (args: { where: unknown; select: Record<string, unknown> }) => {
@@ -86,5 +86,8 @@ describe("getMyProfile", () => {
     const p = await getMyProfile("u1", null);
     expect(p?.employee).toBeNull();
     expect(p?.hasPassword).toBe(true);
+    // The outside accounts it has signed in with, by the name people know.
+    expect(p?.linkedAccounts).toEqual(["microsoft"]);
+    expect(p?.approvalEmails).toBe(true);
   });
 });
