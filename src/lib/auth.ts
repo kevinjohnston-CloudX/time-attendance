@@ -2,6 +2,7 @@ import NextAuth, { CredentialsSignin } from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
+import MicrosoftEntraId from "next-auth/providers/microsoft-entra-id";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -14,6 +15,8 @@ import { redeemAppSigninCode } from "@/lib/app-signin";
 import { mailAddress } from "@/lib/login-email";
 import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
 import { cookies } from "next/headers";
+import { MICROSOFT_PROVIDER, microsoftAddresses, microsoftIssuer, microsoftSignInOffered, signInRefused } from "@/lib/microsoft-signin";
+import { microsoftSignIn } from "@/lib/microsoft-signin.server";
 
 /**
  * The company a super admin has entered, from its cookie. Null when there is
@@ -57,6 +60,30 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // several Google accounts has no way to pick their work one.
       authorization: { params: { prompt: "select_account" } },
     }),
+    // Microsoft, beside Google: loaded only once its keys are set, and the
+    // sign in page offers the button only then (lib/microsoft-signin.ts).
+    ...(microsoftSignInOffered()
+      ? [
+          MicrosoftEntraId({
+            clientId: process.env.AZURE_AD_CLIENT_ID!,
+            clientSecret: process.env.AZURE_AD_CLIENT_SECRET!,
+            issuer: microsoftIssuer(),
+            // The account chooser every time, as for Google: a browser signed
+            // in to a personal Microsoft account would otherwise reuse it.
+            // Only the name and address are asked for, so the consent screen
+            // asks for nothing more (no profile photo, no directory read).
+            authorization: { params: { scope: "openid profile email", prompt: "select_account" } },
+            profile(profile) {
+              return {
+                id: profile.sub,
+                name: profile.name ?? null,
+                email: microsoftAddresses(profile)?.[0] ?? null,
+                image: null,
+              };
+            },
+          }),
+        ]
+      : []),
     // Kept for super-admin and emergency access only
     Credentials({
       async authorize(credentials, request) {
@@ -138,20 +165,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (account?.provider === "google") {
         // Only an address Google has confirmed belongs to the account signs
         // someone in by it, as CXT checks (security audit 2026-11).
-        if ((profile as { email_verified?: boolean } | undefined)?.email_verified !== true) return false;
+        if ((profile as { email_verified?: boolean } | undefined)?.email_verified !== true) return signInRefused("Refused", "google");
         const email = profile?.email ?? "";
         const domain = email.split("@")[1]?.toLowerCase() ?? "";
         if (allowedDomains.length > 0 && !allowedDomains.includes(domain)) {
-          return false;
+          return signInRefused("Refused", "google");
         }
         // Only allow Google sign-in for users the admin has already registered,
         // by either of their two emails, ignoring capitals: Google sends the
         // address lowercase, the record may not be.
         const existingId = await findLoginUserId(email, { email: true });
-        if (!existingId) return false;
+        if (!existingId) return signInRefused("NotSetUp", "google");
         // A visitor never signs in (client-badge.ts).
         const visitor = await db.employee.findFirst({ where: { userId: existingId }, select: { wmsId: true } });
-        if (isClientBadge(visitor?.wmsId)) return false;
+        if (isClientBadge(visitor?.wmsId)) return signInRefused("Refused", "google");
 
         // If no Account row exists yet, create it now so NextAuth doesn't
         // throw OAuthAccountNotLinked for users provisioned outside OAuth
@@ -175,6 +202,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           });
         }
       }
+
+      if (account?.provider === MICROSOFT_PROVIDER) {
+        // Only a person HR registered, matched safely, and each Microsoft
+        // account linked to one person (lib/microsoft-signin.server.ts).
+        const refused = await microsoftSignIn(profile, account);
+        if (refused) return refused;
+      }
       return true;
     },
 
@@ -185,8 +219,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // notice opens again after every sign in).
         token.signInId = crypto.randomUUID();
         token.signedInAt = Date.now();
-        if (account?.provider === "google" || !(user as { role?: string }).role) {
-          // Google sign-in: look up employee from DB
+        if (account?.provider === "google" || account?.provider === MICROSOFT_PROVIDER || !(user as { role?: string }).role) {
+          // Google or Microsoft sign-in: look up employee from DB
           const fullUser = await db.user.findUnique({
             where: { id: user.id! },
             include: { employee: { include: { customRole: { select: { canViewAs: true } } } } },

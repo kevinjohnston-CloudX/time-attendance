@@ -44,6 +44,9 @@ export { SESSION_ENDED_HREF };
 export const authConfig = {
   pages: {
     signIn: "/login",
+    // A Google or Microsoft sign in that does not finish comes back to the
+    // sign in page, which says why, not to the library's bare error page.
+    error: "/login",
   },
   cookies: localCookies,
   // The proxy re-signs the cookie on every request from THIS config. Without
