@@ -16,8 +16,10 @@ export type MyProfile = {
   username: string | null;
   workEmail: string | null;
   personalEmail: string | null;
-  /** False for a Google only sign in, which has no CloudTime password to change. */
+  /** False for a Google or Microsoft only sign in, which has no CloudTime password to change. */
   hasPassword: boolean;
+  /** The outside accounts this sign in has used: "google", "microsoft". */
+  linkedAccounts: ("google" | "microsoft")[];
   /** Approval emails (lib/notify): on until the person turns them off here. */
   approvalEmails: boolean;
   /** Null for a sign in with no employee record (a super admin, for one). */
@@ -62,7 +64,15 @@ function addressLines(p: {
 export async function getMyProfile(userId: string, employeeId: string | null | undefined): Promise<MyProfile | null> {
   const user = await db.user.findUnique({
     where: { id: userId },
-    select: { name: true, username: true, email: true, workEmail: true, passwordHash: true, approvalEmails: true },
+    select: {
+      name: true,
+      username: true,
+      email: true,
+      workEmail: true,
+      passwordHash: true,
+      approvalEmails: true,
+      accounts: { select: { provider: true } },
+    },
   });
   if (!user) return null;
 
@@ -102,6 +112,9 @@ export async function getMyProfile(userId: string, employeeId: string | null | u
     workEmail: user.workEmail?.trim() || null,
     personalEmail: user.email?.trim() || null,
     hasPassword: !!user.passwordHash,
+    linkedAccounts: (["google", "microsoft"] as const).filter((k) =>
+      user.accounts.some((a) => a.provider === (k === "google" ? "google" : "microsoft-entra-id")),
+    ),
     approvalEmails: user.approvalEmails,
     employee: pii
       ? {

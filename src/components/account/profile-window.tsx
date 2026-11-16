@@ -6,7 +6,7 @@ import { Banner, Button, Input, Switch } from "@/components/ui";
 import { Overlay } from "@/components/ui/overlay";
 import { IdBadge } from "@/components/badge/id-badge";
 import { ID_PAPER_BODY, ID_PAPER_LABEL, printIdBadge, type IdBadgePaper } from "@/components/badge/print-id-badge";
-import { NOT_ON_FILE, PASSWORD_AFTER, PASSWORD_RULES, dateWords, initials, signInMethod, useApprovalEmails, useMyProfile, usePasswordChange } from "./use-my-profile";
+import { NOT_ON_FILE, PASSWORD_AFTER, PASSWORD_RULES, dateWords, initials, passwordKeeper, signInMethod, useApprovalEmails, useMyProfile, usePasswordChange } from "./use-my-profile";
 import frame from "@/components/presence/export-window.module.css";
 import styles from "./profile-window.module.css";
 
@@ -282,7 +282,7 @@ export function ProfileWindow({ onClose }: { onClose: () => void }) {
                         value={p ? signInMethod(p) : undefined}
                         loading={!p}
                       />
-                      <Cell label="Password" value={p && !p.hasPassword ? "Managed by Google" : undefined} loading={!p}>
+                      <Cell label="Password" value={p && !p.hasPassword ? passwordKeeper(p) : undefined} loading={!p}>
                         {p?.hasPassword ? (
                           <Button
                             hierarchy="secondary"

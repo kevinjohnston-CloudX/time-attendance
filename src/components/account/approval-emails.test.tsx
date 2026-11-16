@@ -14,7 +14,7 @@ const saves: boolean[] = [];
 vi.mock("@/actions/profile.actions", () => ({
   loadMyProfile: async () => ({
     success: true,
-    data: { name: "Maria Lopez", username: null, workEmail: "maria@x.com", personalEmail: null, hasPassword: true, approvalEmails: saved, employee: null, badge: null },
+    data: { name: "Maria Lopez", username: null, workEmail: "maria@x.com", personalEmail: null, hasPassword: true, linkedAccounts: [], approvalEmails: saved, employee: null, badge: null },
   }),
   setApprovalEmails: async (on: boolean) => {
     saves.push(on);

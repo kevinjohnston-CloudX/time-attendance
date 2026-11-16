@@ -27,8 +27,21 @@ export function dateWords(iso: string | null): string | null {
   return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
 
+/** Who keeps the password of someone with none in CloudTime: the account they sign in with. */
+function outsideAccount(p: MyProfile): string {
+  const google = p.linkedAccounts.includes("google");
+  const microsoft = p.linkedAccounts.includes("microsoft");
+  // Neither used yet (set up without a password, never signed in): either one works.
+  return google === microsoft ? "Google or Microsoft" : google ? "Google" : "Microsoft";
+}
+
 export function signInMethod(p: MyProfile): string {
-  return p.hasPassword ? "Email and password" : "Google account";
+  return p.hasPassword ? "Email and password" : `${outsideAccount(p)} account`;
+}
+
+/** The Password row for someone with no CloudTime password. */
+export function passwordKeeper(p: MyProfile): string {
+  return `Managed by ${outsideAccount(p)}`;
 }
 
 /** The person's own profile, loaded once when the window or screen opens. */
