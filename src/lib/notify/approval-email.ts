@@ -23,7 +23,7 @@ export type ApprovalEmail = {
   /** Label and value rows, in order. Values are escaped here. */
   details?: [string, string][];
   button: string;
-  /** The CloudTime page the button opens, as a path ("/supervisor/leave"). */
+  /** The CloudTime page the button opens, as a path ("/approvals"). */
   href: string;
 };
 

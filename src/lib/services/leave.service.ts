@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { companyDataProtection, leaveTypeTakesNoNote, noteKeptOut } from "@/lib/privacy/data-protection";
 import { shiftMeal } from "@/lib/shift-meal";
 import { validateLeaveTransition } from "@/lib/state-machines/leave-state";
-import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
+import { placeLeave } from "@/lib/engines/leave-recalc";
 import { pendingCarrySeconds, reverseLeaveUsage } from "@/lib/engines/accrual-engine";
 import { hoursToSeconds, secondsToHours } from "@/lib/leave-time";
 import { writeAuditLog } from "@/lib/audit/logger";
@@ -366,7 +366,7 @@ export async function cancelLeaveRequestCore(
     await reverseLeaveUsage(leaveRequestId);
   }
 
-  await syncLeaveSegments(leaveRequestId);
+  await placeLeave(leaveRequestId);
 
   return updated;
 }

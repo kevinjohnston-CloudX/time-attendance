@@ -1,0 +1,103 @@
+/// A supervisor's timecard changes, saved together, waiting for HR (11/11).
+///
+/// <p>Where a site lets supervisors edit timecards (Site.supervisorTimecardEdits),
+/// what a supervisor saves is not applied: it is kept here, one request per
+/// Save, until HR approves it. Approving applies the items through the same
+/// actions HR's own changes go through, so the hours, rounding, exceptions and
+/// history come out as if HR had made them. Until then the timecard, its hours
+/// and payroll are as they were; the timecard shows the items as pending.
+model TimecardEditRequest {
+  id            String              @id @default(cuid())
+  tenantId      String
+  timesheetId   String
+  /// The supervisor (an employee id).
+  submittedById String
+  /// Why, as the supervisor gave it. HR reads it beside the changes.
+  reason        String
+  status        TimecardEditStatus  @default(PENDING)
+  decidedById   String?
+  decidedAt     DateTime?
+  /// HR's note to the supervisor, on a rejection.
+  decisionNote  String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  timesheet   Timesheet          @relation(fields: [timesheetId], references: [id], onDelete: Cascade)
+  submittedBy Employee           @relation("TimecardEditSubmitter", fields: [submittedById], references: [id])
+  items       TimecardEditItem[]
+
+  @@index([tenantId, status])
+  @@index([timesheetId, status])
+  @@map("timecard_edit_requests")
+}
+
+/// One change in a request. Revised in place while it is pending: a time typed
+/// wrong and put right before HR looks is one item with the right time (the
+/// audit log keeps both).
+model TimecardEditItem {
+  id        String                 @id @default(cuid())
+  requestId String
+  kind      TimecardEditKind
+  /// The punch changed or removed (CHANGE_PUNCH, REMOVE_PUNCH), or the
+  /// employee's own missed punch request approved (APPROVE_REQUEST).
+  punchId   String?
+  /// The exception an APPROVE_REQUEST answers.
+  exceptionId String?
+  /// ADD_PUNCH: CLOCK_IN or CLOCK_OUT.
+  punchType String?
+  /// The moment: the punch added (ADD_PUNCH), its new time (CHANGE_PUNCH), or
+  /// the clock in of Add time (ADD_PAIR).
+  at        DateTime?
+  /// ADD_PAIR's clock out.
+  endAt     DateTime?
+  /// What it was: the punch's time when the change was sent (CHANGE_PUNCH,
+  /// REMOVE_PUNCH), so HR reads "7:31 AM to 7:30 AM".
+  before    DateTime?
+  /// The person's own day, at midnight UTC (as a segment's date is).
+  day       DateTime               @db.Date
+  /// ADD_HOURS: the hours, in minutes.
+  minutes   Int?
+  /// MEAL_WAIVER: true waives the day's meal, false takes the waiver back.
+  waive     Boolean?
+  status    TimecardEditItemStatus @default(PENDING)
+  /// Why applying it failed, for HR, when it could not be applied as approved.
+  error     String?
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+
+  request TimecardEditRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+  @@index([punchId])
+  @@map("timecard_edit_items")
+}
+
+enum TimecardEditStatus {
+  /// Something in it still waits for HR.
+  PENDING
+  /// HR approved or rejected every item still pending.
+  DECIDED
+  /// The supervisor took back every item.
+  WITHDRAWN
+}
+
+enum TimecardEditKind {
+  ADD_PUNCH
+  CHANGE_PUNCH
+  REMOVE_PUNCH
+  /// Add time: a clock in and clock out.
+  ADD_PAIR
+  /// Add time: a number of hours.
+  ADD_HOURS
+  MEAL_WAIVER
+  APPROVE_REQUEST
+}
+
+enum TimecardEditItemStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  WITHDRAWN
+  /// Approved, but applying it was refused (the timecard changed meanwhile).
+  FAILED
+}

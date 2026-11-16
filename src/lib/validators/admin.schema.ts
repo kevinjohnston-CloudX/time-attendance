@@ -193,6 +193,9 @@ export const siteSchema = z.object({
 export const updateSiteSchema = siteSchema.extend({
   siteId: z.string().min(1),
   isActive: z.boolean().optional(),
+  // Supervisors may edit the timecards of the people here, each change going
+  // to HR for approval (lib/timecards/supervisor-edits).
+  supervisorTimecardEdits: z.boolean().optional(),
 });
 
 export const departmentSchema = z.object({

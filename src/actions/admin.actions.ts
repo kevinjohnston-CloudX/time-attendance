@@ -91,6 +91,8 @@ async function assertOwnAssignments(
 const SYSTEM_ROLE_NAME_TO_ENUM: Record<string, string> = {
   "Employee": "EMPLOYEE",
   "Supervisor": "SUPERVISOR",
+  // Supervisor's built-in role and rank, more permissions (manager-role.ts).
+  "Manager": "SUPERVISOR",
   "Payroll Admin": "PAYROLL_ADMIN",
   "HR Admin": "HR_ADMIN",
   "System Admin": "SYSTEM_ADMIN",
@@ -1234,6 +1236,54 @@ export const updateHrSiteAccess = withRBAC(
   }
 );
 
+// ─── Manager departments ──────────────────────────────────────────────────────
+
+/** The departments a Manager sees everyone in, at their sites (manager-role.ts). */
+export const getManagerDepartmentAccess = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async (actor, { employeeId }: { employeeId: string }) => {
+    const { tenantId } = actor;
+    if (!tenantId) throw new Error("NOT_FOUND");
+    await assertRecordInReach(actor, employeeId);
+    const rows = await db.managerDepartmentAccess.findMany({
+      where: { employeeId, employee: { tenantId } },
+      select: { departmentId: true },
+    });
+    return rows.map((r) => r.departmentId);
+  }
+);
+
+/**
+ * Replaces a Manager's departments. Who may, as for site access: HR and
+ * System Admins, not someone ranked above them. Kept for anyone, read only
+ * while they are on the Manager role.
+ */
+export const updateManagerDepartmentAccess = withRBAC(
+  "EMPLOYEE_MANAGE",
+  async (actor, input: { employeeId: string; departmentIds: string[] }) => {
+    const { tenantId, role: actorRole } = actor;
+    const { employeeId, departmentIds } = z.object({
+      employeeId: z.string().min(1),
+      departmentIds: z.array(z.string().min(1)).max(500),
+    }).parse(input);
+    if (actorRole !== "SYSTEM_ADMIN" && actorRole !== "HR_ADMIN" && actorRole !== "SUPER_ADMIN") {
+      throw new Error("Only HR Admin or System Admin users can edit a manager's departments.");
+    }
+    if (!tenantId) throw new Error("NOT_FOUND");
+    await assertRecordInReach(actor, employeeId);
+    await assertNotSenior(actor, employeeId);
+    // This company's departments only: the ids come from the browser.
+    const valid = await db.department.findMany({ where: { tenantId, id: { in: departmentIds } }, select: { id: true } });
+    const ids = valid.map((d) => d.id);
+    await db.$transaction([
+      db.managerDepartmentAccess.deleteMany({ where: { employeeId } }),
+      ...(ids.length > 0 ? [db.managerDepartmentAccess.createMany({ data: ids.map((departmentId) => ({ employeeId, departmentId })) })] : []),
+    ]);
+    revalidatePath("/admin/employees");
+    return { departmentIds: ids };
+  }
+);
+
 // ─── Additional supervisors ───────────────────────────────────────────────────
 
 /**
@@ -1474,10 +1524,10 @@ export const updateSite = withRBAC(
   "SITE_MANAGE",
   async ({ employeeId: actorId, tenantId }, input: UpdateSiteInput) => {
     if (!tenantId) throw new Error("Tenant context required");
-    const { siteId, isActive, address, primaryLanguage, additionalLanguages, ...rest } = updateSiteSchema.parse(input);
+    const { siteId, isActive, address, primaryLanguage, additionalLanguages, supervisorTimecardEdits, ...rest } = updateSiteSchema.parse(input);
     // Found inside this company first: an id from another one answers the
     // same "not found" as an id that does not exist.
-    const own = await db.site.findFirst({ where: { id: siteId, tenantId }, select: { id: true } });
+    const own = await db.site.findFirst({ where: { id: siteId, tenantId }, select: { id: true, supervisorTimecardEdits: true } });
     if (!own) throw new Error("NOT_FOUND");
     const updated = await db.site.update({
       where: { id: own.id },
@@ -1490,6 +1540,7 @@ export const updateSite = withRBAC(
         // Informational for now. The others never repeat the primary.
         ...(primaryLanguage !== undefined && { primaryLanguage }),
         ...(additionalLanguages !== undefined && { additionalLanguages: cleanLanguages(primaryLanguage, additionalLanguages) }),
+        ...(supervisorTimecardEdits !== undefined && { supervisorTimecardEdits }),
       },
     });
     await writeAuditLog({
@@ -1498,6 +1549,10 @@ export const updateSite = withRBAC(
       entityType: "EMPLOYEE",
       entityId: siteId,
       action: "SITE_UPDATED",
+      // Who let supervisors edit timecards here, or stopped them, and when.
+      ...(supervisorTimecardEdits !== undefined && supervisorTimecardEdits !== own.supervisorTimecardEdits
+        ? { changes: { field: "Supervisors can edit timecards", before: own.supervisorTimecardEdits, after: supervisorTimecardEdits } }
+        : {}),
     });
     // Its tablets offer the new languages straight away on this server.
     forgetTabletLanguages(tenantId);

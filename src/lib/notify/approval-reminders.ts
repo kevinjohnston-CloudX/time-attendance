@@ -93,13 +93,13 @@ export async function remindTimeOffStartingSoon(now: Date, { send }: { send: boo
       const sup = r.employee.supervisor;
       if (sup?.isActive && sup.userId) userIds = [sup.userId];
       waitingFor = "your approval";
-      href = "/supervisor/leave";
+      href = "/approvals?view=leave";
     } else {
       const tenantId = r.employee.tenantId;
       if (!hrByCompany.has(tenantId)) hrByCompany.set(tenantId, await hrApprovers(tenantId));
       userIds = hrByCompany.get(tenantId)!.filter((a) => a.employeeId !== r.employee.id).map((a) => a.userId);
       waitingFor = "HR approval";
-      href = "/supervisor/leave?tab=hr-pending";
+      href = "/approvals?view=leave&tab=hr-pending";
     }
     if (userIds.length === 0) continue;
 

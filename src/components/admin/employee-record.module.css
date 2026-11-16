@@ -393,6 +393,14 @@
   gap: 4px 16px;
 }
 
+/* Sites, then Departments, on a Manager's Site Access card. */
+.subLabel {
+  font: var(--type-label, inherit);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
 /* ── Change history ───────────────────────────────────────────── */
 
 .historyBar {

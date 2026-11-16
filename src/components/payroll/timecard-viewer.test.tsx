@@ -2,11 +2,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 
-const { fn, addManualPunches, ensureTimesheet } = vi.hoisted(() => ({
+const { fn, addManualPunches, ensureTimesheet, submitTimecardEdits, withdrawTimecardEdit, decideTimesheetEdits } = vi.hoisted(() => ({
   fn: () => vi.fn(async () => ({ success: true, data: {} })),
   addManualPunches: vi.fn(async () => ({ success: true, data: undefined })),
   ensureTimesheet: vi.fn(async () => ({ success: true, data: { timesheetId: "t1" } })),
+  submitTimecardEdits: vi.fn(async () => ({ success: true, data: { requestId: "r9", timesheetId: "t1" } })),
+  withdrawTimecardEdit: vi.fn(async () => ({ success: true, data: undefined })),
+  decideTimesheetEdits: vi.fn(async () => ({ success: true, data: { approved: 1, rejected: 1, failed: [] } })),
 }));
+vi.mock("@/actions/timecard-edit.actions", () => ({ submitTimecardEdits, withdrawTimecardEdit, decideTimesheetEdits, reviseTimecardEdit: vi.fn(async () => ({ success: true, data: undefined })) }));
 vi.mock("@/actions/punch.actions", () => ({ correctPunch: fn(), deletePunch: fn() }));
 vi.mock("@/actions/timesheet.actions", () => ({ toggleMealWaiver: fn(), toggleMealPremiumWaiver: fn(), authorizeTimecardOt: fn(), recalculateSegmentsAdmin: fn() }));
 vi.mock("@/actions/timecard-entry.actions", () => ({ removePayrollLeaveEntry: fn(), getLeaveTypesForTimecard: vi.fn(async () => ({ success: true, data: [] })), saveTimesheetNote: fn(), addManualPunchPair: fn(), addManualPunches, deleteManualPunchPair: fn(), addManualHoursEntry: fn() }));
@@ -158,16 +162,19 @@ describe("the summary of a period with unpaid leave", () => {
     expect(cells(/^Totals$/)).toEqual(["Totals", "8.00", "—", "—", "16.00", "24.00", "$15.00", "$120.00", "—", "—", "$120.00"]);
     vi.useRealTimers();
   });
-});
 
-// Bergen's supervisors, 11/05: HR wanted them to correct missed punches and
-// make no other change to a timecard. 11/10: on rows of regular hours only,
-// with meal waivers but not meal premium waivers, and no Add time.
-describe("a supervisor allowed only to fix missed punches", () => {
-  const punch = (id: string, punchType: string, roundedTime: string, payCodeId: string | null = null) => ({ id, punchType, roundedTime, source: "TABLET", payCodeId });
-  // Tuesday's shift, 8:00 AM to 4:30 PM Eastern, worked out.
-  const tuesdayWork = { id: "w2", segmentType: "WORK", startTime: "2026-10-13T12:00:00.000Z", endTime: "2026-10-13T20:30:00.000Z", durationMinutes: 510, segmentDate: "2026-10-13T00:00:00.000Z", payBucket: "REGULAR", payBucketOverride: null, isPaid: true, payCode: null };
-  function renderFixer(o: { mealConfig?: object; segments?: object[]; punches?: object[] } = {}) {
+  // 11/12: HR enters FMLA as two lines on a day, the FMLA hours and the same
+  // hours as Unpaid Time Off. Only the first showed until the day was opened,
+  // and the summary paid the FMLA hours though FMLA is Not paid.
+  it("shows both lines of an FMLA day, and pays neither", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-21T16:00:00Z"));
+    const fmla = { id: "pc11", code: 11, label: "FMLA", isPaid: false };
+    const uto = { id: "pc13", code: 13, label: "Unpaid time off" };
+    const seg = (id: string, type: string, isPaid: boolean, payBucket: string, payCode: object) => ({
+      id, segmentType: type, startTime: "2026-10-19T04:00:00.000Z", endTime: "2026-10-19T12:00:00.000Z", durationMinutes: 480,
+      segmentDate: "2026-10-19T00:00:00.000Z", payBucket, payBucketOverride: null, isPaid, payCode,
+    });
     render(
       <TimecardViewer
         payPeriods={[{ id: "p1", startDate: "2026-10-11T00:00:00.000Z", endDate: "2026-10-25T00:00:00.000Z", status: "OPEN" }]}
@@ -175,8 +182,61 @@ describe("a supervisor allowed only to fix missed punches", () => {
         employees={[{ employeeId: "e1", name: "Test Person", employeeCode: "T1", wmsId: "605247", department: "Vas", siteId: "s1", siteName: "Site", isActive: true, payType: "HOURLY" }]}
         selectedEmployeeId="e1"
         timecard={{
+          timesheetId: "t1", status: "OPEN", otAuthorized: false, exceptionCount: 0, exceptions: [],
+          payPeriod: { startDate: "2026-10-11T00:00:00.000Z", endDate: "2026-10-25T00:00:00.000Z", status: "OPEN" },
+          employee: {
+            user: { name: "Test Person" }, department: { name: "Vas" }, employeeCode: "T1", wmsId: "605247", payRate: 22, payType: "HOURLY", startedOn: "2020-01-01", shift: null,
+            ruleSet: { overtimeRequiresAuth: false, allowTimesheetOtAuth: false, defaultPayCodeId: null },
+          },
+          punches: [],
+          segments: [
+            seg("w1", "WORK", true, "REG", fmla),
+            { ...seg("l1", "LEAVE", false, "UNPAID", uto), leaveRequest: { id: "lr1", leaveType: { name: "UnPaid Time Off", category: "UNPAID", payCode: uto } } },
+          ] as never,
+          overtimeBuckets: [], mealWaivers: [], mealPremiumWaivers: [], notes: [], dayReasons: [],
+        }}
+        payFrequency="BIWEEKLY"
+        payCodes={[fmla, uto]}
+        reasonCodes={[]}
+        sites={[]}
+        selectedSiteId={null}
+        departments={[]}
+        selectedDepartmentId={null}
+        userRole="SYSTEM_ADMIN"
+        siteTimezone="America/New_York"
+      />,
+    );
+    // The Unpaid Time Off line shows under the FMLA day without opening it.
+    expect(document.querySelectorAll("tr[data-row=\"leave\"]").length).toBe(1);
+    const rows = screen.getAllByRole("row");
+    const cells = (label: RegExp) => [...rows.find((r) => r.querySelector("td") && label.test(r.querySelector("td")!.textContent ?? ""))!.querySelectorAll("td")].map((c) => c.textContent);
+    // FMLA is Not paid: under Unpaid, no pay, as the payroll file has it.
+    expect(cells(/^FMLA/)).toEqual(["FMLA (11)", "—", "—", "—", "8.00", "8.00", "$22.00", "—", "—", "—", "$0.00"]);
+    vi.useRealTimers();
+  });
+});
+
+// Bergen's supervisors, 11/11: where the person's site lets supervisors edit
+// timecards, they change rows of regular hours as HR does and Save sends the
+// changes to HR for approval; elsewhere the timecard is read only to them.
+// Each renders the whole timecard; under a full run some take over 5 seconds.
+describe("a supervisor whose changes go to HR", { timeout: 20_000 }, () => {
+  const punch = (id: string, punchType: string, roundedTime: string, payCodeId: string | null = null) => ({ id, punchType, roundedTime, source: "TABLET", payCodeId });
+  // Tuesday's shift, 8:00 AM to 4:30 PM Eastern, worked out.
+  const tuesdayWork = { id: "w2", segmentType: "WORK", startTime: "2026-10-13T12:00:00.000Z", endTime: "2026-10-13T20:30:00.000Z", durationMinutes: 510, segmentDate: "2026-10-13T00:00:00.000Z", payBucket: "REGULAR", payBucketOverride: null, isPaid: true, payCode: null };
+  const waiting = (items: object[], status = "PENDING") => [{ id: "r1", status, submittedBy: "Flavio Morales", createdAt: "2026-10-15T14:00:00.000Z", reason: "Forgot to punch", decisionNote: null, items }];
+  const item = (id: string, extra: object) => ({ id, status: "PENDING", error: null, punchId: null, punchType: null, at: null, endAt: null, minutes: null, waive: null, ...extra });
+  function renderSup(o: { mealConfig?: object; segments?: object[]; punches?: object[]; editRequests?: object[]; off?: boolean; hr?: boolean; premiums?: boolean; timecard?: null; period?: string } = {}) {
+    render(
+      <TimecardViewer
+        payPeriods={[{ id: "p1", startDate: "2026-10-11T00:00:00.000Z", endDate: "2026-10-25T00:00:00.000Z", status: o.period ?? "OPEN" }]}
+        selectedPeriodId="p1"
+        employees={[{ employeeId: "e1", name: "Test Person", employeeCode: "T1", wmsId: "605247", department: "Vas", siteId: "s1", siteName: "Site", isActive: true, payType: "HOURLY" }]}
+        selectedEmployeeId="e1"
+        timecard={o.timecard === null ? null : {
           timesheetId: "t1", status: "OPEN", otAuthorized: false, exceptionCount: 1,
-          // Clocked in Monday at 8:00 AM and never out; Tuesday is a whole shift.
+          // Sunday a shift HR put on overtime; Monday clocked in at 8:00 AM
+          // and never out; Tuesday a whole shift of regular hours.
           exceptions: [{ id: "x1", exceptionType: "MISSING_PUNCH", occurredAt: "2026-10-12T12:00:00.000Z" }],
           payPeriod: { startDate: "2026-10-11T00:00:00.000Z", endDate: "2026-10-25T00:00:00.000Z", status: "OPEN" },
           employee: {
@@ -184,6 +244,8 @@ describe("a supervisor allowed only to fix missed punches", () => {
             ruleSet: { overtimeRequiresAuth: false, allowTimesheetOtAuth: false, defaultPayCodeId: null },
           },
           punches: (o.punches ?? [
+            punch("i0", "CLOCK_IN", "2026-10-11T12:00:00.000Z", "pcOt"),
+            punch("o0", "CLOCK_OUT", "2026-10-11T16:00:00.000Z"),
             punch("i1", "CLOCK_IN", "2026-10-12T12:00:00.000Z"),
             punch("i2", "CLOCK_IN", "2026-10-13T12:00:00.000Z"),
             punch("o2", "CLOCK_OUT", "2026-10-13T20:30:00.000Z"),
@@ -197,139 +259,191 @@ describe("a supervisor allowed only to fix missed punches", () => {
         selectedSiteId={null}
         departments={[]}
         selectedDepartmentId={null}
-        userRole="SUPERVISOR"
-        missedPunchesOnly
+        userRole={o.hr ? "HR_ADMIN" : "SUPERVISOR"}
+        readOnly={!o.hr && !!o.off}
+        sendsForApproval={!o.hr && !o.off}
+        supervisorEditsOff={!o.hr && !!o.off}
+        waivesMealPremiums={o.premiums ?? true}
+        editRequests={(o.editRequests ?? []) as never}
         siteTimezone="America/New_York"
       />,
     );
   }
+  const row = (label: RegExp) => screen.getAllByRole("row").find((r) => label.test(r.textContent ?? ""))!;
+  const times = (label: RegExp) => [...row(label).querySelectorAll("button")].filter((b) => /AM|PM/.test(b.textContent ?? ""));
+  const at = (iso: string) => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date(iso)); };
+  afterEach(() => { vi.useRealTimers(); });
 
-  it("adds the missing clock out, and changes nothing else", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-10-15T16:00:00Z"));
-    addManualPunches.mockClear();
-    renderFixer();
-    const row = (label: RegExp) => screen.getAllByRole("row").find((r) => label.test(r.textContent ?? ""))!;
-    expect(screen.getByText("Missed punches only")).not.toBeNull();
-    // Add time is HR's and payroll's.
+  it("is read only where the person's site has supervisor edits off", () => {
+    at("2026-10-15T16:00:00Z");
+    renderSup({ off: true });
+    expect(screen.getByText("Read only")).not.toBeNull();
+    expect([...row(/Mon, Oct 12/).querySelectorAll("button")].some((b) => b.textContent === "Missing")).toBe(false);
+    for (const b of times(/Tue, Oct 13/)) expect(b.hasAttribute("disabled")).toBe(true);
     expect(screen.queryByRole("button", { name: "Add time" })).toBeNull();
-    // Tuesday's punches are there to read, not to change.
-    const tuesday = [...row(/Tue, Oct 13/).querySelectorAll("button")].filter((b) => /AM|PM/.test(b.textContent ?? ""));
-    expect(tuesday.length).toBe(2);
-    for (const b of tuesday) expect(b.hasAttribute("disabled")).toBe(true);
-    // No reason code or pay code offered anywhere.
-    expect([...document.querySelectorAll("tr select:not([disabled])")].length).toBe(0);
-    // Times go on a day marked Absent, and no other empty day: not the
-    // weekend, not today.
-    const dash = (label: RegExp) => [...row(label).querySelectorAll("button")].filter((b) => b.textContent === "—").length;
-    expect(dash(/Wed, Oct 14/)).toBe(2);
-    expect(dash(/Sun, Oct 11/)).toBe(0);
-    expect(dash(/Thu, Oct 15/)).toBe(0);
-
-    fireEvent.click([...row(/Mon, Oct 12/).querySelectorAll("button")].find((b) => b.textContent === "Missing")!);
-    const input = row(/Mon, Oct 12/).querySelector("input")!;
-    fireEvent.change(input, { target: { value: "4:30" } });
-    fireEvent.blur(input);
-    fireEvent.click(screen.getByText("Save changes"));
-    await vi.waitFor(() => expect(addManualPunches).toHaveBeenCalledTimes(1));
-    const [{ punches }] = addManualPunches.mock.calls[0] as unknown as [{ punches: { punchType: string }[] }];
-    expect(punches.map((p) => p.punchType)).toEqual(["CLOCK_OUT"]);
-    vi.useRealTimers();
   });
 
-  it("puts one shift on a day marked Absent", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-10-15T16:00:00Z"));
+  it("sends a changed time and the missing clock out to HR together, and applies nothing", async () => {
+    at("2026-10-15T16:00:00Z");
+    submitTimecardEdits.mockClear();
     addManualPunches.mockClear();
-    renderFixer();
-    const wednesday = () => screen.getAllByRole("row").find((r) => /Wed, Oct 14/.test(r.textContent ?? ""))!;
-    const type = (nth: number, value: string) => {
-      fireEvent.click([...wednesday().querySelectorAll("button")].filter((b) => b.textContent === "—")[nth]!);
-      const input = wednesday().querySelector("input")!;
+    const { correctPunch } = await import("@/actions/punch.actions");
+    (correctPunch as unknown as { mockClear: () => void }).mockClear();
+    renderSup();
+    expect(screen.getByText("Changes need approval")).not.toBeNull();
+    // No reason code or pay code offered anywhere.
+    expect([...document.querySelectorAll("tr select:not([disabled])")].length).toBe(0);
+    const type = (button: HTMLElement, value: string) => {
+      const tr = button.closest("tr")!;
+      fireEvent.click(button);
+      const input = tr.querySelector("input")!;
       fireEvent.change(input, { target: { value } });
       fireEvent.blur(input);
     };
-    type(0, "8:00");
-    type(0, "4:30");
+    type(times(/Tue, Oct 13/).find((b) => b.textContent === "8:00 AM")!, "7:59");
+    type([...row(/Mon, Oct 12/).querySelectorAll("button")].find((b) => b.textContent === "Missing")!, "4:30");
+    fireEvent.change(screen.getByLabelText("Reason for the changed or removed punches"), { target: { value: "Forgot to punch" } });
     fireEvent.click(screen.getByText("Save changes"));
-    await vi.waitFor(() => expect(addManualPunches).toHaveBeenCalledTimes(1));
-    const [{ punches }] = addManualPunches.mock.calls[0] as unknown as [{ punches: { punchType: string; punchTime: string }[] }];
-    // 8:00 AM to 4:30 PM Eastern.
-    expect(punches).toEqual([
-      { punchType: "CLOCK_IN", punchTime: "2026-10-14T12:00:00.000Z" },
-      { punchType: "CLOCK_OUT", punchTime: "2026-10-14T20:30:00.000Z" },
-    ]);
-    vi.useRealTimers();
+    await vi.waitFor(() => expect(submitTimecardEdits).toHaveBeenCalledTimes(1));
+    expect(submitTimecardEdits).toHaveBeenCalledWith({
+      employeeId: "e1",
+      periodId: "p1",
+      reason: "Forgot to punch",
+      items: [
+        { kind: "CHANGE_PUNCH", punchId: "i2", at: "2026-10-13T11:59:00.000Z" },
+        { kind: "ADD_PUNCH", punchType: "CLOCK_OUT", at: "2026-10-12T20:30:00.000Z" },
+      ],
+    });
+    expect(correctPunch).not.toHaveBeenCalled();
+    expect(addManualPunches).not.toHaveBeenCalled();
   });
 
-  it("adds no missing clock out to a shift on another pay code", () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-10-15T16:00:00Z"));
-    renderFixer({ punches: [punch("i1", "CLOCK_IN", "2026-10-12T12:00:00.000Z", "pcOt")] });
-    const monday = screen.getAllByRole("row").find((r) => /Mon, Oct 12/.test(r.textContent ?? ""))!;
-    expect(monday.textContent).toMatch(/Missing/);
-    expect([...monday.querySelectorAll("button")].some((b) => b.textContent === "Missing")).toBe(false);
-    vi.useRealTimers();
+  it("changes nothing on a row HR put on another pay code", () => {
+    at("2026-10-15T16:00:00Z");
+    renderSup();
+    for (const b of times(/Sun, Oct 11/)) expect(b.hasAttribute("disabled")).toBe(true);
+    for (const b of times(/Tue, Oct 13/)) expect(b.hasAttribute("disabled")).toBe(false);
   });
 
-  it("waives the meal deducted on a day", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-10-15T16:00:00Z"));
-    const { toggleMealWaiver } = await import("@/actions/timesheet.actions");
-    (toggleMealWaiver as unknown as { mockClear: () => void }).mockClear();
-    renderFixer({ mealConfig: { autoDeduct: true, meals: [{ workAtLeastHours: 6, deductMinutes: 30 }] }, segments: [tuesdayWork] });
-    const tuesday = () => screen.getAllByRole("row").find((r) => /Tue, Oct 13/.test(r.textContent ?? ""))!;
-    fireEvent.click([...tuesday().querySelectorAll("button")].find((b) => b.textContent === "Waive")!);
+  // 11/11: hours on another code with no punches (Salary, PTO) left the day
+  // open to a supervisor's punches; it is that code's day.
+  it("adds nothing to a day with hours on another pay code", () => {
+    at("2026-10-15T16:00:00Z");
+    const pto = { ...tuesdayWork, id: "l4", segmentType: "LEAVE", startTime: "2026-10-14T12:00:00.000Z", endTime: "2026-10-14T20:00:00.000Z", durationMinutes: 480, segmentDate: "2026-10-14T00:00:00.000Z", payCode: { id: "pcPto", code: 5, label: "PTO" } };
+    renderSup({ segments: [pto] });
+    expect([...row(/Wed, Oct 14/).querySelectorAll("button")].some((b) => b.textContent === "—")).toBe(false);
+  });
+
+  it("shows what waits for HR on its day, and takes it back", async () => {
+    at("2026-10-15T16:00:00Z");
+    withdrawTimecardEdit.mockClear();
+    renderSup({ editRequests: waiting([item("a1", { kind: "ADD_PUNCH", punchType: "CLOCK_OUT", at: "2026-10-12T20:30:00.000Z", day: "2026-10-12", text: "Add clock out 4:30 PM" })]) });
+    expect(row(/Mon, Oct 12/).textContent).toMatch(/Waiting for approval/);
+    expect(times(/Mon, Oct 12/).map((b) => b.textContent)).toContain("4:30 PM");
+    // One line until opened.
+    expect(screen.getByText("1 change waiting for approval from Flavio Morales.")).not.toBeNull();
+    expect(screen.queryByText(/Mon, Oct 12: Add clock out 4:30 PM/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Show" }));
+    expect(screen.getByText(/Mon, Oct 12: Add clock out 4:30 PM/)).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Take back" }));
+    await vi.waitFor(() => expect(withdrawTimecardEdit).toHaveBeenCalledWith({ itemId: "a1" }));
+  });
+
+  it("lets HR approve, or turn some down with a note", async () => {
+    at("2026-10-15T16:00:00Z");
+    decideTimesheetEdits.mockClear();
+    renderSup({
+      hr: true,
+      editRequests: waiting([
+        item("a1", { kind: "ADD_PUNCH", punchType: "CLOCK_OUT", at: "2026-10-12T20:30:00.000Z", day: "2026-10-12", text: "Add clock out 4:30 PM" }),
+        item("a2", { kind: "CHANGE_PUNCH", punchId: "i2", punchType: "CLOCK_IN", at: "2026-10-13T11:59:00.000Z", day: "2026-10-13", text: "Change clock in 8:00 AM to 7:59 AM" }),
+      ]),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    fireEvent.click(screen.getByLabelText(/Tue, Oct 13: Change clock in/));
+    fireEvent.click(screen.getByRole("button", { name: "Approve 1, turn down 1" }));
+    expect(screen.getByRole("alert").textContent).toMatch(/Say why/);
+    expect(decideTimesheetEdits).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Why the changes are turned down"), { target: { value: "She clocked in at 8:00" } });
+    fireEvent.click(screen.getByRole("button", { name: "Approve 1, turn down 1" }));
+    await vi.waitFor(() => expect(decideTimesheetEdits).toHaveBeenCalledWith(expect.objectContaining({ timesheetId: "t1", rejectItemIds: ["a2"], note: "She clocked in at 8:00" })));
+  });
+
+  it("sends Add time to HR as regular hours", async () => {
+    at("2026-10-15T16:00:00Z");
+    submitTimecardEdits.mockClear();
+    renderSup();
+    fireEvent.click(screen.getByRole("button", { name: "Add time" }));
+    const date = document.querySelector("form input[type=date]") as HTMLInputElement;
+    expect(date.value).toBe("2026-10-15");
+    expect(date.max).toBe("2026-10-15");
+    const dialog = date.closest("form")!;
+    const selects = [...dialog.querySelectorAll("select")].filter((el) => !/AM or PM/.test(el.getAttribute("aria-label") ?? ""));
+    // One pay code, regular hours, and no Reason.
+    expect(selects.length).toBe(1);
+    expect(selects[0].disabled).toBe(true);
+    fireEvent.change(dialog.querySelector("input[placeholder=\"8:00\"]")!, { target: { value: "8:00" } });
+    fireEvent.change(dialog.querySelector("input[placeholder=\"5:00\"]")!, { target: { value: "4:30" } });
+    fireEvent.submit(dialog);
+    await vi.waitFor(() => expect(submitTimecardEdits).toHaveBeenCalledTimes(1));
+    expect(submitTimecardEdits).toHaveBeenCalledWith({
+      employeeId: "e1", periodId: "p1", reason: "Added with Add time",
+      items: [{ kind: "ADD_PAIR", day: "2026-10-15", at: "2026-10-15T12:00:00.000Z", endAt: "2026-10-15T20:30:00.000Z" }],
+    });
+  });
+
+  it("sends a meal waiver, and can't waive a meal premium", async () => {
+    at("2026-10-15T16:00:00Z");
+    submitTimecardEdits.mockClear();
+    renderSup({ mealConfig: { autoDeduct: true, meals: [{ workAtLeastHours: 6, deductMinutes: 30 }] }, segments: [tuesdayWork] });
+    fireEvent.click([...row(/Tue, Oct 13/).querySelectorAll("button")].find((b) => b.textContent === "Waive")!);
+    fireEvent.change(screen.getByLabelText("Reason for the changed or removed punches"), { target: { value: "Worked through lunch" } });
     fireEvent.click(screen.getByText("Save changes"));
-    await vi.waitFor(() => expect(toggleMealWaiver).toHaveBeenCalledWith({ timesheetId: "t1", segmentDate: "2026-10-13" }));
-    vi.useRealTimers();
-  });
-
-  it("can't waive a meal premium", () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-10-15T16:00:00Z"));
+    await vi.waitFor(() => expect(submitTimecardEdits).toHaveBeenCalledWith(expect.objectContaining({ items: [{ kind: "MEAL_WAIVER", day: "2026-10-13", waive: true }] })));
+    cleanup();
     const premium = { ...tuesdayWork, id: "mp2", segmentType: "MEAL_PREMIUM", startTime: "2026-10-13T20:30:00.000Z", endTime: "2026-10-13T21:30:00.000Z", durationMinutes: 60, payCode: { id: "pcMp", code: 20, label: "Meal premium" } };
-    renderFixer({ segments: [tuesdayWork, premium] });
+    renderSup({ segments: [tuesdayWork, premium] });
     expect(screen.getAllByText(/Meal premium/).length).toBeGreaterThan(0);
     expect(screen.queryAllByRole("button", { name: /^Waive/ }).length).toBe(0);
-    vi.useRealTimers();
+  });
+
+  // 11/16: a Manager changes their people's timecards directly, but a CA meal premium stays HR's.
+  it("offers Waive on a meal premium to HR and payroll, not to a Manager", () => {
+    at("2026-10-15T16:00:00Z");
+    const premium = { ...tuesdayWork, id: "mp2", segmentType: "MEAL_PREMIUM", startTime: "2026-10-13T20:30:00.000Z", endTime: "2026-10-13T21:30:00.000Z", durationMinutes: 60, payCode: { id: "pcMp", code: 20, label: "Meal premium" } };
+    renderSup({ hr: true, segments: [tuesdayWork, premium] });
+    expect(screen.queryAllByRole("button", { name: /^Waive/ }).length).toBe(1);
+    cleanup();
+    renderSup({ hr: true, premiums: false, segments: [tuesdayWork, premium] });
+    expect(screen.getAllByText(/Meal premium/).length).toBeGreaterThan(0);
+    expect(screen.queryAllByRole("button", { name: /^Waive/ }).length).toBe(0);
   });
 
   it("shows hours entered with Add time without clock times, and no meal to waive", () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-10-15T16:00:00Z"));
+    at("2026-10-15T16:00:00Z");
     // 8 hours entered on Tuesday: kept from 12:00 AM to 8:00 AM Eastern.
     const entered = { ...punch("h1", "CLOCK_IN", "2026-10-13T04:00:00.000Z", "pcFmla"), hoursOnly: true };
     const enteredOut = { ...punch("h2", "CLOCK_OUT", "2026-10-13T12:00:00.000Z"), hoursOnly: true };
-    renderFixer({ punches: [entered, enteredOut], mealConfig: { autoDeduct: true, meals: [{ workAtLeastHours: 6, deductMinutes: 30 }] }, segments: [{ ...tuesdayWork, startTime: entered.roundedTime, endTime: enteredOut.roundedTime, durationMinutes: 480 }] });
-    const tuesday = screen.getAllByRole("row").find((r) => /Tue, Oct 13/.test(r.textContent ?? ""))!;
+    renderSup({ punches: [entered, enteredOut], mealConfig: { autoDeduct: true, meals: [{ workAtLeastHours: 6, deductMinutes: 30 }] }, segments: [{ ...tuesdayWork, startTime: entered.roundedTime, endTime: enteredOut.roundedTime, durationMinutes: 480 }] });
+    const tuesday = row(/Tue, Oct 13/);
     expect(tuesday.textContent).not.toMatch(/12:00 AM|8:00 AM/);
     expect([...tuesday.querySelectorAll("button")].some((b) => /Waive/.test(b.textContent ?? ""))).toBe(false);
-    vi.useRealTimers();
   });
 
-  // 11/11: someone with no timecard yet was Read only to a supervisor (Mario
-  // Robles); the first save makes the timecard, as it does for HR.
-  it("fills an Absent day for someone with no timecard yet", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-10-15T16:00:00Z"));
+  // Someone with no timecard yet was Read only to a supervisor (Mario Robles):
+  // the first change sent makes the timecard.
+  it("sends an Absent day for someone with no timecard yet, in an open period", async () => {
+    at("2026-10-15T16:00:00Z");
+    submitTimecardEdits.mockClear();
     ensureTimesheet.mockClear();
-    addManualPunches.mockClear();
-    const props = (status: string) => ({
-      payPeriods: [{ id: "p1", startDate: "2026-10-11T00:00:00.000Z", endDate: "2026-10-25T00:00:00.000Z", status }],
-      selectedPeriodId: "p1",
-      employees: [{ employeeId: "e1", name: "Test Person", employeeCode: "T1", wmsId: "639094", department: "Inventory", siteId: "s1", siteName: "Site", isActive: true, payType: "HOURLY" }],
-      selectedEmployeeId: "e1", timecard: null, payFrequency: "BIWEEKLY" as const, payCodes: [], reasonCodes: [], sites: [], selectedSiteId: null,
-      departments: [], selectedDepartmentId: null, userRole: "SUPERVISOR", missedPunchesOnly: true, siteTimezone: "America/New_York",
-    });
-    // A closed period stays Read only.
-    const closed = render(<TimecardViewer {...(props("LOCKED") as unknown as React.ComponentProps<typeof TimecardViewer>)} />);
-    expect(screen.getByText("Read only")).not.toBeNull();
+    const closed = render(<div />);
     closed.unmount();
-
-    render(<TimecardViewer {...(props("OPEN") as unknown as React.ComponentProps<typeof TimecardViewer>)} />);
-    expect(screen.getByText("Missed punches only")).not.toBeNull();
-    const wednesday = () => screen.getAllByRole("row").find((r) => /Wed, Oct 14/.test(r.textContent ?? ""))!;
+    renderSup({ timecard: null, period: "LOCKED" });
+    expect(screen.getByText("Read only")).not.toBeNull();
+    cleanup();
+    renderSup({ timecard: null });
+    expect(screen.getByText("Changes need approval")).not.toBeNull();
+    const wednesday = () => row(/Wed, Oct 14/);
     const type = (value: string) => {
       fireEvent.click([...wednesday().querySelectorAll("button")].filter((b) => b.textContent === "—")[0]!);
       const input = wednesday().querySelector("input")!;
@@ -338,72 +452,26 @@ describe("a supervisor allowed only to fix missed punches", () => {
     };
     type("8:00");
     type("4:30");
+    fireEvent.change(screen.getByLabelText("Reason for the changed or removed punches"), { target: { value: "Worked, badge not read" } });
     fireEvent.click(screen.getByText("Save changes"));
-    await vi.waitFor(() => expect(addManualPunches).toHaveBeenCalledTimes(1));
-    expect(ensureTimesheet).toHaveBeenCalledWith({ employeeId: "e1", periodId: "p1" });
-    const [{ timesheetId, punches }] = addManualPunches.mock.calls[0] as unknown as [{ timesheetId: string; punches: { punchType: string }[] }];
-    expect(timesheetId).toBe("t1");
-    expect(punches.map((p) => p.punchType)).toEqual(["CLOCK_IN", "CLOCK_OUT"]);
-    vi.useRealTimers();
-  });
-
-  // 11/11, Heliana Salazar: a missed lunch clock out turns every punch after
-  // it around, so the day is put right by changing its times, not only by
-  // adding the clock out that shows Missing.
-  it("puts a missed lunch right on a day marked Missed punch", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-10-15T16:00:00Z"));
-    const { correctPunch } = await import("@/actions/punch.actions");
-    (correctPunch as unknown as { mockClear: () => void }).mockClear();
-    addManualPunches.mockClear();
-    // Monday (EDT): in 8:00 AM, out 3:11 PM, in 5:16 PM, the clock out missing.
-    // Tuesday from the clock, nothing missed; Wednesday one they typed in.
-    renderFixer({ punches: [
-      punch("i1", "CLOCK_IN", "2026-10-12T12:00:00.000Z"),
-      punch("o1", "CLOCK_OUT", "2026-10-12T19:11:00.000Z"),
-      punch("i3", "CLOCK_IN", "2026-10-12T21:16:00.000Z"),
-      punch("i2", "CLOCK_IN", "2026-10-13T12:00:00.000Z"),
-      punch("o2", "CLOCK_OUT", "2026-10-13T20:30:00.000Z"),
-      { ...punch("i4", "CLOCK_IN", "2026-10-14T12:00:00.000Z"), source: "MANUAL", enteredByYou: true },
-      { ...punch("o4", "CLOCK_OUT", "2026-10-14T20:30:00.000Z"), source: "MANUAL", enteredByYou: true },
-    ] });
-    // A time on a day's own row, or, with no day given, the one button showing it.
-    const timeButton = (text: string, day?: RegExp) => [...screen.getAllByRole("row")].filter((r) => !day || day.test(r.textContent ?? ""))
-      .flatMap((r) => [...r.querySelectorAll("button")]).find((b) => b.textContent === text)!;
-    expect(timeButton("8:00 AM", /Tue, Oct 13/).hasAttribute("disabled")).toBe(true);
-    expect(timeButton("8:00 AM", /Wed, Oct 14/).hasAttribute("disabled")).toBe(false);
-
-    const type = (button: HTMLElement, value: string) => {
-      const tr = button.closest("tr")!;
-      fireEvent.click(button);
-      const input = tr.querySelector("input")!;
-      fireEvent.change(input, { target: { value } });
-      fireEvent.blur(input);
-    };
-    type(timeButton("3:11 PM"), "2:11");
-    type(timeButton("5:16 PM"), "3:11");
-    type([...document.querySelectorAll("button")].find((b) => b.textContent === "Missing") as HTMLElement, "5:16");
-    fireEvent.change(screen.getByLabelText("Reason for the changed or removed punches"), { target: { value: "Missed the lunch clock out" } });
-    fireEvent.click(screen.getByText("Save changes"));
-    await vi.waitFor(() => expect(addManualPunches).toHaveBeenCalledTimes(1));
-    expect(correctPunch).toHaveBeenCalledWith({ originalPunchId: "o1", newPunchTime: "2026-10-12T18:11:00.000Z", reason: "Missed the lunch clock out" });
-    expect(correctPunch).toHaveBeenCalledWith({ originalPunchId: "i3", newPunchTime: "2026-10-12T19:11:00.000Z", reason: "Missed the lunch clock out" });
-    const [{ punches }] = addManualPunches.mock.calls[0] as unknown as [{ punches: { punchType: string; punchTime: string }[] }];
-    expect(punches).toEqual([{ punchType: "CLOCK_OUT", punchTime: "2026-10-12T21:16:00.000Z" }]);
-    vi.useRealTimers();
+    await vi.waitFor(() => expect(submitTimecardEdits).toHaveBeenCalledTimes(1));
+    expect(ensureTimesheet).not.toHaveBeenCalled();
+    expect(submitTimecardEdits).toHaveBeenCalledWith(expect.objectContaining({
+      items: [
+        { kind: "ADD_PUNCH", punchType: "CLOCK_IN", at: "2026-10-14T12:00:00.000Z" },
+        { kind: "ADD_PUNCH", punchType: "CLOCK_OUT", at: "2026-10-14T20:30:00.000Z" },
+      ],
+    }));
   });
 
   it("adds a note of their own to a day", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-10-15T16:00:00Z"));
-    renderFixer();
-    const monday = screen.getAllByRole("row").find((r) => /Mon, Oct 12/.test(r.textContent ?? ""))!;
-    fireEvent.click(monday.querySelector("button[title=\"Add note\"]")!);
+    at("2026-10-15T16:00:00Z");
+    renderSup();
+    fireEvent.click(row(/Mon, Oct 12/).querySelector("button[title=\"Add note\"]")!);
     fireEvent.change(screen.getByLabelText("New note"), { target: { value: "Forgot to clock out, confirmed with lead" } });
     fireEvent.click(within(screen.getByRole("dialog", { name: "Notes" })).getByRole("button", { name: "Add note" }));
     const { saveTimesheetNote } = await import("@/actions/timecard-entry.actions");
     await vi.waitFor(() => expect(saveTimesheetNote).toHaveBeenCalledWith({ timesheetId: "t1", noteDate: "2026-10-12", note: "Forgot to clock out, confirmed with lead" }));
-    vi.useRealTimers();
   });
 });
 

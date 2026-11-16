@@ -103,6 +103,11 @@ model Site {
   /// as language codes (lib/languages.ts, "es"). Informational for now.
   primaryLanguage     String?
   additionalLanguages String[] @default([])
+  /// Whether supervisors may edit the timecards of the people here (11/11).
+  /// Off: they make no timecard edits at all. On: they make the changes HR
+  /// makes on rows of regular hours, and every one waits for HR to approve it
+  /// (TimecardEditRequest). Georgia first; switched per site on its page.
+  supervisorTimecardEdits Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -130,6 +135,7 @@ model Department {
   tenant    Tenant           @relation(fields: [tenantId], references: [id])
   sites     DepartmentSite[]
   employees Employee[]
+  managerAccess ManagerDepartmentAccess[]
 
   @@map("departments")
 }
@@ -279,9 +285,11 @@ model Employee {
   badges             EmployeeBadge[]
   legacySyncLogs     LegacySyncLog[]
   siteAccess         HrSiteAccess[]
+  managerDepartments ManagerDepartmentAccess[]
   ruleSetHistory     EmployeeRuleSetHistory[]
   ruleSetHistoryCreated EmployeeRuleSetHistory[] @relation("RuleSetHistoryCreator")
   payRates           EmployeePayRate[]
+  timecardEditsSent  TimecardEditRequest[] @relation("TimecardEditSubmitter")
 
   @@unique([tenantId, employeeCode])
   // The roster, the team scopes and the admin filters. Every one of these
@@ -342,6 +350,22 @@ model HrSiteAccess {
 
   @@unique([employeeId, siteId])
   @@map("hr_site_access")
+}
+
+/// A department a Manager sees everyone in (src/lib/rbac/manager-role.ts),
+/// at their checked sites (HrSiteAccess), or at every site with none checked.
+/// Read only while the person is on the Manager role.
+model ManagerDepartmentAccess {
+  id           String   @id @default(cuid())
+  employeeId   String
+  departmentId String
+  createdAt    DateTime @default(now())
+
+  employee   Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, departmentId])
+  @@map("manager_department_access")
 }
 
 enum ShiftCycle {

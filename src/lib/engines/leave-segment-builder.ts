@@ -63,7 +63,7 @@ async function resolveLeavePayCodeId(
 }
 
 // LeaveCategory and PayBucket share the same values for leave types
-const CATEGORY_TO_BUCKET: Record<LeaveCategory, PayBucket> = {
+export const CATEGORY_TO_BUCKET: Record<LeaveCategory, PayBucket> = {
   PTO: "PTO",
   SICK: "SICK",
   HOLIDAY: "HOLIDAY",
@@ -92,8 +92,10 @@ export async function syncLeaveSegments(
   leaveRequestId: string,
   /** The caller's transaction, when the request's status changes in the same one. */
   outer?: TxClient
-): Promise<void> {
-  const run = async (tx: TxClient) => {
+): Promise<string[]> {
+  // The timecards it took leave off or put leave on, for the caller to work
+  // their hours out again (leave-recalc), after its transaction.
+  const run = async (tx: TxClient): Promise<string[]> => {
     // An inactive employee's timecards are closed: leave neither comes off nor
     // goes on them. A request with nothing on a timecard (rejected, cancelled)
     // has nothing to change and passes; one that would change one is refused.
@@ -106,7 +108,7 @@ export async function syncLeaveSegments(
       if (onTimecards > 0 || owner.status === "APPROVED" || owner.status === "POSTED") {
         assertActiveForChange(false);
       }
-      return;
+      return [];
     }
 
     // 1. Always delete existing segments for this request
@@ -131,7 +133,7 @@ export async function syncLeaveSegments(
       include: { leaveType: true },
     });
 
-    if (request.status !== "APPROVED" && request.status !== "POSTED") return;
+    if (request.status !== "APPROVED" && request.status !== "POSTED") return affectedTimesheetIds;
 
     // Resolve effective pay code: policy rule → leave type fallback
     const employee = await tx.employee.findUniqueOrThrow({
@@ -187,7 +189,7 @@ export async function syncLeaveSegments(
       const r = dayRanges.get(p.id)!;
       return r.firstDay <= leaveLast && r.lastDay >= leaveFirst;
     });
-    if (allOverlapping.length === 0) return;
+    if (allOverlapping.length === 0) return affectedTimesheetIds;
 
     // Identify which of those have an existing timesheet for this employee.
     const existingTimesheets = await tx.timesheet.findMany({
@@ -279,9 +281,10 @@ export async function syncLeaveSegments(
       await dropSupersededDayCodes(tsId, tx);
       await refreshLeaveBuckets(tsId, tx);
     }
+    return [...new Set([...affectedTimesheetIds, ...newTimesheetIds])];
   };
   if (outer) return run(outer);
-  await db.$transaction(run);
+  return db.$transaction(run);
 }
 
 /** Every calendar day from first to last, sharing the total evenly. */

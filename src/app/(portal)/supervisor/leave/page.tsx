@@ -1,92 +1,16 @@
 import { redirect } from "next/navigation";
-import { SESSION_ENDED_HREF } from "@/lib/auth.config";
-import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
-import { userHasPermission } from "@/lib/rbac/check-permission";
-import { getTeamLeaveRequests, getUpcomingTeamLeave, getHrPendingLeave, getTeamHeadcount } from "@/actions/supervisor.actions";
-import { LeaveTabs } from "@/components/supervisor/leave-tabs";
 
 /**
- * Team Leave — the list screen, as the portal design lays it out.
- *
- * <p>Three queues, not one list: what is waiting on this supervisor, what has
- * gone up to HR, and what is already approved and still to come. They are
- * separate queries because they are separately permission-scoped — a
- * supervisor sees their own reports, payroll sees the site — so the tabs in
- * {@link LeaveTabs} switch between rows already fetched rather than re-running
- * anything. A tab that re-queried would quietly change whose leave you are
- * looking at.
- *
- * <p>`siteId` and `departmentId` are read from the query string and passed
- * into every one of the three, so a filtered view survives a reload and can be
- * sent to somebody. The department list is scoped to the chosen site for the
- * same reason the filter chips clear together.
+ * Team Leave moved to Approvals (11/11), its first queue beside timecard
+ * edits. Links and bookmarks to here still land on it, filters and tab kept.
  */
 export default async function SupervisorLeavePage({
   searchParams,
 }: {
   searchParams: Promise<{ tab?: string; siteId?: string; departmentId?: string; shiftId?: string }>;
 }) {
-  const session = await auth();
-  if (!session?.user) redirect(SESSION_ENDED_HREF);
-  if (!await userHasPermission(session.user, "LEAVE_APPROVE_TEAM")) redirect("/dashboard");
-
-  const { tab, siteId, departmentId, shiftId } = (await searchParams) ?? {};
-  const initialTab = tab === "upcoming" ? "upcoming" : tab === "hr-pending" ? "hr-pending" : "pending";
-
-  const canFilter = await userHasPermission(session.user, "LEAVE_APPROVE_ANY");
-  const canHrApprove = canFilter;
-  const canSubmitLeave = await userHasPermission(session.user, "LEAVE_REQUEST_TEAM");
-  const tenantId = (session.user as { tenantId?: string }).tenantId;
-  const filterInput = canFilter ? { siteId, departmentId, shiftId } : {};
-
-  const [pendingResult, hrPendingResult, upcomingResult, headcountResult, sites, departments, shifts] = await Promise.all([
-    getTeamLeaveRequests(filterInput),
-    getHrPendingLeave(filterInput),
-    getUpcomingTeamLeave(filterInput),
-    getTeamHeadcount(filterInput),
-    canFilter && tenantId
-      ? db.site.findMany({ where: { tenantId, isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } })
-      : [],
-    canFilter && tenantId
-      ? db.department.findMany({
-          where: { tenantId, isActive: true, ...(siteId ? { sites: { some: { siteId } } } : {}) },
-          orderBy: { name: "asc" },
-          select: { id: true, name: true },
-        })
-      : [],
-    // Shifts are a tenant-level list, and only offered to the same people who
-    // get the site and department filters.
-    canFilter && tenantId
-      ? db.shift.findMany({
-          where: { tenantId },
-          orderBy: [{ number: "asc" }, { name: "asc" }],
-          select: { id: true, name: true },
-        })
-      : [],
-  ]);
-
-  if (!pendingResult.success) redirect("/supervisor");
-  if (!hrPendingResult.success) redirect("/supervisor");
-  if (!upcomingResult.success) redirect("/supervisor");
-
-  return (
-    <LeaveTabs
-      viewerEmployeeId={session.user.employeeId ?? null}
-      pending={pendingResult.data}
-      hrPending={hrPendingResult.data}
-      upcoming={upcomingResult.data}
-      headcount={headcountResult.success ? headcountResult.data : { total: 0, byDepartment: [] }}
-      initialTab={initialTab}
-      canFilter={canFilter}
-      canHrApprove={canHrApprove}
-      canSubmitLeave={canSubmitLeave}
-      sites={sites}
-      departments={departments}
-      shifts={shifts}
-      selectedSiteId={siteId}
-      selectedDepartmentId={departmentId}
-      selectedShiftId={shiftId}
-    />
-  );
+  const sp = (await searchParams) ?? {};
+  const params = new URLSearchParams({ view: "leave" });
+  for (const k of ["tab", "siteId", "departmentId", "shiftId"] as const) if (sp[k]) params.set(k, sp[k]!);
+  redirect(`/approvals?${params.toString()}`);
 }

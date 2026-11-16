@@ -78,7 +78,7 @@ export async function alertLeaveSubmitted(leaveRequestId: string): Promise<void>
     {
       title: "Time off request",
       body: `${firstName(request.employee.user?.name)} asked for time off. Tap to review it.`,
-      href: "/supervisor/leave",
+      href: "/approvals?view=leave",
     },
     {
       subject: `Time off request from ${name}`,
@@ -86,7 +86,7 @@ export async function alertLeaveSubmitted(leaveRequestId: string): Promise<void>
       line: `${name} asked for time off. It is waiting for your approval.`,
       details: requestDetails(request, true),
       button: "Review request",
-      href: "/supervisor/leave",
+      href: "/approvals?view=leave",
     },
   );
 }
@@ -104,7 +104,7 @@ export async function alertLeaveWaitingOnHr(leaveRequestId: string, actorEmploye
     {
       title: "Time off waiting on HR",
       body: `${firstName(request.employee.user?.name)}'s time off request is ready for HR approval.`,
-      href: "/supervisor/leave?tab=hr-pending",
+      href: "/approvals?view=leave&tab=hr-pending",
     },
     {
       subject: `${name}'s time off is ready for HR approval`,
@@ -112,7 +112,7 @@ export async function alertLeaveWaitingOnHr(leaveRequestId: string, actorEmploye
       line: `The supervisor approved this request from ${name}. It needs HR approval to be final.`,
       details: requestDetails(request, true),
       button: "Review request",
-      href: "/supervisor/leave?tab=hr-pending",
+      href: "/approvals?view=leave&tab=hr-pending",
     },
   );
 }

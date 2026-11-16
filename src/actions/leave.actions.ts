@@ -11,6 +11,7 @@ import { validateLeaveTransition } from "@/lib/state-machines/leave-state";
 import { assertActiveForChange, assertNotSenior, employeeScope, NotFoundError } from "@/lib/rbac/scope";
 import { postLeaveUsage, reverseLeaveUsage } from "@/lib/engines/accrual-engine";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
+import { placeLeave, recalculateAfterLeave } from "@/lib/engines/leave-recalc";
 import { writeAuditLog } from "@/lib/audit/logger";
 import { getSubordinateIds } from "@/lib/get-subordinate-ids";
 import { availabilityFor, leaveTypeAllowed } from "@/lib/pay-code-availability";
@@ -233,6 +234,7 @@ export const createLeaveRequestForEmployee = withRBAC(
     after(() => alertLeaveWaitingOnHr(request.id, actorId));
 
     revalidatePath("/supervisor/leave");
+    revalidatePath("/approvals");
     revalidatePath("/leave");
     return { success: true as const };
   }
@@ -303,6 +305,7 @@ export const approveLeaveRequest = withRBAC(
     after(() => alertLeaveWaitingOnHr(leaveRequestId, reviewerId));
 
     revalidatePath("/supervisor/leave");
+    revalidatePath("/approvals");
     revalidatePath("/leave");
     return updated;
   }
@@ -329,6 +332,7 @@ export const hrApproveLeaveRequest = withRBAC(
     await validateBalanceForApproval(leaveRequestId);
 
     // Approved, debited and on the timecard together, or none of them.
+    let placed: string[] = [];
     await db.$transaction(
       async (tx) => {
         const { count } = await tx.leaveRequest.updateMany({
@@ -343,10 +347,12 @@ export const hrApproveLeaveRequest = withRBAC(
         // Somebody else acted on it in the meantime.
         if (count === 0) throw new Error("This request was changed by someone else just now. Reload the page to see where it stands.");
         await postLeaveUsage(leaveRequestId, tx);
-        await syncLeaveSegments(leaveRequestId, tx);
+        placed = await syncLeaveSegments(leaveRequestId, tx);
       },
       { timeout: 30_000 },
     );
+    // The day's other hours around the leave (a salaried day's 8 h less it).
+    await recalculateAfterLeave(placed);
 
     await writeAuditLog({
       tenantId,
@@ -359,6 +365,7 @@ export const hrApproveLeaveRequest = withRBAC(
     after(() => alertLeaveDecided(leaveRequestId));
 
     revalidatePath("/supervisor/leave");
+    revalidatePath("/approvals");
     revalidatePath("/leave");
     revalidatePath("/payroll/timecards");
     revalidatePath("/time/timesheet");
@@ -405,10 +412,11 @@ export const rejectLeaveRequest = withRBAC(
       changes: { before: request.status, after: transition.newStatus },
     });
 
-    await syncLeaveSegments(leaveRequestId);
+    await placeLeave(leaveRequestId);
     after(() => alertLeaveDecided(leaveRequestId));
 
     revalidatePath("/supervisor/leave");
+    revalidatePath("/approvals");
     revalidatePath("/leave");
     revalidatePath("/payroll/timecards");
     revalidatePath("/time/timesheet");
@@ -454,9 +462,10 @@ export const reverseLeaveApproval = withRBAC(
     });
 
     // Remove leave segments — they should not exist while the request is pending
-    await syncLeaveSegments(leaveRequestId);
+    await placeLeave(leaveRequestId);
 
     revalidatePath("/supervisor/leave");
+    revalidatePath("/approvals");
     revalidatePath("/leave");
     revalidatePath("/payroll/timecards");
     revalidatePath("/time/timesheet");
@@ -501,6 +510,7 @@ export const postLeaveRequest = withRBAC(
     });
 
     revalidatePath("/supervisor/leave");
+    revalidatePath("/approvals");
     revalidatePath("/leave");
     revalidatePath("/payroll/timecards");
     return { leaveRequestId };

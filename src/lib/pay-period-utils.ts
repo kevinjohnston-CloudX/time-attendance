@@ -5,6 +5,7 @@ import type { PayFrequency, PayPeriod } from "@prisma/client";
 import { getPeriodContaining, periodAfter } from "@/lib/pay-period-math";
 import { periodDayRange } from "@/lib/pay-period-days";
 import { syncLeaveSegments } from "@/lib/engines/leave-segment-builder";
+import { recalculateAfterLeave } from "@/lib/engines/leave-recalc";
 
 export { getPeriodContaining };
 
@@ -46,13 +47,15 @@ async function addTimeOffToNewPeriod(period: PayPeriod, frequency: PayFrequency)
     },
     select: { id: true },
   });
+  const placed: string[] = [];
   for (const r of requests) {
     try {
-      await syncLeaveSegments(r.id);
+      placed.push(...(await syncLeaveSegments(r.id)));
     } catch (err) {
       console.error("pay periods: time off not added to a new period", period.id, r.id, err);
     }
   }
+  await recalculateAfterLeave(placed);
 }
 
 /**
