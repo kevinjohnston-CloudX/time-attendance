@@ -296,14 +296,13 @@ export const APPROVALS_HREF = "/approvals";
 export type PhoneTab = { label: string; href: string; icon: React.ElementType; approvals?: boolean };
 
 /**
- * The phone's bottom bar: four pages chosen by what this person mostly does,
- * then Menu (drawn by the bar itself), which holds every page the sidebar
- * lists. The four only decide what is one tap away; nothing becomes
- * unreachable, so a role is never worse off for the choice made here.
+ * The phone's bottom bar: four pages, then Menu (drawn by the bar itself),
+ * which holds every page the sidebar lists. The four only decide what is one
+ * tap away; nothing becomes unreachable.
  *
- * <p>Read in this order, first match wins: limited to Live Attendance, an
- * inactive account, HR (people and the building), payroll, a supervisor,
- * and everyone else, who mostly punch and check their hours.
+ * <p>Everyone gets Home, Time Card, PTO and Punch. Only an account limited
+ * to Live Attendance and an inactive account keep their own set, because
+ * those pages are closed to them.
  */
 export function phoneTabs({
   can,
@@ -329,40 +328,29 @@ export function phoneTabs({
       { label: "Documents", href: "/documents", icon: FileText },
     ];
   }
-  if (can("EMPLOYEE_MANAGE") && can("PRESENCE_VIEW_ANY")) {
-    return [home, attendance, { label: "Employees", href: "/admin/employees", icon: Users }, approvals];
-  }
-  if (can("PAY_PERIOD_MANAGE")) {
-    return [
-      home,
-      { label: "Timecards", href: "/payroll/timecards", icon: FileSpreadsheet },
-      { label: "Pay Periods", href: "/payroll", icon: CalendarRange },
-      approvals,
-    ];
-  }
-  // Team Overview and the approval queues need approve rights, as their pages do.
-  if (can("TIMESHEET_APPROVE_TEAM")) {
-    return [home, { label: "Team", href: "/supervisor", icon: Users }, approvals, { label: "Punch", href: "/time/punch", icon: Clock }];
-  }
-  // A view-only team role (an agency viewer): what it can open, and no Punch,
-  // Approvals or Team Overview, which would only send it back to Home.
-  if (can(["EMPLOYEE_VIEW_TEAM", "TIMECARD_VIEW_TEAM", "PUNCH_VIEW_TEAM"])) {
-    return [
-      home,
-      ...(can("EMPLOYEE_VIEW_TEAM") ? [{ label: "Team", href: "/supervisor/team", icon: Users }] : []),
-      ...(can("TIMECARD_VIEW_TEAM") ? [{ label: "Timecards", href: "/payroll/timecards", icon: FileSpreadsheet }] : []),
-      ...(can("PUNCH_VIEW_TEAM") ? [{ label: "Punches", href: "/supervisor/punch-history", icon: History }] : []),
-    ];
-  }
-  // Everyone else: their own time, each tab only where the role has it, as
-  // the sidebar lists it. A role without them (a visitor) was given all three
-  // and every one sent it back to Home; its badge and guides fill the bar.
+  // The same four for everyone who signs in (Cristian, Nov 16): Home, Time
+  // Card, PTO, Punch. Each one only where the role can open that page, as the
+  // sidebar lists it, so no tab sends anyone back to Home. A gap is filled
+  // with what that role opens most, then its badge and guides.
   const own: PhoneTab[] = [
+    ...(can(["PUNCH_OWN", "TIMESHEET_SUBMIT_OWN"]) ? [{ label: "Time Card", href: "/time/timesheet", icon: ClipboardList }] : []),
+    ...(can("LEAVE_REQUEST_OWN") ? [{ label: "PTO", href: "/leave", icon: CalendarDays }] : []),
     ...(can("PUNCH_OWN") ? [{ label: "Punch", href: "/time/punch", icon: Clock }] : []),
-    ...(can(["PUNCH_OWN", "TIMESHEET_SUBMIT_OWN"]) ? [{ label: "Timesheet", href: "/time/timesheet", icon: ClipboardList }] : []),
-    ...(can("LEAVE_REQUEST_OWN") ? [{ label: "Time Off", href: "/leave", icon: CalendarDays }] : []),
   ];
+  const roleTabs: PhoneTab[] =
+    can("EMPLOYEE_MANAGE") && can("PRESENCE_VIEW_ANY")
+      ? [attendance, approvals, { label: "Employees", href: "/admin/employees", icon: Users }]
+      : can("PAY_PERIOD_MANAGE")
+        ? [approvals, { label: "Timecards", href: "/payroll/timecards", icon: FileSpreadsheet }]
+        : can("TIMESHEET_APPROVE_TEAM")
+          ? [approvals, { label: "Team", href: "/supervisor", icon: Users }]
+          : [
+              ...(can("EMPLOYEE_VIEW_TEAM") ? [{ label: "Team", href: "/supervisor/team", icon: Users }] : []),
+              ...(can("TIMECARD_VIEW_TEAM") ? [{ label: "Timecards", href: "/payroll/timecards", icon: FileSpreadsheet }] : []),
+              ...(can("PUNCH_VIEW_TEAM") ? [{ label: "Punches", href: "/supervisor/punch-history", icon: History }] : []),
+            ];
   const fill: PhoneTab[] = [
+    ...roleTabs,
     { label: "Badge", href: "/badge", icon: QrCode },
     { label: "Guides", href: "/knowledge-base", icon: LibraryBig },
   ];
