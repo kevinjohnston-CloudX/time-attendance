@@ -8,6 +8,7 @@ import type { VisitorDay, VisitorDayRow } from "@/lib/presence/visitor-day.servi
 import { VISITOR_KIND_LABEL } from "@/lib/visitors/visitor-pass";
 import { fmtTime, initialsOf } from "./presence-meta";
 import { Face } from "./face";
+import { VisitorTag } from "./visitor-tag";
 import type { VisitorList } from "./scan-log";
 import styles from "./on-site.module.css";
 
@@ -308,18 +309,6 @@ function VisitorRow({
         </span>
       </button>
     </li>
-  );
-}
-
-/**
- * The mark that tells a visitor from an employee at a glance, wherever a
- * person is listed on Live Attendance. One colour no status uses.
- */
-export function VisitorTag() {
-  return (
-    <Badge tone="purple" size="sm">
-      Visitor
-    </Badge>
   );
 }
 

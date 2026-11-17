@@ -4866,6 +4866,18 @@
   min-width: 0;
 }
 
+/* A name with a tag beside it (Visitor): the name gives way, never the tag. */
+.whoLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.whoLine > :last-child:not(:first-child) {
+  flex-shrink: 0;
+}
+
 /* The Scan log's visitor list: face, who and who they came to see, their
    pass, what the gate saw, where they stand. Rows open the visitor's details. */
 .vdList {

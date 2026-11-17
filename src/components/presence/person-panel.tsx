@@ -1,5 +1,6 @@
 "use client";
 
+import { VisitorTag } from "./visitor-tag";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CalendarPlus, Camera, ChevronLeft, ChevronRight, Clock, Coffee, DoorClosed, DoorOpen, ImageOff, UserCircle, UserRound, X } from "lucide-react";
 import { Badge, Button } from "@/components/ui";
@@ -227,7 +228,7 @@ export function PersonPanel({
   const tags = [
     person && isToday && person.outsideOnMeal ? <Badge key="out" tone="neutral" size="sm">Outside the building</Badge> : null,
     visitor ? (
-      <Badge key="visitor" tone="info" size="sm">Visitor</Badge>
+      <VisitorTag key="visitor" />
     ) : salaried ? (
       <Badge key="salary" tone="neutral" size="sm">Office</Badge>
     ) : null,
@@ -317,7 +318,9 @@ export function PersonPanel({
                 <span className={styles.skeleton} style={{ width: 180, height: 26 }} />
               )}
               <span className={styles.ppRole}>
-                {person?.jobTitle ?? detail?.jobTitle ?? person?.department ?? detail?.department ?? ""}
+                {visitor
+                  ? (person?.visitorFrom ?? detail?.visitorFrom ?? "Visitor")
+                  : (person?.jobTitle ?? detail?.jobTitle ?? person?.department ?? detail?.department ?? "")}
               </span>
               {/* A card of who they are, for everyone who can see this page.
                   Never a way into the employee record, which carries pay. */}

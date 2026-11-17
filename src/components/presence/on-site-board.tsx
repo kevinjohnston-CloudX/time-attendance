@@ -100,6 +100,7 @@ import {
 } from "./scan-log";
 import { UnknownBadgesView, unknownBadgesLines, useUnknownBadges } from "./unknown-badges";
 import { VisitorDayView, inVisitorList, useVisitorDay, visitorDayLines } from "./visitors-day";
+import { VisitorTag } from "./visitor-tag";
 import { ExportWindow } from "./export-window";
 import { VisitorsWindow } from "./visitors-window";
 import { dayWords, fileStamp, linesTable, movementsLines, stampLine, type ExportTable } from "./export-table";
@@ -1827,10 +1828,13 @@ function PersonTile({
         )}
       </span>
       <span className={styles.tileBody}>
-        <span className={styles.name}>{p.name}</span>
+        <span className={styles.whoLine}>
+          <span className={`${styles.name} truncate`}>{p.name}</span>
+          {p.visitor && <VisitorTag />}
+        </span>
         {!compact && (
           <span className={styles.meta}>
-            {p.jobTitle ?? p.department ?? p.employeeCode}
+            {p.visitor ? (p.visitorFrom ?? p.employeeCode) : (p.jobTitle ?? p.department ?? p.employeeCode)}
             {p.salaried ? " · Office" : ""}
           </span>
         )}
@@ -1923,12 +1927,15 @@ function PeopleTable({
                 <span className="ta-list-text">
                   <span className={styles.plTop}>
                     <span className="ta-list-title">{p.name}</span>
+                    {p.visitor && <VisitorTag />}
                     <Badge tone={STATUS_META[p.status].badge} size="sm" dot>
                       {statusLabel(p)}
                     </Badge>
                   </span>
                   <span className="ta-list-sub">
-                    {p.department ? `${p.department}, ${lowerFirst(sinceLine(p, tz, nowIso))}` : sinceLine(p, tz, nowIso)}
+                    {(p.visitor ? p.visitorFrom : p.department)
+                      ? `${p.visitor ? p.visitorFrom : p.department}, ${lowerFirst(sinceLine(p, tz, nowIso))}`
+                      : sinceLine(p, tz, nowIso)}
                     {p.lateMinutes !== null && (
                       <span style={{ color: "var(--text-warning)" }}>, {fmtDuration(p.lateMinutes)} late</span>
                     )}
@@ -1981,11 +1988,14 @@ function PeopleTable({
                   >
                     <Photo person={p} className={styles.avatar} />
                     <span className="flex min-w-0 flex-col">
-                      <span className="truncate" style={{ fontWeight: "var(--weight-medium)", color: "var(--text-primary)" }}>
-                        {p.name}
+                      <span className={styles.whoLine}>
+                        <span className="truncate" style={{ fontWeight: "var(--weight-medium)", color: "var(--text-primary)" }}>
+                          {p.name}
+                        </span>
+                        {p.visitor && <VisitorTag />}
                       </span>
-                      <span className="tabular" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }}>
-                        {p.employeeCode}
+                      <span className="tabular truncate" style={{ font: "var(--type-body2)", color: "var(--text-tertiary)" }} title={p.visitor ? (p.visitorFrom ?? undefined) : undefined}>
+                        {p.visitor ? (p.visitorFrom ?? p.employeeCode) : p.employeeCode}
                       </span>
                     </span>
                   </button>

@@ -11,6 +11,7 @@ import styles from "./on-site.module.css";
 import { Face } from "./face";
 import { SummarySkeleton } from "./movements-view";
 import { useOnPulseChange } from "./use-site-pulse";
+import { VisitorTag } from "./visitor-tag";
 import { codeOf } from "@/lib/action-errors";
 
 /**
@@ -734,11 +735,20 @@ function LogRow({
         </span>
 
         <span className={styles.logWho}>
-          <span className={styles.name}>{r.person.name}</span>
+          <span className={styles.whoLine}>
+            <span className={`${styles.name} truncate`}>{r.person.name}</span>
+            {r.person.visitor && <VisitorTag />}
+          </span>
           <span className={styles.meta}>
-            {r.person.employeeCode}
-            {(r.person.jobTitle ?? r.person.department) ? ` · ${r.person.jobTitle ?? r.person.department}` : ""}
-            {r.person.homeSite ? ` · From ${r.person.homeSite}` : ""}
+            {r.person.visitor ? (
+              (r.person.visitorFrom ?? r.person.employeeCode)
+            ) : (
+              <>
+                {r.person.employeeCode}
+                {(r.person.jobTitle ?? r.person.department) ? ` · ${r.person.jobTitle ?? r.person.department}` : ""}
+                {r.person.homeSite ? ` · From ${r.person.homeSite}` : ""}
+              </>
+            )}
           </span>
         </span>
 

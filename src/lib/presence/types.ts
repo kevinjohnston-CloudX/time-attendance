@@ -72,6 +72,8 @@ export interface PresencePerson {
    * department reads Visitor, under VISITOR_DEPARTMENT_ID.
    */
   visitor: boolean;
+  /** A visitor's company and who they came to see (visitor-line.ts); null for everyone else. */
+  visitorFrom: string | null;
   status: PresenceStatus;
   /** Counted in the building total. */
   inside: boolean;
@@ -156,6 +158,8 @@ export interface PresenceDetail {
   salaried: boolean;
   /** On a client's badge: never uses the time clock (PresencePerson.visitor). */
   visitor: boolean;
+  /** A visitor's company and who they came to see (visitor-line.ts); null for everyone else. */
+  visitorFrom: string | null;
   inactive: boolean;
   /** The site on their record, when it is not this building. */
   homeSite: string | null;
@@ -286,6 +290,9 @@ export interface ScanLogRow extends PresenceScan {
     /** The site on their record, when it is not this building. */
     homeSite: string | null;
     photoUrl: string | null;
+    /** On a client's badge: a visitor, never an employee. */
+    visitor: boolean;
+    visitorFrom: string | null;
   };
 }
 
@@ -355,6 +362,8 @@ export interface DayPerson {
   salaried: boolean;
   /** On a client's badge: never uses the time clock (PresencePerson.visitor). */
   visitor: boolean;
+  /** A visitor's company and who they came to see (visitor-line.ts); null for everyone else. */
+  visitorFrom: string | null;
   inactive: boolean;
   /** That day's schedule in site time, HH:mm. */
   scheduledStart: string | null;

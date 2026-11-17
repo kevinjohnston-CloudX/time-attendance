@@ -1,3 +1,4 @@
+import { VISITOR_LINE_SELECT, visitorFrom } from "@/lib/visitors/visitor-line";
 import { shownName } from "@/lib/utils/shown-name";
 import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
@@ -314,6 +315,7 @@ async function buildPresenceBoard(tenantId: string, siteId: string): Promise<Pre
           site: { select: { id: true, name: true } },
           barcode: true,
           wmsId: true,
+          visitorPass: VISITOR_LINE_SELECT,
           isActive: true,
           terminatedAt: true,
           hireDate: true,
@@ -419,6 +421,7 @@ async function buildPresenceBoard(tenantId: string, siteId: string): Promise<Pre
       photoUrl: photos.get(emp.id) ?? null,
       salaried: emp.payType === "SALARY",
       visitor,
+      visitorFrom: visitor ? visitorFrom(emp.visitorPass) : null,
       status,
       inside,
       breakKind,
@@ -519,6 +522,7 @@ export async function getPresenceDetail(
       payType: true,
       barcode: true,
       wmsId: true,
+      visitorPass: VISITOR_LINE_SELECT,
       isActive: true,
       terminatedAt: true,
       wmsName: true,
@@ -631,6 +635,7 @@ export async function getPresenceDetail(
     supervisor: emp.supervisor?.user?.name ?? null,
     salaried: emp.payType === "SALARY",
     visitor: isClientBadge(emp.wmsId),
+    visitorFrom: isClientBadge(emp.wmsId) ? visitorFrom(emp.visitorPass) : null,
     inactive,
     homeSite: emp.site && emp.site.id !== siteId ? emp.site.name : null,
     site: emp.site?.name ?? null,
