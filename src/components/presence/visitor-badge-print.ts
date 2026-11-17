@@ -187,10 +187,8 @@ export function badgeSheet(b: VisitorBadge, paper: BadgePaper, opts: { only?: "b
   .date { font-weight: 760; font-size: 1.6em; line-height: 1.1; letter-spacing: -0.015em; white-space: nowrap; }
   .site { align-items: flex-end; text-align: right; max-width: 50%; }
   .site .val { max-width: 100%; }
-  .note { margin: 0.2in 0 0; width: ${p.w}; font: 9pt/1.45 ${sans}; color: #555; text-align: center; }
 </style></head><body>
-<div class="sheet"><div class="cut">${badgeHtml(b, !!opts.draft)}</div>
-${page && paper === "letter" ? `<p class="note">Cut along the dashed line to fit a standard 4 × 3 in badge holder.<br>Print at Actual size (100%), not Fit to page.</p>` : ""}</div>
+<div class="sheet"><div class="cut">${badgeHtml(b, !!opts.draft)}</div></div>
 </body></html>`;
 }
 

@@ -54,10 +54,8 @@ ${styles}
   .cut { position: relative; display: grid; place-items: center; width: 2.125in; height: 3.375in; overflow: hidden; }
   ${letter ? '.cut::after { content: ""; position: absolute; inset: 0; border: 1px dashed #8c8c8c; border-radius: 0.125in; pointer-events: none; }' : ""}
   .cut > article { width: ${width}px; max-width: none; margin: 0; box-shadow: none; zoom: ${zoom}; }
-  .note { margin: 0.2in 0 0; width: 3.4in; font: 9pt/1.45 ${sans}; color: #555; text-align: center; }
 </style></head><body>
-<div class="sheet"><div class="cut">${card.outerHTML}</div>
-${letter ? '<p class="note">Cut along the dashed line to fit a standard badge holder.<br>Print at Actual size (100%), not Fit to page.</p>' : ""}</div>
+<div class="sheet"><div class="cut">${card.outerHTML}</div></div>
 </body></html>`;
   printBadgeSheet(html);
 }
