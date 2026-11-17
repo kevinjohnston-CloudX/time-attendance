@@ -18,7 +18,8 @@ import { describePrint, type PrintLayout } from "@/lib/reports/grouping";
 import { ReportWindow, WindowBlock, WindowCard, WindowNote } from "./window/report-window";
 import type { ReportResult } from "@/lib/reports/data-sources";
 import { leftOutSentence } from "@/lib/reports/left-out";
-import type { DateRange, FilterDef } from "@/lib/validators/report.schema";
+import type { DateRange, FilterDef, SortDef } from "@/lib/validators/report.schema";
+import { reportUsesDates } from "@/lib/reports/uses-dates";
 import phone from "./reports-phone.module.css";
 
 /**
@@ -111,6 +112,7 @@ function savedConfig(config: unknown): {
   filters?: FilterDef[];
   columns?: string[];
   groupBy?: string[];
+  sortBy?: SortDef[];
   layout?: PrintLayout;
   across?: { field: string; value: string };
 } {
@@ -151,6 +153,9 @@ export function ReportViewer({
   );
   const [ranWith, setRanWith] = useState<string | null>(null);
   const stale = result !== null && ranWith !== JSON.stringify(dateRange);
+  // A list of people with no "in these dates" column: its dates change
+  // nothing, so the screen does not ask for them.
+  const datesMatter = reportUsesDates(report.dataSource, cfg);
 
   const canEdit = report.access?.canEdit ?? false;
   const isOwner = report.access?.isOwner ?? false;
@@ -288,7 +293,7 @@ export function ReportViewer({
       label: "Columns",
       value: columnNames.length ? columnNames.join(", ") : "None",
     },
-    { label: "Who is included", value: filterWords.length ? filterWords.join(". ") : "Everyone in the dates" },
+    { label: "Who is included", value: filterWords.length ? filterWords.join(". ") : datesMatter ? "Everyone in the dates" : "Every active employee" },
     ...(groupWords.length ? [{ label: "Grouped by", value: groupWords.join(", then ") }] : []),
     ...(printWords ? [{ label: "Printed", value: printWords }] : []),
     ...(cfg.across
@@ -297,7 +302,7 @@ export function ReportViewer({
           value: `A column for each ${colLabel(cfg.across.field).toLowerCase()}, showing ${colLabel(cfg.across.value).toLowerCase()}`,
         }]
       : []),
-    { label: "Saved dates", value: describeRange(cfg.dateRange, payPeriods, filterOptions?.weekStart) },
+    ...(datesMatter ? [{ label: "Saved dates", value: describeRange(cfg.dateRange, payPeriods, filterOptions?.weekStart) }] : []),
     { label: "Owner", value: isOwner ? "You" : report.owner.name ?? "Unknown" },
     {
       label: "Who can open it",
@@ -346,18 +351,20 @@ export function ReportViewer({
         <Banner
           tone="error"
           title="The report did not run"
-          body="Nothing was changed. Try again, or pick different dates. The failed run is listed in the run history."
+          body={`Nothing was changed. ${datesMatter ? "Try again, or pick different dates." : "Try again."} The failed run is listed in the run history.`}
           meta={error}
         />
       )}
 
       {/* ── Dates ───────────────────────────────────────────────────── */}
-      <Panel
-        title="Dates"
-        subtitle="Change them to see other days; the report keeps its own dates for next time."
-      >
-        <DateRangePicker value={dateRange} onChange={setDateRange} payPeriods={payPeriods} scan={isScanReport(report.dataSource)} weekStart={filterOptions?.weekStart} />
-      </Panel>
+      {datesMatter && (
+        <Panel
+          title="Dates"
+          subtitle="Change them to see other days; the report keeps its own dates for next time."
+        >
+          <DateRangePicker value={dateRange} onChange={setDateRange} payPeriods={payPeriods} scan={isScanReport(report.dataSource)} weekStart={filterOptions?.weekStart} />
+        </Panel>
+      )}
 
       {/* ── Results ─────────────────────────────────────────────────── */}
       <Panel
@@ -365,9 +372,9 @@ export function ReportViewer({
         flush
         subtitle={
           stale || (isRunning && !result)
-            ? "Running with these dates"
+            ? datesMatter ? "Running with these dates" : "Running"
             : result
-              ? `${result.totalRows.toLocaleString("en-US")} ${result.totalRows === 1 ? "row" : "rows"} · ${describeRange(dateRange, payPeriods, filterOptions?.weekStart)}`
+              ? `${result.totalRows.toLocaleString("en-US")} ${result.totalRows === 1 ? "row" : "rows"}${datesMatter ? ` · ${describeRange(dateRange, payPeriods, filterOptions?.weekStart)}` : ""}`
               : "Run the report to see the rows here."
         }
         subtitleTone={undefined}
@@ -595,7 +602,7 @@ export function ReportViewer({
         <ScheduleForm
           reportId={report.id}
           coverage={
-            cfg.dateRange
+            cfg.dateRange && datesMatter
               ? {
                   text: describeRange(cfg.dateRange, filterOptions?.payPeriods ?? [], filterOptions?.weekStart),
                   // "Current pay period" moves too: it was left out, and the window

@@ -11,6 +11,7 @@ import { ReportTypeDialog } from "../report-type-dialog";
 import { ColumnPicker } from "./column-picker";
 import { FilterBuilder } from "./filter-builder";
 import { DateRangePicker, defaultPayPeriodRange, describeRange } from "./date-range-picker";
+import { reportUsesDates } from "@/lib/reports/uses-dates";
 import { GroupSortConfig } from "./group-sort-config";
 import { PrintLayoutConfig } from "./print-layout-config";
 import { ReportWindow, WindowBlock, WindowCard } from "../window/report-window";
@@ -339,14 +340,15 @@ export function ReportBuilder({
   const moreCount =
     groupBy.length + sortBy.length + (pageBreak ? 1 : 0) + (layout.signature ? 1 : 0) + (layout.cards ? 1 : 0) + (across ? 1 : 0);
   const labelOf = (id: string) => currentSource?.columns.find((c) => c.id === id)?.label ?? id;
+  const datesMatter = reportUsesDates(dataSource, { columns: selectedColumns, filters: readyFilters, sortBy });
   const summary = [
     dataSourceLabel(dataSource),
-    describeRange(dateRange, filterOptions.payPeriods, filterOptions.weekStart),
+    datesMatter ? describeRange(dateRange, filterOptions.payPeriods, filterOptions.weekStart) : null,
     readyFilters.length === 0
       ? "Everyone"
       : `${readyFilters.length} ${readyFilters.length === 1 ? "filter" : "filters"}`,
     `${selectedColumns.length} ${selectedColumns.length === 1 ? "column" : "columns"}`,
-  ].join(" · ");
+  ].filter(Boolean).join(" · ");
 
   const previewNote = !canPreview
     ? selectedColumns.length === 0
@@ -429,9 +431,12 @@ export function ReportBuilder({
 
           {currentSource && (
             <div className="ta-scroll flex min-h-0 flex-1 flex-col overflow-y-auto">
-              <RailSection title="Dates" hint="You can pick other dates each time you run it.">
-                <DateRangePicker value={dateRange} onChange={setDateRange} payPeriods={filterOptions.payPeriods} scan={isScanReport(dataSource)} weekStart={filterOptions.weekStart} stacked />
-              </RailSection>
+              {/* Only when the dates change the rows: a list of people asks for them once an "in these dates" column or filter is on. */}
+              {datesMatter && (
+                <RailSection title="Dates" hint="You can pick other dates each time you run it.">
+                  <DateRangePicker value={dateRange} onChange={setDateRange} payPeriods={filterOptions.payPeriods} scan={isScanReport(dataSource)} weekStart={filterOptions.weekStart} stacked />
+                </RailSection>
+              )}
 
               <RailSection
                 title="Filters"
