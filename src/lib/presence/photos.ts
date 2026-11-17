@@ -13,7 +13,9 @@ import { photoOffIds } from "@/lib/privacy/data-protection";
  * is found rather than guessed: the bucket's file names are listed every 15
  * minutes, and each person gets the first of their badges that has a file,
  * trying the badges they actually scanned with (most recent first), then
- * their badge number, their barcode and their employee code. If listing ever
+ * their badge number, their barcode and their employee code. Someone with no
+ * file in the list is also looked up directly, at most every two minutes, so
+ * a photo taken since the last listing shows within minutes. If listing ever
  * stops being allowed, the most recently scanned badge is used as a best
  * guess and a missing photo falls back to initials in the browser.
  *
@@ -173,7 +175,53 @@ async function photoKeys(
     }
     out.set(p.id, key);
   }
+  if (names) await probeNewPhotos(store, people, badges, out, names);
   return out;
+}
+
+/** How often one person with no photo is looked for again, between listings. */
+const PROBE_MS = 2 * 60 * 1000;
+/** The most people looked for in one request, so a board full of faceless people stays fast. */
+const MAX_PROBES = 25;
+/** The badges tried per person: the ones they scanned with most recently come first. */
+const PROBE_BADGES = 3;
+const probed = new Map<string, number>();
+
+/**
+ * A photo taken since the list was read is not in it for up to 15 minutes,
+ * so a visitor or new hire photographed at the tablet showed initials for
+ * that long (Juan, 2026-11-17). For people with no photo in the list, ask
+ * the bucket directly for their likeliest file names, at most every two
+ * minutes per person, and add what turns up to the list.
+ */
+async function probeNewPhotos(
+  store: { client: S3Client; bucket: string },
+  people: PhotoPerson[],
+  badges: Map<string, string[]>,
+  out: Map<string, string | null>,
+  names: Map<string, number>,
+): Promise<void> {
+  const now = Date.now();
+  const due = people
+    .filter((p) => !out.get(p.id) && now - (probed.get(p.id) ?? 0) > PROBE_MS)
+    .slice(0, MAX_PROBES);
+  if (probed.size > 20_000) probed.clear();
+  await Promise.all(
+    due.map(async (p) => {
+      probed.set(p.id, now);
+      for (const c of candidatesFor(p, badges.get(p.id) ?? []).slice(0, PROBE_BADGES)) {
+        const key = `${c}.jpg`;
+        try {
+          const head = await store.client.send(new HeadObjectCommand({ Bucket: store.bucket, Key: key }));
+          names.set(key, head.LastModified?.getTime() ?? now);
+          out.set(p.id, key);
+          return;
+        } catch {
+          // Not there under this badge; try the next.
+        }
+      }
+    }),
+  );
 }
 
 /**
