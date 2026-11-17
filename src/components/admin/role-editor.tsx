@@ -50,6 +50,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   leave: "Leave",
   accrual: "Accruals",
   payroll: "Payroll",
+  pay: "Pay Rates",
   employee: "Employees",
   rules: "Rule Sets",
   site: "Sites",
@@ -129,6 +130,12 @@ const RESOURCE_INFO: Record<string, PermInfo> = {
     cells: {
       "write:all": "View pay periods, manage pay codes and payroll settings, and make payroll changes on open timecards. Timecard access is controlled separately under Timecards.",
       "execute:all": "Run payroll: lock and unlock pay periods, unlock and re-lock a single timecard, and export or push to ADP.",
+    },
+  },
+  pay: {
+    summary: "Controls who can see what people are paid on timecards. Without it, a timecard shows hours only.",
+    cells: {
+      "read:all": "See pay rates and pay (regular, overtime, double time and total) on the timecards this role can open. Pay on employee records and in reports comes with Employees Write and Reports Write.",
     },
   },
   employee: {

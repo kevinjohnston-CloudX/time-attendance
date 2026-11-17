@@ -8,6 +8,7 @@ import { timecardList } from "@/lib/timecards/timecard-list";
 import { directReportsOf } from "@/lib/get-subordinate-ids";
 import { endedOn, startedOn } from "@/lib/engines/segment-builder";
 import { ownCompany } from "@/lib/rbac/company";
+import { checkPermission } from "@/lib/rbac/check-permission";
 
 // ─── Employee list (employee-centric timecard) ───────────────────────────────
 
@@ -214,10 +215,16 @@ export const getTimecardByEmployeeAndPeriod = withRBAC(
     if (!ts) return null;
 
     // The days they started and left rather than the dates themselves, for the absent marks.
-    const { hireDate, adjustedHireDate, terminatedAt, ...employee } = ts.employee;
+    const { hireDate, adjustedHireDate, terminatedAt, payRate, ...employee } = ts.employee;
     return {
       ...ts,
-      employee: { ...employee, startedOn: startedOn({ hireDate, adjustedHireDate }), endedOn: endedOn({ hireDate, adjustedHireDate, terminatedAt }) },
+      employee: {
+        ...employee,
+        // Pay is its own grant (PAY_VIEW): a supervisor viewing the timecard gets hours only.
+        payRate: (await checkPermission("PAY_VIEW")) ? payRate : null,
+        startedOn: startedOn({ hireDate, adjustedHireDate }),
+        endedOn: endedOn({ hireDate, adjustedHireDate, terminatedAt }),
+      },
       mealWaivers: ts.mealWaivers.map((w) => ({
         id: w.id,
         segmentDate: w.segmentDate.toISOString().slice(0, 10),
@@ -406,10 +413,16 @@ export const getTimecardDetail = withRBAC(
     });
 
     // The days they started and left rather than the dates themselves, for the absent marks.
-    const { hireDate, adjustedHireDate, terminatedAt, ...employee } = ts.employee;
+    const { hireDate, adjustedHireDate, terminatedAt, payRate, ...employee } = ts.employee;
     return {
       ...ts,
-      employee: { ...employee, startedOn: startedOn({ hireDate, adjustedHireDate }), endedOn: endedOn({ hireDate, adjustedHireDate, terminatedAt }) },
+      employee: {
+        ...employee,
+        // Pay is its own grant (PAY_VIEW): a supervisor viewing the timecard gets hours only.
+        payRate: (await checkPermission("PAY_VIEW")) ? payRate : null,
+        startedOn: startedOn({ hireDate, adjustedHireDate }),
+        endedOn: endedOn({ hireDate, adjustedHireDate, terminatedAt }),
+      },
       mealWaivers: ts.mealWaivers.map((w) => ({
         id: w.id,
         segmentDate: w.segmentDate.toISOString().slice(0, 10),

@@ -34,6 +34,10 @@ export const PERMISSIONS = [
   "PAY_PERIOD_MANAGE",
   // Run payroll: lock and unlock pay periods and single timecards, push to ADP
   "PAYROLL_RUN",
+  // See pay rates and pay on timecards. Its own grant, ticked per role in
+  // Roles & Permissions, so a supervisor sees and fixes hours without seeing
+  // what anyone earns (HR, 11/17: HR Admin and Payroll Admin only).
+  "PAY_VIEW",
   "EMPLOYEE_MANAGE",
   // See your own people's employee details (Team Members), read only
   "EMPLOYEE_VIEW_TEAM",
@@ -127,6 +131,7 @@ const rolePermissions: Record<Role, Permission[]> = {
     "TIMECARD_EDIT_TEAM",
     "TIMECARD_EDIT_ANY",
     "PAY_PERIOD_MANAGE",
+    "PAY_VIEW",
     "AUDIT_VIEW",
     "DOCUMENT_UPLOAD",
     "DOCUMENT_VIEW_ANY",
@@ -154,6 +159,7 @@ const rolePermissions: Record<Role, Permission[]> = {
     "TIMECARD_EDIT_ANY",
     "PAY_PERIOD_MANAGE",
     "PAYROLL_RUN",
+    "PAY_VIEW",
     "EMPLOYEE_MANAGE",
     "EMPLOYEE_DATA_EXPORT",
     "RULES_MANAGE",
