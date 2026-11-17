@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addMonths, lastDayOf, passStanding, renewalStart, termFitsKind } from "./visitor-pass";
+import { addMonths, lastDayOf, passStanding, renewalStart, termFitsKind, visitorWeekday } from "./visitor-pass";
 
 describe("lastDayOf", () => {
   it("a day pass ends the day it starts", () => {
@@ -60,5 +60,23 @@ describe("termFitsKind", () => {
     expect(termFitsKind("DAY_PASS", "TWO_YEARS")).toBe(false);
     expect(termFitsKind("FREQUENT", "TWO_YEARS")).toBe(true);
     expect(termFitsKind("FREQUENT", "DAY")).toBe(false);
+  });
+});
+
+describe("visitorWeekday", () => {
+  it("Monday to Friday", () => {
+    // 2026-11-16 is a Monday.
+    for (const d of ["2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20"]) {
+      expect(visitorWeekday(d)).toBe(true);
+    }
+  });
+  it("not Saturday or Sunday", () => {
+    expect(visitorWeekday("2026-11-21")).toBe(false);
+    expect(visitorWeekday("2026-11-22")).toBe(false);
+  });
+  it("across a month and a year end", () => {
+    expect(visitorWeekday("2026-12-31")).toBe(true); // Thursday
+    expect(visitorWeekday("2027-01-02")).toBe(false); // Saturday
+    expect(visitorWeekday("2028-02-29")).toBe(true); // Tuesday, leap day
   });
 });
