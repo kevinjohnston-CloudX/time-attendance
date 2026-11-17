@@ -1,28 +1,41 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CreditCard, FileText, Printer, Tag, X, type LucideIcon } from "lucide-react";
-import { Banner, Button } from "@/components/ui";
+import { IdCard, Printer, Tag, X, type LucideIcon } from "lucide-react";
+import { Banner, Button, SegmentedControl } from "@/components/ui";
 import { Overlay } from "@/components/ui/overlay";
 import { getVisitorBadgeToPrint } from "@/actions/visitor.actions";
 import type { VisitorBadge } from "@/lib/visitors/visitors.service";
-import { PAPER_BODY, PAPER_LABEL, badgeSheet, printBadgeSheet, rememberPaper, savedPaper, type BadgePaper } from "./visitor-badge-print";
+import { badgeSheet, isBadgePaper, printBadgeSheet, rememberPaper, savedPaper, type BadgePaper } from "./visitor-badge-print";
+import { printIdBadge } from "@/components/badge/print-id-badge";
 import { BadgeSample } from "./badge-sample";
+import { VisitorIdBadge } from "./visitor-id-badge";
 import frame from "./export-window.module.css";
 import styles from "./print-badge-window.module.css";
 
 /**
- * Print badge, from New Visitor's result and the Visitors list: which paper,
- * the badge exactly as it prints on it, and Print (visitor-badge-print.ts).
- * The paper chosen is remembered on this computer, and New Visitor previews
- * the badge on it too.
+ * Print badge, from New Visitor's result and the Visitors list: which version,
+ * the badge exactly as it prints, and Print. Two versions (Juan, 2026-11-17):
+ * the Badge, the employee ID badge with the visitor's details and colour, on
+ * letter paper or an ID card; and the label, until the shirt sticker's size is
+ * confirmed. The choice is remembered on this computer, and New Visitor
+ * previews the badge as it will print.
  */
 
-const PAPERS: { value: BadgePaper; icon: LucideIcon }[] = [
-  { value: "letter", icon: FileText },
-  { value: "label", icon: Tag },
-  { value: "card", icon: CreditCard },
+type Version = "badge" | "label";
+
+const VERSIONS: { value: Version; icon: LucideIcon; title: string; body: string }[] = [
+  { value: "badge", icon: IdCard, title: "Badge", body: "The same card as an employee badge" },
+  { value: "label", icon: Tag, title: "Label", body: "Label printer, 4 × 3 in labels" },
 ];
+
+const PRINT_ON: { value: "letter" | "card"; label: string; hint: string }[] = [
+  { value: "letter", label: "Letter paper", hint: "Office printer. Cut along the dashed line to fit a badge holder." },
+  { value: "card", label: "ID card", hint: "Card printer, CR80 cards." },
+];
+
+/** The Badge's width in the preview: a CR80 card standing up fits the rail with room around it. */
+const PREVIEW_BADGE_WIDTH = 196;
 
 export function PrintBadgeWindow({
   siteId,
@@ -78,6 +91,15 @@ export function PrintBadgeWindow({
     setPaper(p);
     rememberPaper(p);
   };
+  // The Badge's paper is kept while the label is chosen, so going back finds it.
+  const [badgePaper, setBadgePaper] = useState<"letter" | "card">(() => (isBadgePaper(paper) ? paper : "letter"));
+  const version: Version = isBadgePaper(paper) ? "badge" : "label";
+  const pickVersion = (v: Version) => pick(v === "badge" ? badgePaper : "label");
+  const pickBadgePaper = (p: "letter" | "card") => {
+    setBadgePaper(p);
+    pick(p);
+  };
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const print = async () => {
     if (busy) return;
@@ -90,7 +112,12 @@ export function PrintBadgeWindow({
       setFailure(r && !r.success ? r.error : "The badge could not be printed. Check the connection and try again.");
       return;
     }
-    printBadgeSheet(badgeSheet(r.data, paper));
+    if (isBadgePaper(paper)) {
+      const card = cardRef.current?.firstElementChild;
+      if (card instanceof HTMLElement) printIdBadge(card, paper);
+    } else {
+      printBadgeSheet(badgeSheet(r.data, paper));
+    }
   };
 
   return (
@@ -114,31 +141,60 @@ export function PrintBadgeWindow({
         <div className={frame.body}>
           {failure && <Banner tone="error" title="The badge could not be printed" body={failure} />}
           <div className={frame.panes}>
-            <section className={frame.card} aria-labelledby="print-paper">
-              <span id="print-paper" className={frame.groupLabel}>
-                Paper
-              </span>
-              <div role="radiogroup" aria-labelledby="print-paper" className={frame.choices}>
-                {PAPERS.map(({ value, icon: Icon }) => {
-                  const on = paper === value;
-                  return (
-                    <label key={value} className={frame.choice} data-on={on}>
-                      <input type="radio" name="print-paper" value={value} checked={on} onChange={() => pick(value)} className="sr-only" />
-                      <span className={frame.choiceIcon} aria-hidden="true">
-                        <Icon />
-                      </span>
-                      <span className={frame.choiceText}>
-                        <span className={frame.choiceTitle}>{PAPER_LABEL[value]}</span>
-                        <span className={frame.choiceBody}>{PAPER_BODY[value]}</span>
-                      </span>
-                    </label>
-                  );
-                })}
+            <section className={frame.card} aria-labelledby="print-version">
+              <div className={`${frame.group} ${styles.block}`}>
+                <span id="print-version" className={frame.groupLabel}>
+                  Version
+                </span>
+                <div role="radiogroup" aria-labelledby="print-version" className={frame.choices}>
+                  {VERSIONS.map(({ value, icon: Icon, title, body }) => {
+                    const on = version === value;
+                    return (
+                      <label key={value} className={frame.choice} data-on={on}>
+                        <input type="radio" name="print-version" value={value} checked={on} onChange={() => pickVersion(value)} className="sr-only" />
+                        <span className={frame.choiceIcon} aria-hidden="true">
+                          <Icon />
+                        </span>
+                        <span className={frame.choiceText}>
+                          <span className={frame.choiceTitle}>{title}</span>
+                          <span className={frame.choiceBody}>{body}</span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className={`${frame.group} ${styles.block}`}>
+                <span id="print-on" className={frame.groupLabel}>
+                  Print on
+                </span>
+                {version === "badge" ? (
+                  <>
+                    <SegmentedControl
+                      ariaLabel="Print on"
+                      fullWidth
+                      items={PRINT_ON.map(({ value, label }) => ({ value, label }))}
+                      value={badgePaper}
+                      onChange={(v) => pickBadgePaper(v as "letter" | "card")}
+                    />
+                    <p className={styles.hint}>{PRINT_ON.find((o) => o.value === badgePaper)!.hint}</p>
+                  </>
+                ) : (
+                  <p className={styles.hint}>A 4 × 3 in label, one per visitor.</p>
+                )}
               </div>
             </section>
             <aside className={frame.rail} aria-label="Preview">
               <div className={`${frame.railBlock} ${frame.previewBlock} ${styles.previewBlock}`}>
-                {badge ? <BadgeSample badge={badge} paper={paper} width={248} /> : !failure && <span className={styles.previewWait} />}
+                {badge ? (
+                  version === "badge" ? (
+                    <VisitorIdBadge ref={cardRef} badge={badge} width={PREVIEW_BADGE_WIDTH} />
+                  ) : (
+                    <BadgeSample badge={badge} paper="label" width={248} />
+                  )
+                ) : (
+                  !failure && <span className={styles.previewWait} data-version={version} />
+                )}
               </div>
             </aside>
           </div>

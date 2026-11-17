@@ -1,4 +1,4 @@
-import { Building2 } from "lucide-react";
+import { Building2, CalendarDays } from "lucide-react";
 import { CloudTimeLockup } from "@/components/layout/cloudtime-logo";
 import type { IdBadge as IdBadgeData } from "@/lib/badge/badge.service";
 import styles from "./id-badge.module.css";
@@ -18,7 +18,17 @@ function initials(name: string): string {
  * the person is, and the code the door scans. Drawn the same on a phone, in
  * the app and on a desktop screen.
  */
-export function IdBadge({ badge }: { badge: IdBadgeData }) {
+export function IdBadge({
+  badge,
+  until,
+  tone,
+}: {
+  badge: IdBadgeData;
+  /** A visitor's last day, in words: printed under the building, as the gate stops working after it. */
+  until?: string;
+  /** A visitor pass's own band colour (a day pass by its length), in place of the role's. */
+  tone?: { bg: string; ink: string };
+}) {
   const role = ROLE_WORD[badge.kind];
   return (
     <article
@@ -26,6 +36,7 @@ export function IdBadge({ badge }: { badge: IdBadgeData }) {
       data-kind={badge.kind.toLowerCase()}
       data-active={badge.active}
       aria-label={`${role} badge for ${badge.name}`}
+      style={tone && badge.active ? ({ "--band": tone.bg, "--band-ink": tone.ink } as React.CSSProperties) : undefined}
     >
       <header className={styles.band}>
         <span className={styles.role}>{badge.active ? role : `${role}, not active`}</span>
@@ -48,6 +59,12 @@ export function IdBadge({ badge }: { badge: IdBadgeData }) {
             <Building2 className={styles.siteIcon} aria-hidden="true" />
             <span className="truncate">{badge.site}</span>
           </p>
+          {until && (
+            <p className={styles.site}>
+              <CalendarDays className={styles.siteIcon} aria-hidden="true" />
+              <span className="truncate">Until {until}</span>
+            </p>
+          )}
         </div>
       </div>
 

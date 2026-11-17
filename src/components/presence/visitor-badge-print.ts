@@ -5,11 +5,11 @@ import type { VisitorBadge } from "@/lib/visitors/visitors.service";
  * A visitor's badge as a printed page, for any printer (Juan, 2026-11-06:
  * plain office printers today, so it must work with anything).
  *
- * <p>Three papers. Letter paper, the default: the badge at 4 × 3 in, the size
- * of a standard horizontal badge holder, inside a dashed line to cut along.
- * A 4 × 3 in label, for a label printer. A CR80 card (3.375 × 2.125 in), for an
- * ID card printer. Each sets its own page size, so the print window opens on
- * the right paper.
+ * <p>Two versions (Juan, 2026-11-17). The Badge is the employee ID badge
+ * itself, with the visitor's details and colour (visitor-id-badge.tsx), on
+ * letter paper to cut out or on an ID card: printed by printIdBadge, not here.
+ * The label is drawn here, at 4 × 3 in for a label printer, until the shirt
+ * sticker's size is confirmed and it becomes the Sticker.
  *
  * <p>The band says what the pass is in words as well as colour: a black and
  * white printer loses the colour and keeps the words. The last day is the
@@ -22,17 +22,15 @@ import type { VisitorBadge } from "@/lib/visitors/visitors.service";
 
 export type BadgePaper = "letter" | "label" | "card";
 
+/** What New Visitor's summary says the badge prints on. */
 export const PAPER_LABEL: Record<BadgePaper, string> = {
-  letter: "Letter paper",
+  letter: "Badge, letter paper",
   label: "Label",
-  card: "ID card",
+  card: "Badge, ID card",
 };
 
-export const PAPER_BODY: Record<BadgePaper, string> = {
-  letter: "Office printer, cut to fit a 4 × 3 in badge holder",
-  label: "Label printer, 4 × 3 in labels",
-  card: "Card printer, CR80 cards",
-};
+/** True for the two papers the Badge prints on; the label is its own version. */
+export const isBadgePaper = (p: BadgePaper): p is "letter" | "card" => p !== "label";
 
 /**
  * The band's colour: day passes by length, frequent visitors in the visitor
