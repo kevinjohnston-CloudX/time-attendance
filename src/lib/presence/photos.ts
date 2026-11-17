@@ -13,9 +13,9 @@ import { photoOffIds } from "@/lib/privacy/data-protection";
  * is found rather than guessed: the bucket's file names are listed every 15
  * minutes, and each person gets the first of their badges that has a file,
  * trying the badges they actually scanned with (most recent first), then
- * their badge number, their barcode and their employee code. Someone with no
- * file in the list is also looked up directly, at most every two minutes, so
- * a photo taken since the last listing shows within minutes. If listing ever
+ * their badge number, their barcode and their employee code. Whoever scanned
+ * in the last few minutes is also looked up directly, so a photo taken with
+ * that scan shows on the next reload, not at the next listing. If listing ever
  * stops being allowed, the most recently scanned badge is used as a best
  * guess and a missing photo falls back to initials in the browser.
  *
@@ -175,49 +175,77 @@ async function photoKeys(
     }
     out.set(p.id, key);
   }
-  if (names) await probeNewPhotos(store, people, badges, out, names);
+  if (names) await lookForNewPhotos(tenantId, store, people, out, names);
   return out;
 }
 
-/** How often one person with no photo is looked for again, between listings. */
-const PROBE_MS = 2 * 60 * 1000;
-/** The most people looked for in one request, so a board full of faceless people stays fast. */
-const MAX_PROBES = 25;
-/** The badges tried per person: the ones they scanned with most recently come first. */
-const PROBE_BADGES = 3;
-const probed = new Map<string, number>();
+/** A photo is looked for again while its person's newest scan is this recent. */
+const FRESH_SCAN_MS = 3 * 60 * 1000;
+/**
+ * How long after the scan one look must happen before the person is left
+ * alone: a tablet can finish uploading the photo a few seconds after the
+ * scan reaches CloudTime.
+ */
+const UPLOAD_GRACE_MS = 20 * 1000;
+/** The least time between two looks for the same person. */
+const LOOK_GAP_MS = 3 * 1000;
+/** The most people looked up in one request, so a rush at the gate stays fast. */
+const MAX_LOOKS = 40;
+const looked = new Map<string, number>();
 
 /**
- * A photo taken since the list was read is not in it for up to 15 minutes,
- * so a visitor or new hire photographed at the tablet showed initials for
- * that long (Juan, 2026-11-17). For people with no photo in the list, ask
- * the bucket directly for their likeliest file names, at most every two
- * minutes per person, and add what turns up to the list.
+ * A photo arrives with a scan: the tablet takes it as the badge is read. The
+ * file list is only read every 15 minutes, so a new visitor or new hire
+ * showed initials for that long, and a retaken photo kept the old face
+ * (Juan, 2026-11-17: new photos must show at once). So whoever scanned in the
+ * last few minutes is looked up in the bucket directly, under the badge they
+ * just used first, until one look has happened well after the scan. The board
+ * reloads within seconds of a scan, so the photo shows on that reload. A
+ * changed file gets a new date, hence a new link, so the browser fetches the
+ * new face instead of the one it kept.
  */
-async function probeNewPhotos(
+async function lookForNewPhotos(
+  tenantId: string,
   store: { client: S3Client; bucket: string },
   people: PhotoPerson[],
-  badges: Map<string, string[]>,
   out: Map<string, string | null>,
   names: Map<string, number>,
 ): Promise<void> {
   const now = Date.now();
+  const ids = people.map((p) => p.id);
+  const recent = await db.scanEvent.findMany({
+    where: { tenantId, stream: { in: ["TIME_CLOCK", "SECURITY"] }, scanTime: { gte: new Date(now - FRESH_SCAN_MS) }, employeeId: { in: ids } },
+    orderBy: { scanTime: "desc" },
+    select: { employeeId: true, badgeCode: true, scanTime: true },
+    take: 500,
+  });
+  const newest = new Map<string, { badge: string; at: number }>();
+  for (const r of recent) if (r.employeeId && !newest.has(r.employeeId)) newest.set(r.employeeId, { badge: r.badgeCode, at: r.scanTime.getTime() });
+  if (looked.size > 20_000) looked.clear();
+
   const due = people
-    .filter((p) => !out.get(p.id) && now - (probed.get(p.id) ?? 0) > PROBE_MS)
-    .slice(0, MAX_PROBES);
-  if (probed.size > 20_000) probed.clear();
+    .filter((p) => {
+      const scan = newest.get(p.id);
+      if (!scan) return false;
+      const last = looked.get(p.id) ?? 0;
+      return last < scan.at + UPLOAD_GRACE_MS && now - last >= LOOK_GAP_MS;
+    })
+    .slice(0, MAX_LOOKS);
+
   await Promise.all(
     due.map(async (p) => {
-      probed.set(p.id, now);
-      for (const c of candidatesFor(p, badges.get(p.id) ?? []).slice(0, PROBE_BADGES)) {
-        const key = `${c}.jpg`;
+      looked.set(p.id, now);
+      // The badge just scanned first: the tablet files the photo under it.
+      const known = out.get(p.id);
+      const tries = [...new Set([...candidatesFor(p, [newest.get(p.id)!.badge]).slice(0, 1).map((c) => `${c}.jpg`), ...(known ? [known] : []), ...candidatesFor(p, []).map((c) => `${c}.jpg`)])];
+      for (const key of tries.slice(0, 4)) {
         try {
           const head = await store.client.send(new HeadObjectCommand({ Bucket: store.bucket, Key: key }));
           names.set(key, head.LastModified?.getTime() ?? now);
           out.set(p.id, key);
           return;
         } catch {
-          // Not there under this badge; try the next.
+          // Not there under this name; try the next.
         }
       }
     }),
