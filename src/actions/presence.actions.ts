@@ -134,6 +134,7 @@ export const getOnSiteScanLog = withRBAC(
       rejected: input.rejected === true,
       first: input.first === "gate" || input.first === "clock" ? input.first : null,
       missed: input.missed === true,
+      visitors: input.visitors === true,
       departmentId: text(input.departmentId),
       shiftId: text(input.shiftId),
       q: text(input.q),

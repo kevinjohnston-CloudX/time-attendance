@@ -2621,6 +2621,45 @@
   white-space: nowrap;
 }
 
+/* A visitor's pass: four facts, then what loss prevention can do with it. */
+.vpFacts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+  margin: 0;
+}
+
+.vpLine {
+  margin: 0;
+  font: var(--type-body2);
+  color: var(--text-secondary);
+}
+
+.vpActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--stroke-divider);
+}
+
+/* A phone reads each fact as a row, label left and value right, like the
+   panel's other facts there: one column. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .vpFacts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  /* Inside the pass card already, so the rows line up with its heading. */
+  .vpFacts .ppFact {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .vpFacts .ppFact + .ppFact::before {
+    left: 0;
+  }
+}
+
 /* The day and its scans, each a white card with its heading inside. */
 .ppSection {
   display: flex;
@@ -3588,10 +3627,17 @@
   gap: 16px;
 }
 
+.rpGrid[data-panels="3"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .rpPanel {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* Three panels across leave each too narrow for its figures side by side,
+     so a narrow panel puts its lead above the others (see @container below). */
+  container-type: inline-size;
   background: var(--surface-card);
   border-radius: var(--radius-l);
   box-shadow: var(--shadow-card);
@@ -3826,8 +3872,25 @@
 }
 
 @media (max-width: 1240px) {
-  .rpGrid {
+  .rpGrid,
+  .rpGrid[data-panels="3"] {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container (max-width: 520px) {
+  .rpBody {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .rpStats {
+    border-left: 0;
+    border-top: 1px solid var(--stroke-divider);
+  }
+  .rpLead {
+    padding: 16px 18px 14px;
+  }
+  .rpStat {
+    padding: 14px 16px 16px;
   }
 }
 
@@ -4842,6 +4905,100 @@
   min-width: 0;
 }
 
+/* A name with a tag beside it (Visitor): the name gives way, never the tag. */
+.whoLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.whoLine > :last-child:not(:first-child) {
+  flex-shrink: 0;
+}
+
+/* The Scan log's visitor list: face, who and who they came to see, their
+   pass, what the gate saw, where they stand. Rows open the visitor's details. */
+.vdList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vdList > li + li .vdRow {
+  border-top: 1px solid var(--stroke-divider);
+}
+
+.vdRow {
+  display: grid;
+  grid-template-columns: 40px minmax(220px, 1.4fr) minmax(150px, 1fr) minmax(160px, 1fr) 170px;
+  align-items: center;
+  gap: 0 20px;
+  width: 100%;
+  min-height: 64px;
+  padding: 10px 20px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.vdRow:hover {
+  background: var(--fill-hover);
+}
+
+.vdRow[aria-pressed="true"] {
+  background: var(--surface-info);
+}
+
+.vdRow:focus-visible {
+  outline: 2px solid var(--stroke-accent-focus);
+  outline-offset: -2px;
+}
+
+.vdName {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font: var(--weight-medium) 14px/20px var(--font-sans);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.vdNote {
+  margin: 0;
+  padding: 12px 20px;
+  border-top: 1px solid var(--stroke-divider);
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+}
+
+@media (max-width: 900px) {
+  .vdRow {
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    gap: 2px 14px;
+    padding: 10px 16px;
+  }
+  /* The scan rows place their face by a grid area this row does not have. */
+  .vdRow > .logPhoto {
+    grid-area: auto;
+    align-self: center;
+  }
+  /* Nor the unknown badge list's stacked status column. */
+  .vdRow > .ubCost {
+    grid-column: 3;
+    grid-row: 1;
+    align-self: center;
+  }
+  .vdRow > :nth-child(3),
+  .vdRow > :nth-child(4) {
+    display: none;
+  }
+}
+
 @media (max-width: 900px) {
   .ubRow {
     grid-template-columns: minmax(0, 1fr) auto;
@@ -5716,6 +5873,9 @@
      the Movements figures read, so the scans themselves start near the top. */
   .rpBody {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .rpBody[data-cells="3"] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .rpStats {
     display: contents;

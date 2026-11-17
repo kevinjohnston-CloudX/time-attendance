@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronRight, Clock, DoorOpen, ScanLine, SearchX } from "lucide-react";
+import { Check, ChevronRight, Clock, DoorOpen, IdCard, ScanLine, SearchX } from "lucide-react";
 import { Badge, Button, EmptyState } from "@/components/ui";
 import { getOnSiteScanLog } from "@/lib/presence/reads";
 import type { ScanLogPage, ScanLogQuery, ScanLogRow, ScanLogSummary, ScanStream } from "@/lib/presence/types";
@@ -11,6 +11,7 @@ import styles from "./on-site.module.css";
 import { Face } from "./face";
 import { SummarySkeleton } from "./movements-view";
 import { useOnPulseChange } from "./use-site-pulse";
+import { VisitorTag } from "./visitor-tag";
 import { codeOf } from "@/lib/action-errors";
 
 /**
@@ -39,11 +40,24 @@ export type LogCounter =
   | "unknown"
   | "first-in"
   | "first-clock"
-  | "missed";
+  | "missed"
+  | "visitor"
+  | VisitorList;
+
+/**
+ * The Visitors panel's lists: people, not scans, drawn by VisitorDayView
+ * (visitors-day.tsx) where the log would be, as "unknown" is.
+ */
+export type VisitorList = "visitors-allowed" | "visitors-outside" | "visitors-came" | "visitors-refused" | "visitors-ending";
+export const VISITOR_LISTS: readonly VisitorList[] = ["visitors-allowed", "visitors-outside", "visitors-came", "visitors-refused", "visitors-ending"];
+export function isVisitorList(c: LogCounter | null): c is VisitorList {
+  return !!c && (VISITOR_LISTS as readonly string[]).includes(c);
+}
 
 export function counterQuery(
   c: LogCounter | null,
-): Pick<ScanLogQuery, "stream" | "direction" | "rejected" | "first" | "missed"> {
+): Pick<ScanLogQuery, "stream" | "direction" | "rejected" | "first" | "missed" | "visitors"> {
+  if (c === "visitor") return { stream: "SECURITY", direction: null, rejected: false, first: null, missed: false, visitors: true };
   if (c === "first-in") return { stream: null, direction: null, rejected: false, first: "gate", missed: false };
   if (c === "first-clock") return { stream: null, direction: null, rejected: false, first: "clock", missed: false };
   if (c === "missed") return { stream: null, direction: null, rejected: false, first: null, missed: true };
@@ -69,6 +83,8 @@ export function parseCounter(raw: string | null | undefined): LogCounter | null 
     "first-in",
     "first-clock",
     "missed",
+    "visitor",
+    ...VISITOR_LISTS,
   ];
   return all.includes(raw as LogCounter) ? (raw as LogCounter) : null;
 }
@@ -302,6 +318,8 @@ export function ScanLogCounts({
   onClockClosed,
   clockNow,
   onClockNow,
+  visitors = null,
+  onVisitorsInside,
 }: {
   summary: ScanLogSummary;
   counter: LogCounter | null;
@@ -322,6 +340,10 @@ export function ScanLogCounts({
   /** Today: how many are on the clock now. */
   clockNow: number | null;
   onClockNow: () => void;
+  /** The building's visitors that day (visitors-day.tsx); null while loading or when it failed. */
+  visitors?: VisitorCounts | null;
+  /** Today: open the visitors in the building in Movements. */
+  onVisitorsInside?: () => void;
 }) {
   const isToday = when === "today";
   const pick = (c: LogCounter) => onPick(counter === c ? null : c);
@@ -392,8 +414,59 @@ export function ScanLogCounts({
     quiet: "Every scan was counted",
   };
 
+  // Visitors scan only at the gate, so theirs is a panel of people: who may
+  // come in today, who is here, who is not. A pass holds no visit date, so
+  // "allowed today" is as close to "expected" as CloudTime can honestly say.
+  const visitor: ReaderPanelProps | null = visitors
+    ? {
+        icon: <IdCard className="h-4 w-4" aria-hidden="true" />,
+        title: "Visitors",
+        total: { key: "visitor", count: visitors.scans },
+        totalHint: "Show every visitor scan",
+        lead: isToday
+          ? { label: "In the building", figure: visitors.inside ?? 0, sub: `of ${visitors.cameIn.toLocaleString()} who came in today` }
+          : { label: "Came in", figure: visitors.cameIn, sub: `of ${visitors.allowed.toLocaleString()} allowed in` },
+        onLead: isToday && onVisitorsInside ? onVisitorsInside : () => pick("visitors-came"),
+        leadHint: isToday ? "Show these visitors in Movements" : "Show these visitors",
+        stats: [
+          {
+            key: "visitors-allowed",
+            label: isToday ? "Allowed today" : "Allowed in",
+            count: visitors.allowed,
+            unit: "people",
+            hint: "Visitors with a pass for this building that day. A pass has no visit date, so not all of them will come",
+          },
+          {
+            key: "visitors-outside",
+            label: isToday ? "Not inside" : "Never came",
+            count: visitors.outside,
+            unit: "people",
+            hint: isToday ? "Allowed in today and not in the building now: not here yet, or already left" : "Allowed in that day and never came through the gate",
+          },
+        ],
+        exceptions: [
+          {
+            key: "visitors-refused",
+            label: "Refused at the gate",
+            count: visitors.refused,
+            tone: "error",
+            hint: "Visitors the gate turned away: an expired or ended pass, a pass not started yet, or a badge for another building",
+          },
+          {
+            key: "visitors-ending",
+            label: "Pass ends this week",
+            count: visitors.endingSoon,
+            tone: "warning",
+            hint: "Allowed in today, with a last day in the next 7 days",
+          },
+        ],
+        note: null,
+        quiet: "No visitor was refused",
+      }
+    : null;
+
   return (
-    <section className={styles.rpGrid} aria-label="Scans">
+    <section className={styles.rpGrid} data-panels={visitor ? 3 : 2} aria-label="Scans">
       {hasGateData ? (
         <ReaderPanel {...gate} counter={counter} pick={pick} />
       ) : (
@@ -413,16 +486,30 @@ export function ScanLogCounts({
         </div>
       )}
       <ReaderPanel {...clock} counter={counter} pick={pick} />
+      {visitor && <ReaderPanel {...visitor} counter={counter} pick={pick} />}
     </section>
   );
+}
+
+/** What the Visitors panel shows; `inside` is today's, from the board. */
+export interface VisitorCounts {
+  inside: number | null;
+  allowed: number;
+  cameIn: number;
+  outside: number;
+  scans: number;
+  refused: number;
+  endingSoon: number;
 }
 
 interface ReaderPanelProps {
   icon: ReactNode;
   title: string;
   total: { key: LogCounter; count: number };
+  totalHint?: string;
   lead: { label: string; figure: number; sub: string };
   onLead: () => void;
+  leadHint?: string;
   stats: { key: LogCounter; label: string; count: number; unit: string; hint?: string }[];
   exceptions: { key: LogCounter; label: string; count: number; tone: "warning" | "error"; hint: string }[];
   note: string | null;
@@ -434,8 +521,10 @@ function ReaderPanel({
   icon,
   title,
   total,
+  totalHint,
   lead,
   onLead,
+  leadHint,
   stats,
   exceptions,
   note,
@@ -456,14 +545,14 @@ function ReaderPanel({
           className={styles.rpTotal}
           aria-pressed={counter === total.key}
           onClick={() => pick(total.key)}
-          title={`Show every ${title.toLowerCase()} scan`}
+          title={totalHint ?? `Show every ${title.toLowerCase()} scan`}
         >
           <span className="tabular">{total.count.toLocaleString()}</span> {total.count === 1 ? "scan" : "scans"}
         </button>
       </div>
 
-      <div className={styles.rpBody}>
-        <button type="button" className={styles.rpLead} onClick={onLead} title="Show these people in Movements">
+      <div className={styles.rpBody} data-cells={stats.length + 1}>
+        <button type="button" className={styles.rpLead} onClick={onLead} title={leadHint ?? "Show these people in Movements"}>
           <span className={styles.rpLeadLabel}>
             {lead.label}
             <ChevronRight className="h-4 w-4" aria-hidden="true" />
@@ -471,7 +560,7 @@ function ReaderPanel({
           <span className={styles.rpLeadFigure}>{lead.figure.toLocaleString()}</span>
           <span className={styles.rpSub}>{lead.sub}</span>
         </button>
-        <div className={styles.rpStats}>
+        <div className={styles.rpStats} style={{ gridTemplateColumns: `repeat(${stats.length}, minmax(0, 1fr))` }}>
           {stats.map((s) => (
             <button
               key={s.key}
@@ -646,11 +735,20 @@ function LogRow({
         </span>
 
         <span className={styles.logWho}>
-          <span className={styles.name}>{r.person.name}</span>
+          <span className={styles.whoLine}>
+            <span className={`${styles.name} truncate`}>{r.person.name}</span>
+            {r.person.visitor && <VisitorTag />}
+          </span>
           <span className={styles.meta}>
-            {r.person.employeeCode}
-            {(r.person.jobTitle ?? r.person.department) ? ` · ${r.person.jobTitle ?? r.person.department}` : ""}
-            {r.person.homeSite ? ` · From ${r.person.homeSite}` : ""}
+            {r.person.visitor ? (
+              (r.person.visitorFrom ?? r.person.employeeCode)
+            ) : (
+              <>
+                {r.person.employeeCode}
+                {(r.person.jobTitle ?? r.person.department) ? ` · ${r.person.jobTitle ?? r.person.department}` : ""}
+                {r.person.homeSite ? ` · From ${r.person.homeSite}` : ""}
+              </>
+            )}
           </span>
         </span>
 

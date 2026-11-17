@@ -1,3 +1,4 @@
+import { VISITOR_LINE_SELECT, visitorFrom } from "@/lib/visitors/visitor-line";
 import { shownName } from "@/lib/utils/shown-name";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
@@ -191,6 +192,7 @@ export async function getScanLog(
       }
     }
   }
+  if (input.visitors) narrow.push({ employee: visitors });
   const filtered: Prisma.ScanEventWhereInput = { AND: narrow };
 
   const since = input.since ? new Date(input.since) : null;
@@ -226,6 +228,7 @@ export async function getScanLog(
             barcode: true,
             wmsId: true,
             wmsName: true,
+            visitorPass: VISITOR_LINE_SELECT,
             user: { select: { name: true } },
             jobTitle: true,
             department: { select: { name: true } },
@@ -282,6 +285,8 @@ export async function getScanLog(
               jobTitle: s.employee.jobTitle?.trim() || null,
               homeSite: s.employee.site && s.employee.site.id !== siteId ? s.employee.site.name : null,
               photoUrl: photos.get(s.employee.id) ?? null,
+              visitor: isClientBadge(s.employee.wmsId),
+              visitorFrom: isClientBadge(s.employee.wmsId) ? visitorFrom(s.employee.visitorPass) : null,
             },
           },
         ]

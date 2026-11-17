@@ -6,8 +6,25 @@
   max-width: 720px;
 }
 
-/* The badge exactly as it prints (badge-sample.tsx), on the rail's well. */
+/* Version, then Print on: two blocks split by a full width divider. */
+.block + .block {
+  margin-inline: -16px;
+  padding: 14px 16px 0;
+  border-top: 1px solid var(--stroke-divider);
+}
+.block :global(.ta-seg-track) {
+  margin-top: 4px;
+}
+.hint {
+  margin: 4px 4px 0;
+  font: var(--type-body2);
+  color: var(--text-tertiary);
+}
+
+/* The badge exactly as it prints, on the rail's well. Tall enough for the
+   Badge standing up, so the window keeps one size whichever version shows. */
 .previewBlock {
+  min-height: 352px;
   align-items: center;
   justify-content: center;
   background: var(--ta-well);
@@ -15,8 +32,13 @@
 }
 .previewWait {
   display: block;
+  width: 196px;
+  height: 310px;
+  border-radius: 14px;
+  background: var(--surface-card);
+}
+.previewWait[data-version="label"] {
   width: 248px;
   height: 186px;
   border-radius: 8px;
-  background: var(--surface-card);
 }

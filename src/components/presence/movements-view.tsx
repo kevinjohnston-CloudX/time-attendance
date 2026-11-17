@@ -1,5 +1,6 @@
 "use client";
 
+import { VisitorTag } from "./visitor-tag";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowUp, ChevronDown, ChevronRight, UserRoundX } from "lucide-react";
 import { Badge, Button, EmptyState } from "@/components/ui";
@@ -317,9 +318,11 @@ function PersonRow({
   const status = statusOfDay(v, isToday, hasGate);
   const meta = status ? STATUS_META[status] : null;
   const chips = flagChips(v, isToday);
-  const metaLine = [p.jobTitle ?? p.department ?? p.employeeCode, p.salaried ? "Office" : null, p.homeSite ? `From ${p.homeSite}` : null]
-    .filter(Boolean)
-    .join(" · ");
+  const metaLine = p.visitor
+    ? (p.visitorFrom ?? p.employeeCode)
+    : [p.jobTitle ?? p.department ?? p.employeeCode, p.salaried ? "Office" : null, p.homeSite ? `From ${p.homeSite}` : null]
+        .filter(Boolean)
+        .join(" · ");
   const t = v.lanes.totals;
   const time = (ms: number) => fmtTime(new Date(ms).toISOString(), tz);
   const seen = v.scanCount > 0;
@@ -441,6 +444,7 @@ function PersonRow({
               {metaLine}
             </span>
             <span className={styles.mvBadges}>
+              {p.visitor && <VisitorTag />}
               {meta && status && (
                 <Badge tone={meta.badge} size="sm" dot>
                   {status === "ON_MEAL" ? (v.now.clock === "BREAK" ? "On break" : "On meal") : meta.label}

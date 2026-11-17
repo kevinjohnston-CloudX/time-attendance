@@ -1,3 +1,4 @@
+import type { PassStanding, VisitorKind, VisitorTerm } from "@/lib/visitors/visitor-pass";
 /**
  * The shapes the On Site board draws, shared by the server that computes them
  * and the client that polls for them. Nothing in here imports the database, so
@@ -72,6 +73,8 @@ export interface PresencePerson {
    * department reads Visitor, under VISITOR_DEPARTMENT_ID.
    */
   visitor: boolean;
+  /** A visitor's company and who they came to see (visitor-line.ts); null for everyone else. */
+  visitorFrom: string | null;
   status: PresenceStatus;
   /** Counted in the building total. */
   inside: boolean;
@@ -156,6 +159,21 @@ export interface PresenceDetail {
   salaried: boolean;
   /** On a client's badge: never uses the time clock (PresencePerson.visitor). */
   visitor: boolean;
+  /** A visitor's company and who they came to see (visitor-line.ts); null for everyone else. */
+  visitorFrom: string | null;
+  /**
+   * A visitor's pass, for the details panel: how it stands today at this
+   * building. Null for an employee, and for a visitor badge with no pass.
+   */
+  visitorPass: {
+    kind: VisitorKind;
+    term: VisitorTerm;
+    validFrom: string;
+    validUntil: string;
+    standing: PassStanding;
+    company: string | null;
+    siteName: string;
+  } | null;
   inactive: boolean;
   /** The site on their record, when it is not this building. */
   homeSite: string | null;
@@ -225,6 +243,8 @@ export interface ScanLogQuery {
   first?: "gate" | "clock" | null;
   /** Only the gate scans with no partner: an entry after an entry, an exit after an exit. */
   missed?: boolean;
+  /** Only visitors' scans (the Visitors panel's scan count). Narrows the rows, never the totals. */
+  visitors?: boolean;
   departmentId: string | null;
   shiftId: string | null;
   q: string | null;
@@ -284,6 +304,9 @@ export interface ScanLogRow extends PresenceScan {
     /** The site on their record, when it is not this building. */
     homeSite: string | null;
     photoUrl: string | null;
+    /** On a client's badge: a visitor, never an employee. */
+    visitor: boolean;
+    visitorFrom: string | null;
   };
 }
 
@@ -353,6 +376,8 @@ export interface DayPerson {
   salaried: boolean;
   /** On a client's badge: never uses the time clock (PresencePerson.visitor). */
   visitor: boolean;
+  /** A visitor's company and who they came to see (visitor-line.ts); null for everyone else. */
+  visitorFrom: string | null;
   inactive: boolean;
   /** That day's schedule in site time, HH:mm. */
   scheduledStart: string | null;

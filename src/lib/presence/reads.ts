@@ -6,6 +6,7 @@ import type {
 import type { getOnSiteGateRefusals as gateAlertsAction } from "@/actions/gate-refusals.actions";
 import type { getSiteTablets as tabletsAction } from "@/actions/tablets.actions";
 import type { getOnSiteUnknownBadges as unknownBadgesAction } from "@/actions/unknown-badges.actions";
+import type { getOnSiteVisitors as visitorsAction } from "@/actions/visitor-day.actions";
 
 /**
  * Live Attendance's reads, asked through its GET routes instead of as server
@@ -38,3 +39,4 @@ export const getOnSiteMovements = read<typeof movementsAction>("movements");
 export const getOnSiteGateRefusals = read<typeof gateAlertsAction>("gate-alerts");
 export const getSiteTablets = read<typeof tabletsAction>("tablets");
 export const getOnSiteUnknownBadges = read<typeof unknownBadgesAction>("unknown-badges");
+export const getOnSiteVisitors = read<typeof visitorsAction>("visitors");

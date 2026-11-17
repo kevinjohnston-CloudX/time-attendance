@@ -1,3 +1,4 @@
+import { VISITOR_LINE_SELECT, visitorFrom } from "@/lib/visitors/visitor-line";
 import { shownName } from "@/lib/utils/shown-name";
 import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
@@ -261,6 +262,7 @@ export async function getSiteDay(
           site: { select: { id: true, name: true } },
           barcode: true,
           wmsId: true,
+          visitorPass: VISITOR_LINE_SELECT,
           isActive: true,
           terminatedAt: true,
           hireDate: true,
@@ -294,6 +296,7 @@ export async function getSiteDay(
       photoUrl: photos.get(e.id) ?? null,
       salaried: e.payType === "SALARY",
       visitor,
+      visitorFrom: visitor ? visitorFrom(e.visitorPass) : null,
       inactive: ended.has(e.id),
       scheduledStart: schedule?.start ?? null,
       scheduledEnd: schedule?.end ?? null,

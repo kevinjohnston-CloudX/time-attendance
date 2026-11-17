@@ -34,6 +34,13 @@ function refusalMessage(code: string, via: string | null): string {
   const name = (via && PROVIDER_NAME[via]) || null;
   if (code === "NotSetUp" && name) return `This ${name} account isn't set up in CloudTime. Ask HR to add your email.`;
   if (code === "Refused" && name) return `This ${name} account can't be used to sign in to CloudTime. Ask HR for help.`;
+  // The library's own: the account already belongs to another person (a
+  // computer still signed in as somebody else, say), or the server could not
+  // finish it at all. Anything else is an interrupted sign in: a cancel at
+  // Google or Microsoft, or a link that expired, which a second try fixes.
+  if (code === "OAuthAccountNotLinked" || code === "AccountNotLinked")
+    return "This account is already used by another person in CloudTime. Sign out of CloudTime first, or ask HR for help.";
+  if (code === "Configuration") return "This sign in option isn't working right now. Use your email and password, or try again later.";
   return "Sign in did not finish. Try again, or use your email and password.";
 }
 

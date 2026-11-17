@@ -20,7 +20,8 @@ import { qrPath } from "@/lib/badge/qr-path";
 import frame from "./export-window.module.css";
 import styles from "./new-visitor-window.module.css";
 import { BadgeSample, badgeSampleHeight } from "./badge-sample";
-import { PAPER_LABEL, savedPaper, type BadgePaper } from "./visitor-badge-print";
+import { PAPER_LABEL, isBadgePaper, savedPaper, type BadgePaper } from "./visitor-badge-print";
+import { ID_BADGE_RATIO, VisitorIdBadge } from "./visitor-id-badge";
 import { PrintBadgeWindow } from "./print-badge-window";
 
 /**
@@ -53,6 +54,8 @@ const KINDS: VisitorKind[] = ["DAY_PASS", "FREQUENT"];
 
 /** The badge preview's width in the rail. */
 const BADGE_WIDTH = 268;
+/** The Badge standing up, narrower so the rail is no taller than the form beside it. */
+const ID_BADGE_PREVIEW_WIDTH = 176;
 
 /** Waits until typing stops before asking the server. */
 function useSearch<T>(text: string, run: (q: string) => Promise<T[]>): T[] {
@@ -456,7 +459,16 @@ export function NewVisitorWindow({
             <aside className={`${frame.rail} ${styles.rail}`} aria-label="Badge">
               <div className={styles.badgeWrap}>
                 {sample ? (
-                  <BadgeSample badge={sample} paper={paper} width={BADGE_WIDTH} draft={!done} />
+                  isBadgePaper(paper) ? (
+                    <VisitorIdBadge badge={sample} width={ID_BADGE_PREVIEW_WIDTH} draft={!done} />
+                  ) : (
+                    <BadgeSample badge={sample} paper={paper} width={BADGE_WIDTH} draft={!done} />
+                  )
+                ) : isBadgePaper(paper) ? (
+                  <span
+                    className={styles.badgeWait}
+                    style={{ width: ID_BADGE_PREVIEW_WIDTH, height: Math.round(ID_BADGE_PREVIEW_WIDTH * ID_BADGE_RATIO), borderRadius: 11 }}
+                  />
                 ) : (
                   <span className={styles.badgeWait} style={{ height: badgeSampleHeight(paper, BADGE_WIDTH) }} />
                 )}
@@ -478,13 +490,14 @@ export function NewVisitorWindow({
           <span className="ta-sheet-actions contents">
             {done ? (
               <>
-                <Button hierarchy="tertiary" onClick={onClose}>
+                {/* Three do not fit across a phone: there they stack, Print badge first. */}
+                <Button hierarchy="tertiary" className={styles.doneLast} onClick={onClose}>
                   Close
                 </Button>
-                <Button hierarchy="secondary" onClick={another}>
+                <Button hierarchy="secondary" className={styles.doneSecond} onClick={another}>
                   Add another visitor
                 </Button>
-                <Button hierarchy="primary" leadingIcon={<Printer className="h-4 w-4" aria-hidden="true" />} onClick={() => setPrinting(true)}>
+                <Button hierarchy="primary" className={styles.doneFirst} leadingIcon={<Printer className="h-4 w-4" aria-hidden="true" />} onClick={() => setPrinting(true)}>
                   Print badge
                 </Button>
               </>

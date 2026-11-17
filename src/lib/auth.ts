@@ -15,8 +15,9 @@ import { redeemAppSigninCode } from "@/lib/app-signin";
 import { mailAddress } from "@/lib/login-email";
 import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
 import { cookies } from "next/headers";
-import { MICROSOFT_PROVIDER, microsoftAddresses, microsoftIssuer, microsoftSignInOffered, signInRefused } from "@/lib/microsoft-signin";
+import { MICROSOFT_PROVIDER, microsoftAddresses, microsoftIssuer, microsoftSignInOffered } from "@/lib/microsoft-signin";
 import { microsoftSignIn } from "@/lib/microsoft-signin.server";
+import { googleSignIn } from "@/lib/google-signin.server";
 
 /**
  * The company a super admin has entered, from its cookie. Null when there is
@@ -163,44 +164,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
     async signIn({ account, profile }) {
       if (account?.provider === "google") {
-        // Only an address Google has confirmed belongs to the account signs
-        // someone in by it, as CXT checks (security audit 2026-11).
-        if ((profile as { email_verified?: boolean } | undefined)?.email_verified !== true) return signInRefused("Refused", "google");
-        const email = profile?.email ?? "";
-        const domain = email.split("@")[1]?.toLowerCase() ?? "";
-        if (allowedDomains.length > 0 && !allowedDomains.includes(domain)) {
-          return signInRefused("Refused", "google");
-        }
-        // Only allow Google sign-in for users the admin has already registered,
-        // by either of their two emails, ignoring capitals: Google sends the
-        // address lowercase, the record may not be.
-        const existingId = await findLoginUserId(email, { email: true });
-        if (!existingId) return signInRefused("NotSetUp", "google");
-        // A visitor never signs in (client-badge.ts).
-        const visitor = await db.employee.findFirst({ where: { userId: existingId }, select: { wmsId: true } });
-        if (isClientBadge(visitor?.wmsId)) return signInRefused("Refused", "google");
-
-        // If no Account row exists yet, create it now so NextAuth doesn't
-        // throw OAuthAccountNotLinked for users provisioned outside OAuth
-        const linked = await db.account.findFirst({
-          where: { userId: existingId, provider: "google" },
-        });
-        if (!linked && account.providerAccountId) {
-          await db.account.create({
-            data: {
-              userId: existingId,
-              type: "oauth",
-              provider: "google",
-              providerAccountId: account.providerAccountId,
-              access_token: account.access_token,
-              refresh_token: account.refresh_token,
-              expires_at: account.expires_at,
-              token_type: account.token_type,
-              scope: account.scope,
-              id_token: account.id_token,
-            },
-          });
-        }
+        // Only a person HR registered, by a Google confirmed address, and
+        // each Google account tied to one person (lib/google-signin.server.ts).
+        const refused = await googleSignIn(profile, account, allowedDomains);
+        if (refused) return refused;
       }
 
       if (account?.provider === MICROSOFT_PROVIDER) {

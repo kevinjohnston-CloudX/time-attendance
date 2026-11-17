@@ -1,3 +1,5 @@
+import { passStanding, type VisitorKind, type VisitorTerm } from "@/lib/visitors/visitor-pass";
+import { VISITOR_LINE_SELECT, visitorFrom } from "@/lib/visitors/visitor-line";
 import { shownName } from "@/lib/utils/shown-name";
 import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
@@ -314,6 +316,7 @@ async function buildPresenceBoard(tenantId: string, siteId: string): Promise<Pre
           site: { select: { id: true, name: true } },
           barcode: true,
           wmsId: true,
+          visitorPass: VISITOR_LINE_SELECT,
           isActive: true,
           terminatedAt: true,
           hireDate: true,
@@ -419,6 +422,7 @@ async function buildPresenceBoard(tenantId: string, siteId: string): Promise<Pre
       photoUrl: photos.get(emp.id) ?? null,
       salaried: emp.payType === "SALARY",
       visitor,
+      visitorFrom: visitor ? visitorFrom(emp.visitorPass) : null,
       status,
       inside,
       breakKind,
@@ -519,6 +523,18 @@ export async function getPresenceDetail(
       payType: true,
       barcode: true,
       wmsId: true,
+      visitorPass: {
+        select: {
+          ...VISITOR_LINE_SELECT.select,
+          kind: true,
+          term: true,
+          validFrom: true,
+          validUntil: true,
+          endedAt: true,
+          siteId: true,
+          site: { select: { name: true } },
+        },
+      },
       isActive: true,
       terminatedAt: true,
       wmsName: true,
@@ -631,6 +647,29 @@ export async function getPresenceDetail(
     supervisor: emp.supervisor?.user?.name ?? null,
     salaried: emp.payType === "SALARY",
     visitor: isClientBadge(emp.wmsId),
+    visitorFrom: isClientBadge(emp.wmsId) ? visitorFrom(emp.visitorPass) : null,
+    visitorPass:
+      isClientBadge(emp.wmsId) && emp.visitorPass
+        ? {
+            kind: emp.visitorPass.kind as VisitorKind,
+            term: emp.visitorPass.term as VisitorTerm,
+            validFrom: emp.visitorPass.validFrom.toISOString().slice(0, 10),
+            validUntil: emp.visitorPass.validUntil.toISOString().slice(0, 10),
+            // How it stands at this building today: the gate's own rule.
+            standing: passStanding(
+              {
+                siteId: emp.visitorPass.siteId,
+                validFrom: emp.visitorPass.validFrom.toISOString().slice(0, 10),
+                validUntil: emp.visitorPass.validUntil.toISOString().slice(0, 10),
+                endedAt: emp.visitorPass.endedAt,
+              },
+              today,
+              siteId,
+            ),
+            company: emp.visitorPass.company?.trim() || null,
+            siteName: emp.visitorPass.site.name,
+          }
+        : null,
     inactive,
     homeSite: emp.site && emp.site.id !== siteId ? emp.site.name : null,
     site: emp.site?.name ?? null,

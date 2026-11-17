@@ -9,7 +9,7 @@ import { moveTimecardsToRuleSet } from "@/lib/timesheet-migration";
 import { z, type ZodError } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { cleanEmail, emailHolders } from "@/lib/login-email";
+import { cleanEmail, emailHolders, emailTakenMessage } from "@/lib/login-email";
 import { Prisma, Role as RoleEnum, type AuditEntityType, type Role } from "@prisma/client";
 
 const BUILTIN_ROLES = Object.values(RoleEnum);
@@ -452,12 +452,23 @@ export const getEmployeeById = withRBAC(
  * <p>`changed` is what to look up: only the addresses being set now. An
  * address already on the person is never held against them, which matters for
  * the few old logins that differ from another only by capitals.
+ *
+ * <p>`detailed` (admins and Payroll admins, {@link seesEmailHolder}) adds which
+ * record holds it: Badge ID, active or not, and which of its two emails, so
+ * a duplicate or old record can be found and fixed. Same company only; an
+ * address held in another company never names anyone, for anyone.
  */
+/** Admins and Payroll admins see which record holds an email (not while they View as a lower role). */
+function seesEmailHolder(role: string, rank: number | undefined): boolean {
+  return ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN", "SUPER_ADMIN"].includes(role) && (rank === undefined || rank >= ROLE_RANK.PAYROLL_ADMIN);
+}
+
 async function assertEmailsFree(
   personal: string | null,
   work: string | null,
   exceptUserId: string | null,
   tenantId: string,
+  detailed: boolean,
   changed: (string | null)[] = [work, personal],
 ) {
   if (!personal && !work) throw new Error("Add a work email or a personal email. The person signs in with either one.");
@@ -467,10 +478,7 @@ async function assertEmailsFree(
   const holders = await emailHolders(changed, exceptUserId);
   for (const address of changed) {
     const owner = address ? holders.get(address.toLowerCase()) : undefined;
-    if (owner) {
-      const who = owner.tenantId === tenantId && owner.name ? owner.name : "another account";
-      throw new Error(`The email ${address} is already used by ${who}.`);
-    }
+    if (owner && address) throw new Error(emailTakenMessage(address, owner, tenantId, detailed));
   }
 }
 
@@ -579,7 +587,7 @@ export const createEmployee = withRBAC(
     const workEmail = parsed.visitor ? null : cleanEmail(parsed.workEmail, "work");
     // A client badge signs nobody in, so a client may have neither.
     const client = issuing || isClientBadge(parsed.wmsId);
-    if (personalEmail || workEmail || !client) await assertEmailsFree(personalEmail, workEmail, null, tenantId);
+    if (personalEmail || workEmail || !client) await assertEmailsFree(personalEmail, workEmail, null, tenantId, seesEmailHolder(actor.role, actor.viewAsRank));
 
     const employee = await db.$transaction(async (tx) => {
       const wmsId = issuing ? await issueClientBadge(tx) : parsed.wmsId ?? null;
@@ -809,7 +817,7 @@ export const updateEmployee = withRBAC(
     const client = issuing || isClientBadge(wmsId === undefined ? current.wmsId : wmsId);
     let issuedBadge: string | null = null;
     if ((personalChanged || workChanged) && (nextPersonal || nextWork || !client)) {
-      await assertEmailsFree(nextPersonal, nextWork, current.userId, tenantId, [
+      await assertEmailsFree(nextPersonal, nextWork, current.userId, tenantId, me.isSuperAdmin || seesEmailHolder(me.role, me.rank), [
         personalChanged ? nextPersonal : null,
         workChanged ? nextWork : null,
       ]);
@@ -901,6 +909,13 @@ export const updateEmployee = withRBAC(
           ...(encPii.zipCode !== undefined && { zipCode: encPii.zipCode }),
         },
       });
+      // A visitor's pass opens the gate at one building only, and the
+      // Visitors window lists it there. Moving the visitor moves the pass
+      // with them, or they stay listed at the old building and the new one's
+      // gate turns them away.
+      if (siteId !== undefined && siteId !== current.siteId) {
+        await tx.visitorPass.updateMany({ where: { tenantId, employeeId }, data: { siteId } });
+      }
     });
 
     // A rate set here (rather than in the pay rates table) is recorded as of today.
