@@ -7,6 +7,7 @@ export const RESOURCES = [
   "leave",
   "accrual",
   "payroll",
+  "pay",
   "employee",
   "rules",
   "site",

@@ -62,13 +62,16 @@ export default async function TimecardsPage({
   const session = await auth();
   if (!session?.user) redirect(SESSION_ENDED_HREF);
 
-  const [canViewTeam, canViewAll, canEditTeam, canEditAll, canRunPayroll, canFixMissed] = await Promise.all([
+  const [canViewTeam, canViewAll, canEditTeam, canEditAll, canRunPayroll, canFixMissed, canSeePay] = await Promise.all([
     userHasPermission(session.user, "TIMECARD_VIEW_TEAM"),
     userHasPermission(session.user, "TIMECARD_VIEW_ANY"),
     userHasPermission(session.user, "TIMECARD_EDIT_TEAM"),
     userHasPermission(session.user, "TIMECARD_EDIT_ANY"),
     userHasPermission(session.user, "PAYROLL_RUN"),
     userHasPermission(session.user, "PUNCH_FIX_MISSED_TEAM"),
+    // Pay rates and pay are their own grant (HR, 11/17): supervisors,
+    // managers and agency viewers see hours only.
+    userHasPermission(session.user, "PAY_VIEW"),
   ]);
   if (!canViewTeam && !canViewAll && !canEditTeam && !canEditAll) redirect("/dashboard");
 
@@ -79,10 +82,6 @@ export default async function TimecardsPage({
   // go to HR for approval (lib/timecards/supervisor-edits); elsewhere the
   // timecard is read only to them.
   const isSupervisor = !canEdit && canFixMissed;
-  // Pay rates and pay are for people who edit timecards or run payroll; a
-  // read-only team viewer (an agency) sees hours only. A supervisor fixing
-  // missed punches saw them as an editor and still does.
-  const canSeePay = canEdit || isSupervisor || canRunPayroll || isAllScope;
 
   const t = ownCompany(session.user.tenantId);
 

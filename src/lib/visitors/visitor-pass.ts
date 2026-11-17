@@ -136,6 +136,22 @@ export function passStanding(pass: PassFacts, today: string, gateSiteId: string 
   return "VALID";
 }
 
+/**
+ * Whether a visitor's badge opens the gate on this day without being on the
+ * schedule: Monday to Friday only (Cristian, 2026-11-17). On a Saturday or
+ * Sunday a visitor is checked against the schedule like anybody else, so a
+ * weekend visit still works when loss prevention adds them to the day, from
+ * the gate alert the refusal raises in Live Attendance.
+ *
+ * <p>`day` is YYYY-MM-DD in the building's calendar, the same day the gate
+ * check reads the schedule for.
+ */
+export function visitorWeekday(day: string): boolean {
+  const [y, m, d] = parts(day);
+  const weekday = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  return weekday >= 1 && weekday <= 5;
+}
+
 /** The gate check's reason for a visitor it refuses, by standing. */
 export const VISITOR_REFUSAL_REASON: Record<Exclude<PassStanding, "VALID">, string> = {
   NOT_YET: "VISITOR_NOT_YET",

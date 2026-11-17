@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { deviceBadgeWhere } from "@/lib/utils/badge-lookup";
 import { shownNameOrNull } from "@/lib/utils/shown-name";
 import { type GateRefusalReason, recordGateRefusal, siteByWarehouse } from "@/lib/presence/gate-refusals.service";
-import { VISITOR_REFUSAL_REASON, passStanding } from "@/lib/visitors/visitor-pass";
+import { VISITOR_REFUSAL_REASON, passStanding, visitorWeekday } from "@/lib/visitors/visitor-pass";
 import { errorCode, gateLog } from "@/lib/presence/gate-alert-log";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { WMS_TERMINATION_ENDS_EMPLOYMENT, employmentEnded, madeActiveAt } from "@/lib/presence/employment";
@@ -187,9 +187,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       ? "CLOUDTIME"
       : "WMS";
 
-  // A client's badge (client-badge.ts) needs no schedule: a visitor has no
-  // shift in Oracle to have one from. Termination, presence and the photo are
-  // decided for them as for anybody.
+  // A client's badge (client-badge.ts) needs no schedule Monday to Friday: a
+  // visitor has no shift in Oracle to have one from. Termination, presence and
+  // the photo are decided for them as for anybody.
   const client = isClientBadge(employee.wmsId);
 
   // A visitor with a pass (visitor-pass.ts) gets in only at its building and
@@ -217,23 +217,32 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     : null;
   const visitorRefusal = standing && standing !== "VALID" ? VISITOR_REFUSAL_REASON[standing] : null;
 
+  // A visitor needs no schedule Monday to Friday only (visitorWeekday). On a
+  // weekend they fall through to the rule everybody else is under, so the
+  // refusal reads NO_SCHEDULE, every tablet already answers it, and Live
+  // Attendance raises the alert from which loss prevention can add them to
+  // the day. A pass that does not open this gate still says so first.
+  const visitorDay = client && visitorWeekday(today);
+
   // The legacy rule, restated: a shift today, or already inside. Order matters
   // only for the reason string — a scheduled person who is also inside is
   // scheduled, not an exception.
-  const scheduled = client ? !visitorRefusal || present : scheduleDay?.isWorkday === true || present;
-  const reason = client
-    ? visitorRefusal
-      ? present
-        ? "PRESENT"
-        : visitorRefusal
-      : "CLIENT"
-    : scheduleDay?.isWorkday
-      ? "WORKDAY"
-      : present
-        ? "PRESENT"
-        : scheduleDay
-          ? "NOT_A_WORKDAY"
-          : "NO_SCHEDULE";
+  const scheduled = client && visitorRefusal
+    ? present
+    : visitorDay || scheduleDay?.isWorkday === true || present;
+  const reason = client && visitorRefusal
+    ? present
+      ? "PRESENT"
+      : visitorRefusal
+    : visitorDay
+      ? "CLIENT"
+      : scheduleDay?.isWorkday
+        ? "WORKDAY"
+        : present
+          ? "PRESENT"
+          : scheduleDay
+            ? "NOT_A_WORKDAY"
+            : "NO_SCHEDULE";
 
   // Turned away at the door: noted for Live Attendance once the tablet has
   // its answer. A person CloudTime knows: an unknown badge has its own list.

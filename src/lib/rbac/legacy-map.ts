@@ -40,6 +40,7 @@ export const LEGACY_MAP: Record<string, PermissionTuple> = {
   // Payroll & admin
   PAY_PERIOD_MANAGE:      { resource: "payroll",   action: "write",   scope: "all" },
   PAYROLL_RUN:            { resource: "payroll",   action: "execute", scope: "all" },
+  PAY_VIEW:               { resource: "pay",       action: "read",    scope: "all" },
   EMPLOYEE_MANAGE:        { resource: "employee",  action: "write",   scope: "all" },
   EMPLOYEE_VIEW_TEAM:     { resource: "employee",  action: "read",    scope: "team" },
   EMPLOYEE_DATA_EXPORT:   { resource: "employee",  action: "execute", scope: "all" },

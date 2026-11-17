@@ -94,6 +94,7 @@ const SYSTEM_ROLES: {
       { resource: "leave", action: "write", scope: "own" },
       { resource: "leave", action: "execute", scope: "all" },
       { resource: "payroll", action: "write", scope: "all" },
+      { resource: "pay", action: "read", scope: "all" },
       { resource: "audit", action: "read", scope: "all" },
       { resource: "document", action: "write", scope: "own" },
       { resource: "document", action: "read", scope: "all" },
@@ -118,6 +119,7 @@ const SYSTEM_ROLES: {
       { resource: "leave", action: "execute", scope: "all" },
       { resource: "payroll", action: "write", scope: "all" },
       { resource: "payroll", action: "execute", scope: "all" },
+      { resource: "pay", action: "read", scope: "all" },
       { resource: "employee", action: "write", scope: "all" },
       { resource: "employee", action: "read", scope: "all" },
       { resource: "rules", action: "write", scope: "all" },
@@ -133,6 +135,8 @@ const SYSTEM_ROLES: {
       { resource: "accrual", action: "read", scope: "own" },
       { resource: "accrual", action: "read", scope: "all" },
       { resource: "accrual", action: "write", scope: "all" },
+      // Roles & Permissions (HR, 11/17), for roles below their own.
+      { resource: "role", action: "write", scope: "all" },
     ],
   },
   {
@@ -160,6 +164,7 @@ const SYSTEM_ROLES: {
       { resource: "payroll", action: "read", scope: "all" },
       { resource: "payroll", action: "write", scope: "all" },
       { resource: "payroll", action: "execute", scope: "all" },
+      { resource: "pay", action: "read", scope: "all" },
       { resource: "employee", action: "read", scope: "all" },
       { resource: "employee", action: "write", scope: "all" },
       { resource: "employee", action: "execute", scope: "all" },

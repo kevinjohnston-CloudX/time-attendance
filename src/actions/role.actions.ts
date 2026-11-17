@@ -14,6 +14,9 @@ import {
   type UpdateRoleInput,
 } from "@/lib/validators/role.schema";
 import { ownCompany } from "@/lib/rbac/company";
+import { LEGACY_MAP } from "@/lib/rbac/legacy-map";
+import { checkPermission } from "@/lib/rbac/check-permission";
+import type { Permission } from "@/lib/rbac/permissions";
 
 /**
  * A role limited to Live Attendance never also gets View As: previewing other
@@ -44,6 +47,39 @@ async function assertRankAllowed(rank: number, existing?: { rank: number }) {
   const unchanged = existing && rank === existing.rank;
   if (!unchanged && (rank > me.rank || (rank === me.rank && !top))) {
     throw new Error("You can only give a role a rank below your own.");
+  }
+}
+
+const cell = (p: { resource: string; action: string; scope: string }) => `${p.resource}:${p.action}:${p.scope}`;
+const PERMISSION_OF = new Map(Object.entries(LEGACY_MAP).map(([key, t]) => [cell(t), key as Permission]));
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/**
+ * Below the top of the company, nobody gives a role a permission their own
+ * role lacks. The rank check keeps an HR Admin off their own role and System
+ * Admin's, but they could still build a junior role with Company Data export
+ * or Pay Rates and put someone on it (11/17, when HR Admins got Roles &
+ * Permissions). Permissions the role already had are left alone, so editing
+ * one that holds something you lack does not force you to take it away. A
+ * cell no server check reads grants nothing and passes.
+ */
+async function assertCanGrant(
+  permissions: { resource: string; action: string; scope: string }[],
+  kept: { resource: string; action: string; scope: string }[] = [],
+) {
+  const me = await currentIdentity();
+  if (!me) throw new Error("FORBIDDEN");
+  if (me.isSuperAdmin || me.rank >= COMPANY_TOP_RANK) return;
+  const had = new Set(kept.map(cell));
+  const missing: string[] = [];
+  for (const p of permissions) {
+    if (had.has(cell(p))) continue;
+    const permission = PERMISSION_OF.get(cell(p));
+    if (!permission) continue;
+    if (!(await checkPermission(permission))) missing.push(`${cap(p.resource)} ${cap(p.action)} (${cap(p.scope)})`);
+  }
+  if (missing.length > 0) {
+    throw new Error(`You can only give a role permissions your own role has. Yours doesn't have: ${missing.join(", ")}.`);
   }
 }
 
@@ -86,6 +122,7 @@ export const createRole = withRBAC(
     if (!tenantId) throw new Error("Tenant context required");
     const data = createRoleSchema.parse(input);
     await assertRankAllowed(data.rank);
+    await assertCanGrant(data.permissions);
 
     const role = await db.customRole.create({
       data: {
@@ -132,6 +169,7 @@ export const updateRole = withRBAC(
     });
     if (!existing) throw new Error("This role isn't available. It may have been deleted. Reload the page and try again.");
     await assertRankAllowed(data.rank ?? existing.rank, existing);
+    if (data.permissions) await assertCanGrant(data.permissions, existing.permissions);
 
     // Block rename of system roles
     if (existing.isSystem && data.name && data.name !== existing.name) {
@@ -235,6 +273,7 @@ export const duplicateRole = withRBAC(
     });
     if (!source) throw new Error("The role to copy isn't available. It may have been deleted. Reload the page and try again.");
     await assertRankAllowed(source.rank);
+    await assertCanGrant(source.permissions);
 
     const role = await db.customRole.create({
       data: {
