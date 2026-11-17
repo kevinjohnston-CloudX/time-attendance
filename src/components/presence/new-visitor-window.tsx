@@ -490,13 +490,14 @@ export function NewVisitorWindow({
           <span className="ta-sheet-actions contents">
             {done ? (
               <>
-                <Button hierarchy="tertiary" onClick={onClose}>
+                {/* Three do not fit across a phone: there they stack, Print badge first. */}
+                <Button hierarchy="tertiary" className={styles.doneLast} onClick={onClose}>
                   Close
                 </Button>
-                <Button hierarchy="secondary" onClick={another}>
+                <Button hierarchy="secondary" className={styles.doneSecond} onClick={another}>
                   Add another visitor
                 </Button>
-                <Button hierarchy="primary" leadingIcon={<Printer className="h-4 w-4" aria-hidden="true" />} onClick={() => setPrinting(true)}>
+                <Button hierarchy="primary" className={styles.doneFirst} leadingIcon={<Printer className="h-4 w-4" aria-hidden="true" />} onClick={() => setPrinting(true)}>
                   Print badge
                 </Button>
               </>

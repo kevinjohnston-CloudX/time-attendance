@@ -1649,6 +1649,7 @@ export function OnSiteBoard({
           site={board.site}
           onChanged={(message) => {
             void refresh(board.site.id);
+            visitorDay.retry();
             toast.flash(message);
           }}
           onClose={() => setVisitorOpen(false)}
@@ -1695,6 +1696,7 @@ export function OnSiteBoard({
           visitorSite={canAddVisitors && board?.site.id === siteId ? board.site : null}
           onRenewed={(name) => {
             void refresh(siteId);
+            visitorDay.retry();
             toast.flash(`${name} can come in`);
           }}
         />

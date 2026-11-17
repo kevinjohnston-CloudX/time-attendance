@@ -280,3 +280,21 @@
     padding: 16px;
   }
 }
+
+/* The result's three buttons, stacked full width on a phone, Print badge first. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .doneFirst,
+  .doneSecond,
+  .doneLast {
+    flex-basis: 100% !important;
+  }
+  .doneFirst {
+    order: 1;
+  }
+  .doneSecond {
+    order: 2;
+  }
+  .doneLast {
+    order: 3;
+  }
+}
