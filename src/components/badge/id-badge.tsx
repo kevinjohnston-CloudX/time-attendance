@@ -22,12 +22,15 @@ export function IdBadge({
   badge,
   until,
   tone,
+  shape = "card",
 }: {
   badge: IdBadgeData;
   /** A visitor's last day, in words: printed under the building, as the gate stops working after it. */
   until?: string;
   /** A visitor pass's own band colour (a day pass by its length), in place of the role's. */
   tone?: { bg: string; ink: string };
+  /** "3x4": the card stands 3 wide by 4 tall (a visitor's lanyard badge), the code taking up the extra room. */
+  shape?: "card" | "3x4";
 }) {
   const role = ROLE_WORD[badge.kind];
   return (
@@ -35,6 +38,7 @@ export function IdBadge({
       className={styles.badge}
       data-kind={badge.kind.toLowerCase()}
       data-active={badge.active}
+      data-shape={shape}
       aria-label={`${role} badge for ${badge.name}`}
       style={tone && badge.active ? ({ "--band": tone.bg, "--band-ink": tone.ink } as React.CSSProperties) : undefined}
     >

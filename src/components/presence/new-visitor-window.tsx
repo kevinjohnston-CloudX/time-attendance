@@ -21,7 +21,7 @@ import frame from "./export-window.module.css";
 import styles from "./new-visitor-window.module.css";
 import { BadgeSample, badgeSampleHeight } from "./badge-sample";
 import { PAPER_LABEL, isBadgePaper, savedPaper, type BadgePaper } from "./visitor-badge-print";
-import { ID_BADGE_RATIO, VisitorIdBadge } from "./visitor-id-badge";
+import { ID_BADGE_RATIO, VisitorIdBadge, shapeFor } from "./visitor-id-badge";
 import { PrintBadgeWindow } from "./print-badge-window";
 
 /**
@@ -54,8 +54,8 @@ const KINDS: VisitorKind[] = ["DAY_PASS", "FREQUENT"];
 
 /** The badge preview's width in the rail. */
 const BADGE_WIDTH = 268;
-/** The Badge standing up, narrower so the rail is no taller than the form beside it. */
-const ID_BADGE_PREVIEW_WIDTH = 176;
+/** The Badge standing up, narrower so the rail is no taller than the form beside it; by shape, so both stand about as tall. */
+const ID_BADGE_PREVIEW_WIDTH = { "3x4": 208, card: 176 } as const;
 
 /** Waits until typing stops before asking the server. */
 function useSearch<T>(text: string, run: (q: string) => Promise<T[]>): T[] {
@@ -460,14 +460,18 @@ export function NewVisitorWindow({
               <div className={styles.badgeWrap}>
                 {sample ? (
                   isBadgePaper(paper) ? (
-                    <VisitorIdBadge badge={sample} width={ID_BADGE_PREVIEW_WIDTH} draft={!done} />
+                    <VisitorIdBadge badge={sample} width={ID_BADGE_PREVIEW_WIDTH[shapeFor(paper)]} shape={shapeFor(paper)} draft={!done} />
                   ) : (
                     <BadgeSample badge={sample} paper={paper} width={BADGE_WIDTH} draft={!done} />
                   )
                 ) : isBadgePaper(paper) ? (
                   <span
                     className={styles.badgeWait}
-                    style={{ width: ID_BADGE_PREVIEW_WIDTH, height: Math.round(ID_BADGE_PREVIEW_WIDTH * ID_BADGE_RATIO), borderRadius: 11 }}
+                    style={{
+                      width: ID_BADGE_PREVIEW_WIDTH[shapeFor(paper)],
+                      height: Math.round(ID_BADGE_PREVIEW_WIDTH[shapeFor(paper)] * ID_BADGE_RATIO[shapeFor(paper)]),
+                      borderRadius: 11,
+                    }}
                   />
                 ) : (
                   <span className={styles.badgeWait} style={{ height: badgeSampleHeight(paper, BADGE_WIDTH) }} />

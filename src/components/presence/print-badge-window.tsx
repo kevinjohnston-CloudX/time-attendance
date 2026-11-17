@@ -9,7 +9,7 @@ import type { VisitorBadge } from "@/lib/visitors/visitors.service";
 import { badgeSheet, isBadgePaper, printBadgeSheet, rememberPaper, savedPaper, type BadgePaper } from "./visitor-badge-print";
 import { printIdBadge } from "@/components/badge/print-id-badge";
 import { BadgeSample } from "./badge-sample";
-import { VisitorIdBadge } from "./visitor-id-badge";
+import { VisitorIdBadge, shapeFor, sizeFor } from "./visitor-id-badge";
 import frame from "./export-window.module.css";
 import styles from "./print-badge-window.module.css";
 
@@ -25,17 +25,17 @@ import styles from "./print-badge-window.module.css";
 type Version = "badge" | "label";
 
 const VERSIONS: { value: Version; icon: LucideIcon; title: string; body: string }[] = [
-  { value: "badge", icon: IdCard, title: "Badge", body: "The same card as an employee badge" },
+  { value: "badge", icon: IdCard, title: "Badge", body: "Same layout as an employee badge" },
   { value: "label", icon: Tag, title: "Label", body: "Label printer, 4 × 3 in labels" },
 ];
 
 const PRINT_ON: { value: "letter" | "card"; label: string; hint: string }[] = [
-  { value: "letter", label: "Letter paper", hint: "Office printer. Cut along the dashed line to fit a badge holder." },
-  { value: "card", label: "ID card", hint: "Card printer, CR80 cards." },
+  { value: "letter", label: "Letter paper", hint: "Office printer. A 3 × 4 in badge to cut out for a lanyard holder." },
+  { value: "card", label: "ID card", hint: "Card printer, standard ID cards (CR80)." },
 ];
 
-/** The Badge's width in the preview: a CR80 card standing up fits the rail with room around it. */
-const PREVIEW_BADGE_WIDTH = 196;
+/** The Badge's width in the preview, by shape, so both stand about as tall in the rail. */
+const PREVIEW_BADGE_WIDTH = { "3x4": 232, card: 196 } as const;
 
 export function PrintBadgeWindow({
   siteId,
@@ -114,7 +114,7 @@ export function PrintBadgeWindow({
     }
     if (isBadgePaper(paper)) {
       const card = cardRef.current?.firstElementChild;
-      if (card instanceof HTMLElement) printIdBadge(card, paper);
+      if (card instanceof HTMLElement) printIdBadge(card, paper, sizeFor(paper));
     } else {
       printBadgeSheet(badgeSheet(r.data, paper));
     }
@@ -188,7 +188,7 @@ export function PrintBadgeWindow({
               <div className={`${frame.railBlock} ${frame.previewBlock} ${styles.previewBlock}`}>
                 {badge ? (
                   version === "badge" ? (
-                    <VisitorIdBadge ref={cardRef} badge={badge} width={PREVIEW_BADGE_WIDTH} />
+                    <VisitorIdBadge ref={cardRef} badge={badge} width={PREVIEW_BADGE_WIDTH[shapeFor(badgePaper)]} shape={shapeFor(badgePaper)} />
                   ) : (
                     <BadgeSample badge={badge} paper="label" width={248} />
                   )
