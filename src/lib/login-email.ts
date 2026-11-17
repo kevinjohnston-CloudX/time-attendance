@@ -15,6 +15,11 @@ export interface EmailHolder {
   name: string | null;
   tenantId: string | null;
   employeeCode: string | null;
+  /** The badge people know them by (Badge ID on their record). */
+  wmsId: string | null;
+  isActive: boolean | null;
+  /** Which of their two emails holds the address. */
+  field: "work" | "personal";
 }
 
 /**
@@ -26,17 +31,35 @@ export async function emailHolders(addresses: (string | null | undefined)[], exc
   const wanted = [...new Set(addresses.map((a) => (a ?? "").trim().toLowerCase()).filter(Boolean))];
   const found = new Map<string, EmailHolder>();
   if (wanted.length === 0) return found;
-  const rows = await db.$queryRaw<{ id: string; name: string | null; email: string | null; workEmail: string | null; tenantId: string | null; employeeCode: string | null }[]>`
-    SELECT u.id, u.name, u.email, u."workEmail", e."tenantId", e."employeeCode"
+  const rows = await db.$queryRaw<{ id: string; name: string | null; email: string | null; workEmail: string | null; tenantId: string | null; employeeCode: string | null; wmsId: string | null; isActive: boolean | null }[]>`
+    SELECT u.id, u.name, u.email, u."workEmail", e."tenantId", e."employeeCode", e."wmsId", e."isActive"
     FROM users u LEFT JOIN employees e ON e."userId" = u.id
     WHERE (lower(u.email) = ANY(${wanted}::text[]) OR lower(u."workEmail") = ANY(${wanted}::text[]))
       AND (${exceptUserId ?? null}::text IS NULL OR u.id <> ${exceptUserId ?? null}::text)`;
   for (const r of rows) {
-    const holder = { userId: r.id, name: r.name, tenantId: r.tenantId, employeeCode: r.employeeCode };
-    for (const a of [r.email, r.workEmail]) {
+    const holder = { userId: r.id, name: r.name, tenantId: r.tenantId, employeeCode: r.employeeCode, wmsId: r.wmsId, isActive: r.isActive };
+    for (const [a, field] of [[r.workEmail, "work"], [r.email, "personal"]] as const) {
       const key = a?.toLowerCase();
-      if (key && wanted.includes(key) && !found.has(key)) found.set(key, holder);
+      if (key && wanted.includes(key) && !found.has(key)) found.set(key, { ...holder, field });
     }
   }
   return found;
+}
+
+/**
+ * The banner when an address is taken. Everyone sees the name of a holder in
+ * their own company. `detailed` (admins and Payroll admins) also says which
+ * record it is, so a duplicate or old record can be found: Badge ID, active or
+ * not, and which of its two emails. A holder in another company is never
+ * named, for anyone.
+ */
+export function emailTakenMessage(address: string, owner: EmailHolder, tenantId: string, detailed: boolean): string {
+  const ours = owner.tenantId === tenantId;
+  if (ours && detailed) {
+    const badge = owner.wmsId ?? owner.employeeCode;
+    const facts = [badge ? `Badge ID ${badge}` : null, owner.isActive === false ? "inactive" : "active"].filter(Boolean).join(", ");
+    return `The email ${address} is already the ${owner.field} email of ${owner.name || "another person"} (${facts}).`;
+  }
+  const who = ours && owner.name ? owner.name : "another account";
+  return `The email ${address} is already used by ${who}.`;
 }
