@@ -1,8 +1,9 @@
 "use client";
 
 import { VisitorTag } from "./visitor-tag";
+import { VisitorPassSection } from "./visitor-pass-section";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { CalendarPlus, Camera, ChevronLeft, ChevronRight, Clock, Coffee, DoorClosed, DoorOpen, ImageOff, UserCircle, UserRound, X } from "lucide-react";
+import { CalendarPlus, Camera, ChevronLeft, ChevronRight, Clock, Coffee, DoorClosed, DoorOpen, IdCard, ImageOff, UserCircle, UserRound, X } from "lucide-react";
 import { Badge, Button } from "@/components/ui";
 import { getOnSitePerson } from "@/actions/presence.actions";
 import { addDays, dayLabel, DAYS_BACK } from "@/lib/presence/days";
@@ -69,9 +70,15 @@ export function PersonPanel({
   onPhotoRemoved,
   scheduling = null,
   onScheduled,
+  visitorSite = null,
+  onVisitorChanged,
 }: {
   siteId: string;
   employeeId: string;
+  /** This building, when the viewer may renew, print and end visitor passes; null hides those buttons. */
+  visitorSite?: { id: string; name: string; timezone: string } | null;
+  /** A visitor's pass was renewed or ended here, with a line to show. */
+  onVisitorChanged?: (message: string) => void;
   /** Their place on the board right now, when they have one. */
   person: PresencePerson | null;
   /** The day to open on; null for today. */
@@ -115,6 +122,8 @@ export function PersonPanel({
   const [savedShifts, setSavedShifts] = useState(0);
   const [detail, setDetail] = useState<PresenceDetail | null>(null);
   const [failed, setFailed] = useState(false);
+  // Bumped after a visitor's pass changes here, so the details are read again.
+  const [passChanges, setPassChanges] = useState(0);
   const headRef = useRef<HTMLDivElement>(null);
   // On a phone the person is a screen of their own, pushed over the list,
   // and the way back is the top bar's, as in any phone app.
@@ -129,7 +138,7 @@ export function PersonPanel({
 
   const isToday = day === today;
   // Only today moves, so only today re-reads on every board refresh.
-  const refreshKey = isToday ? `${refreshedAt}|${savedShifts}` : "";
+  const refreshKey = isToday ? `${refreshedAt}|${savedShifts}|${passChanges}` : `${passChanges}`;
 
   useEffect(() => {
     let live = true;
@@ -243,17 +252,19 @@ export function PersonPanel({
         className={styles.panel}
         role="dialog"
         aria-modal={phone ? undefined : true}
-        aria-label={name || "Employee"}
+        aria-label={name || (visitor ? "Visitor" : "Employee")}
       >
         {/* The shared window's header: the raised glyph, the title and one
             line, then close. A phone hides it; its top bar leads back. */}
         <div ref={headRef} className={`${frame.head} ${styles.panelHead}`}>
           <span className={frame.glyph} aria-hidden="true">
-            <UserRound />
+            {visitor ? <IdCard /> : <UserRound />}
           </span>
           <span className={frame.titles}>
-            <h2 className={frame.title}>Employee</h2>
-            <span className={`${frame.subtitle} truncate`}>Where they are, their day and every scan</span>
+            <h2 className={frame.title}>{visitor ? "Visitor" : "Employee"}</h2>
+            <span className={`${frame.subtitle} truncate`}>
+              {visitor ? "Their pass, where they are and every scan" : "Where they are, their day and every scan"}
+            </span>
           </span>
           <Button hierarchy="tertiary" size="sm" iconOnly aria-label="Close" onClick={onClose}>
             <X className="h-4 w-4" />
@@ -347,13 +358,32 @@ export function PersonPanel({
             </div>
           )}
 
-          <dl className={styles.ppFacts}>
-            <Fact label="Employee code" value={person?.employeeCode ?? detail?.employeeCode} />
-            <Fact label="Department" value={person ? person.department : detail ? detail.department : undefined} />
-            <Fact label="Shift" value={detail ? detail.shift : person ? person.shift : undefined} />
-            <Fact label="Supervisor" value={detail ? detail.supervisor ?? "None assigned" : undefined} />
-          </dl>
+          {/* A visitor has no department, shift or supervisor: their pass,
+              below, says who they are here. */}
+          {!visitor && (
+            <dl className={styles.ppFacts}>
+              <Fact label="Employee code" value={person?.employeeCode ?? detail?.employeeCode} />
+              <Fact label="Department" value={person ? person.department : detail ? detail.department : undefined} />
+              <Fact label="Shift" value={detail ? detail.shift : person ? person.shift : undefined} />
+              <Fact label="Supervisor" value={detail ? detail.supervisor ?? "None assigned" : undefined} />
+            </dl>
+          )}
           </section>
+
+          {visitor && detail && (
+            <VisitorPassSection
+              pass={detail.visitorPass}
+              employeeId={employeeId}
+              name={name}
+              badge={detail.employeeCode}
+              today={today}
+              site={visitorSite}
+              onChanged={(message) => {
+                setPassChanges((n) => n + 1);
+                onVisitorChanged?.(message);
+              }}
+            />
+          )}
 
           {/* ── The day ── */}
           <section className={styles.ppSection}>

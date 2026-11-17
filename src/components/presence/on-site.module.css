@@ -2621,6 +2621,45 @@
   white-space: nowrap;
 }
 
+/* A visitor's pass: four facts, then what loss prevention can do with it. */
+.vpFacts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+  margin: 0;
+}
+
+.vpLine {
+  margin: 0;
+  font: var(--type-body2);
+  color: var(--text-secondary);
+}
+
+.vpActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--stroke-divider);
+}
+
+/* A phone reads each fact as a row, label left and value right, like the
+   panel's other facts there: one column. */
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .vpFacts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  /* Inside the pass card already, so the rows line up with its heading. */
+  .vpFacts .ppFact {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .vpFacts .ppFact + .ppFact::before {
+    left: 0;
+  }
+}
+
 /* The day and its scans, each a white card with its heading inside. */
 .ppSection {
   display: flex;

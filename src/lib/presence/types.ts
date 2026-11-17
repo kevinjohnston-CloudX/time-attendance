@@ -1,3 +1,4 @@
+import type { PassStanding, VisitorKind, VisitorTerm } from "@/lib/visitors/visitor-pass";
 /**
  * The shapes the On Site board draws, shared by the server that computes them
  * and the client that polls for them. Nothing in here imports the database, so
@@ -160,6 +161,19 @@ export interface PresenceDetail {
   visitor: boolean;
   /** A visitor's company and who they came to see (visitor-line.ts); null for everyone else. */
   visitorFrom: string | null;
+  /**
+   * A visitor's pass, for the details panel: how it stands today at this
+   * building. Null for an employee, and for a visitor badge with no pass.
+   */
+  visitorPass: {
+    kind: VisitorKind;
+    term: VisitorTerm;
+    validFrom: string;
+    validUntil: string;
+    standing: PassStanding;
+    company: string | null;
+    siteName: string;
+  } | null;
   inactive: boolean;
   /** The site on their record, when it is not this building. */
   homeSite: string | null;

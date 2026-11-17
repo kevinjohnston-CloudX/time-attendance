@@ -1618,6 +1618,12 @@ export function OnSiteBoard({
             if (siteId) void refresh(siteId);
             toast.flash("Added to today's schedule");
           }}
+          visitorSite={canAddVisitors ? board.site : null}
+          onVisitorChanged={(message) => {
+            void refresh(board.site.id);
+            visitorDay.retry();
+            toast.flash(message);
+          }}
         />
       )}
 
