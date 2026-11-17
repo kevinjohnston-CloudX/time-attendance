@@ -909,6 +909,13 @@ export const updateEmployee = withRBAC(
           ...(encPii.zipCode !== undefined && { zipCode: encPii.zipCode }),
         },
       });
+      // A visitor's pass opens the gate at one building only, and the
+      // Visitors window lists it there. Moving the visitor moves the pass
+      // with them, or they stay listed at the old building and the new one's
+      // gate turns them away.
+      if (siteId !== undefined && siteId !== current.siteId) {
+        await tx.visitorPass.updateMany({ where: { tenantId, employeeId }, data: { siteId } });
+      }
     });
 
     // A rate set here (rather than in the pay rates table) is recorded as of today.
