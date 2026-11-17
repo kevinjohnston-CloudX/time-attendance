@@ -191,6 +191,7 @@ export async function getScanLog(
       }
     }
   }
+  if (input.visitors) narrow.push({ employee: visitors });
   const filtered: Prisma.ScanEventWhereInput = { AND: narrow };
 
   const since = input.since ? new Date(input.since) : null;

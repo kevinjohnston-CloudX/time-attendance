@@ -225,6 +225,8 @@ export interface ScanLogQuery {
   first?: "gate" | "clock" | null;
   /** Only the gate scans with no partner: an entry after an entry, an exit after an exit. */
   missed?: boolean;
+  /** Only visitors' scans (the Visitors panel's scan count). Narrows the rows, never the totals. */
+  visitors?: boolean;
   departmentId: string | null;
   shiftId: string | null;
   q: string | null;

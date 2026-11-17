@@ -24,6 +24,7 @@ import {
 import { findOnSitePeople } from "@/actions/presence.actions";
 import { getOnSiteBoard } from "@/lib/presence/reads";
 import type { PickablePerson } from "@/lib/presence/people-search.service";
+import { VISITOR_DEPARTMENT_ID } from "@/lib/utils/client-badge";
 import { MAX_PICKED } from "@/lib/presence/search-limits";
 import type { PresenceBoard, PresencePerson, PresenceStatus } from "@/lib/presence/types";
 import {
@@ -87,6 +88,7 @@ import {
 import { HomeSiteBadge } from "./home-site";
 import {
   ScanLogCounts,
+  isVisitorList,
   ScanLogEmpty,
   ScanLogList,
   ScanLogSkeleton,
@@ -97,6 +99,7 @@ import {
   type LogCounter,
 } from "./scan-log";
 import { UnknownBadgesView, unknownBadgesLines, useUnknownBadges } from "./unknown-badges";
+import { VisitorDayView, inVisitorList, useVisitorDay, visitorDayLines } from "./visitors-day";
 import { ExportWindow } from "./export-window";
 import { VisitorsWindow } from "./visitors-window";
 import { dayWords, fileStamp, linesTable, movementsLines, stampLine, type ExportTable } from "./export-table";
@@ -555,6 +558,10 @@ export function OnSiteBoard({
   // Badges nobody holds, for the scan log's "Not in CloudTime" chip. Loaded
   // with the log so the chip's count is there before anyone picks it.
   const unknown = useUnknownBadges({ siteId: siteId ?? "", day: logDayShown, active: tab === "log" });
+  // The building's visitors, for the Scan log's Visitors panel. Who is inside
+  // now comes from the board, so the panel and the People view agree.
+  const visitorDay = useVisitorDay({ siteId: siteId ?? "", day: logDayShown, active: tab === "log", pulse: pulse?.scans });
+  const visitorsInside = useMemo(() => new Set(people.filter((p) => p.visitor && p.inside).map((p) => p.id)), [people]);
   const when = !logDayShown ? "today" : dayLabel(logDayShown, today) === "Yesterday" ? "yesterday" : `on ${dayLabel(logDayShown, today)}`;
 
   // ── Movements ──
@@ -611,7 +618,18 @@ export function OnSiteBoard({
   const { rows: mvDisplayed, moved: mvNewCount } = useMemo(() => applyHeldOrder(mvRows, mvHeld), [mvRows, mvHeld]);
   const logSummary = log.page?.summary ?? null;
   // "Not in CloudTime" counts people, not scans, so it has its own total.
-  const logTotal = counter === "unknown" ? unknown.count : logSummary ? counterTotal(logSummary, counter) : 0;
+  const visitorRows = visitorDay.data?.rows ?? [];
+  const visitorInsideNow = visitorDay.data && visitorDay.data.day === visitorDay.data.today ? visitorsInside : null;
+  const logTotal =
+    counter === "unknown"
+      ? unknown.count
+      : isVisitorList(counter)
+        ? visitorRows.filter((r) => inVisitorList(r, counter, visitorInsideNow)).length
+        : counter === "visitor"
+          ? (visitorDay.data?.totals.scans ?? 0)
+          : logSummary
+            ? counterTotal(logSummary, counter)
+            : 0;
 
   // Picked people this tab has nothing on, named once so an absence never
   // reads as the search failing. The Scan log only says so once every page
@@ -655,6 +673,15 @@ export function OnSiteBoard({
       rollCall: false,
     };
     const stamp = logDayShown || fileStamp(board.generatedAt, tz);
+    if (isVisitorList(counter)) {
+      if (!visitorDay.data) return null;
+      return linesTable(visitorDayLines(visitorDay.data, board.site.name, (r) => inVisitorList(r, counter, visitorInsideNow), visitorInsideNow), {
+        ...meta,
+        title: COUNTER_LABEL[counter],
+        fileStem: `${COUNTER_LABEL[counter]} ${board.site.name} ${stamp}`,
+        unit: { one: "visitor", many: "visitors" },
+      });
+    }
     if (counter === "unknown") {
       if (!unknown.data) return null;
       return linesTable(unknownBadgesLines(unknown.data, board.site.name), {
@@ -736,7 +763,7 @@ export function OnSiteBoard({
   }
 
   const screenExport = {
-    label: tab === "movements" ? "The Movements view" : tab === "log" ? (counter === "unknown" ? "The badges not in CloudTime" : "The Scan log") : "The People list",
+    label: tab === "movements" ? "The Movements view" : tab === "log" ? (counter === "unknown" ? "The badges not in CloudTime" : isVisitorList(counter) ? "The visitor list" : "The Scan log") : "The People list",
     build: async () => (tab === "movements" ? movementsTable() : tab === "log" ? logTable() : peopleListTable()),
   };
 
@@ -965,6 +992,8 @@ export function OnSiteBoard({
                     </strong>{" "}
                     {counter === "unknown"
                       ? `not in CloudTime ${when}`
+                      : isVisitorList(counter)
+                        ? `${COUNTER_LABEL[counter].toLowerCase()} ${when}`
                       : counter
                         ? `${COUNTER_LABEL[counter].toLowerCase()} ${when}`
                         : `scans ${when}`}
@@ -1072,6 +1101,8 @@ export function OnSiteBoard({
                       ? logSummary
                         ? counter === "unknown"
                           ? `${logTotal.toLocaleString()} ${logTotal === 1 ? "badge" : "badges"}`
+                          : isVisitorList(counter)
+                            ? `${logTotal.toLocaleString()} ${logTotal === 1 ? "visitor" : "visitors"}`
                           : `${logTotal.toLocaleString()} ${logTotal === 1 ? "scan" : "scans"}`
                         : ""
                       : searching
@@ -1319,8 +1350,44 @@ export function OnSiteBoard({
                 lastGateScanAt={board.site.lastGateScanAt}
                 tz={tz}
                 when={when}
+                visitors={
+                  visitorDay.data
+                    ? {
+                        inside: when === "today" ? visitorsInside.size : null,
+                        allowed: visitorDay.data.totals.allowed,
+                        cameIn: visitorDay.data.totals.cameIn,
+                        outside: visitorRows.filter((r) => inVisitorList(r, "visitors-outside", visitorInsideNow)).length,
+                        scans: visitorDay.data.totals.scans,
+                        refused: visitorDay.data.totals.refused,
+                        endingSoon: visitorDay.data.totals.endingSoon,
+                      }
+                    : null
+                }
+                onVisitorsInside={() => {
+                  setDept(VISITOR_DEPARTMENT_ID);
+                  setMvFlag(heroFlagFor(true));
+                  setMvShown(PEOPLE_PER_PAGE);
+                  setSelectedId(null);
+                  setTab("movements");
+                }}
               />
-            {counter === "unknown" ? (
+            {isVisitorList(counter) ? (
+              <VisitorDayView
+                data={visitorDay.data}
+                failed={visitorDay.failed}
+                loading={visitorDay.loading}
+                list={counter}
+                inside={visitorInsideNow}
+                tz={tz}
+                query={query}
+                selectedId={selectedId}
+                onOpen={(id) => {
+                  setPanelDay(logDayShown || null);
+                  setSelectedId(id);
+                }}
+                onRetry={visitorDay.retry}
+              />
+            ) : counter === "unknown" ? (
               <UnknownBadgesView
                 data={unknown.data}
                 failed={unknown.failed}
@@ -2447,6 +2514,12 @@ const COUNTER_LABEL: Record<LogCounter, string> = {
   "first-in": "First entry per person",
   "first-clock": "First clock in per person",
   missed: "Missed gate scans",
+  visitor: "Visitor scans",
+  "visitors-allowed": "Visitors allowed in",
+  "visitors-outside": "Visitors not inside",
+  "visitors-came": "Visitors who came in",
+  "visitors-refused": "Visitors refused at the gate",
+  "visitors-ending": "Visitor passes ending this week",
 };
 
 /** How many scans the picked counter stands for, from the same counts it shows. */
