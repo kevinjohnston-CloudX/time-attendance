@@ -15,7 +15,7 @@ const base: ReportResult = {
 
 async function read(result: ReportResult) {
   const book = new ExcelJS.Workbook();
-  await book.xlsx.load(await generateXlsx(result, "Agency payroll backup"));
+  await book.xlsx.load((await generateXlsx(result, "Agency payroll backup")) as unknown as ExcelJS.Buffer);
   const sheet = book.worksheets[0];
   return { sheet, cells: (row: number) => [1, 2].map((c) => sheet.getRow(row).getCell(c).value) };
 }
