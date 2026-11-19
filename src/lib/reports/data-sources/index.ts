@@ -10,6 +10,7 @@ import { exceptionReportSource } from "./exception-report";
 import { securityScanSource, timeClockScanSource } from "./scan-report";
 import { employeesSource } from "./employees";
 import { laborCostSource } from "./labor-cost";
+import { hoursAndPaySource } from "./hours-and-pay";
 import { timesheetNotesSource } from "./timesheet-notes";
 import { timeOffHistorySource, timeOffSummarySource } from "./time-off-history";
 import { scheduledHoursSource } from "./scheduled-hours";
@@ -64,6 +65,11 @@ export interface ReportResult {
   totalRows: number;
   /** The days the rows cover, for reports that work them out themselves. */
   period?: { start: string; end: string; label: string };
+  /**
+   * The report's name and its dates as the first lines of an Excel file,
+   * above the headings: a payroll backup is filed and printed as it is.
+   */
+  titleRows?: boolean;
   /** The rows in their groups, with totals; `rows` are already in group order. */
   groups?: ReportGroups;
   /** Columns picked but not shown, because the layout adds days up (see ColumnDef.varies). */
@@ -117,6 +123,7 @@ const sources: Record<DataSourceId, DataSourceDefinition> = {
   HOURS_TO_DATE: hoursToDateSource,
   WEEKLY_OVERTIME: weeklyOvertimeSource,
   ATTENDANCE_SUMMARY: attendanceSummarySource,
+  HOURS_AND_PAY: hoursAndPaySource,
 };
 
 /**
