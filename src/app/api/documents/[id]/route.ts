@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { userHasPermission } from "@/lib/rbac/check-permission";
+import { siteLimit } from "@/lib/rbac/site-limit";
 import { createSignedUrl } from "@/lib/supabase-storage";
 import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
 import { recordDownload } from "@/lib/audit/downloads";
@@ -20,7 +21,7 @@ export async function GET(
 
   const doc = await db.document.findUnique({
     where: { id },
-    include: { employee: { select: { tenantId: true } } },
+    include: { employee: { select: { tenantId: true, siteId: true } } },
   });
   if (!doc) return new NextResponse("Not found", { status: 404 });
 
@@ -37,6 +38,11 @@ export async function GET(
   // employee's limits apply. The built-in role alone ignored both.
   if (await userHasPermission(session.user, "DOCUMENT_VIEW_ANY")) {
     if (doc.employee.tenantId !== tenantId) {
+      return new NextResponse("Not found", { status: 404 });
+    }
+    // Held to some sites (Site access): someone else's only at those sites.
+    const sites = await siteLimit({ employeeId: session.user.employeeId ?? "", role: session.user.role });
+    if (sites && doc.employeeId !== session.user.employeeId && !sites.includes(doc.employee.siteId)) {
       return new NextResponse("Not found", { status: 404 });
     }
   } else if (await userHasPermission(session.user, "DOCUMENT_VIEW_OWN")) {

@@ -188,6 +188,7 @@ export default async function DashboardPage({
   const siteQs = siteChoice ? `&siteId=${siteChoice}` : "";
   const siteSql = siteIds ? Prisma.sql`AND emp."siteId" IN (${Prisma.join(siteIds.length ? siteIds : ["-"])})` : Prisma.empty;
   const siteWhere = siteIds ? { siteId: { in: siteIds } } : {};
+  const approvalsReach = hasPayrollAccess ? (heldToSome ? viewableSites.map((s) => s.id) : true) : false;
 
   // ── The cards, and the periods either side of this one ────────────────────
   const [currentTimesheet, today, exceptionsFeed, presence, upcoming, prevPP, nextPP, companyExceptions, queues, missedPunchRequests, unsentLeave, timeOffAhead] = await Promise.all([
@@ -253,8 +254,9 @@ export default async function DashboardPage({
         })
       : null,
     // ── Waiting on you: the decisions, as the Approvals screen counts them ──
-    canApproveTeam && tenantId ? getTeamQueues(tenantId, employeeId, hasPayrollAccess, now) : null,
-    canApproveTeam && tenantId ? countMissedPunchRequests(tenantId, employeeId, hasPayrollAccess) : 0,
+    // Held to some sites, those sites' decisions only, as Approvals lists them.
+    canApproveTeam && tenantId ? getTeamQueues(tenantId, employeeId, approvalsReach, now) : null,
+    canApproveTeam && tenantId ? countMissedPunchRequests(tenantId, employeeId, approvalsReach) : 0,
     // Your own: a leave request saved but never sent.
     employeeId ? db.leaveRequest.count({ where: { employeeId, status: "DRAFT" } }) : 0,
     // Who on a supervisor's team is off in the next two weeks, as Team

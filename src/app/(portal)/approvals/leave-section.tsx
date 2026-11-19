@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { Session } from "next-auth";
 import { db } from "@/lib/db";
 import { userHasPermission } from "@/lib/rbac/check-permission";
+import { siteLimit } from "@/lib/rbac/site-limit";
 import { getTeamLeaveRequests, getUpcomingTeamLeave, getHrPendingLeave, getTeamHeadcount } from "@/actions/supervisor.actions";
 import { LeaveTabs } from "@/components/supervisor/leave-tabs";
 
@@ -39,8 +40,15 @@ export async function LeaveSection({ user, params, heading }: { user: Session["u
     getHrPendingLeave(filterInput),
     getUpcomingTeamLeave(filterInput),
     getTeamHeadcount(filterInput),
+    // Only the sites on their record (Site access), when it names some.
     canFilter && tenantId
-      ? db.site.findMany({ where: { tenantId, isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true } })
+      ? siteLimit({ employeeId: user.employeeId ?? "", role: user.role }).then((held) =>
+          db.site.findMany({
+            where: { tenantId, isActive: true, ...(held ? { id: { in: held } } : {}) },
+            orderBy: { name: "asc" },
+            select: { id: true, name: true },
+          }),
+        )
       : [],
     canFilter && tenantId
       ? db.department.findMany({

@@ -21,6 +21,16 @@ import {
 } from "@/lib/validators/document.schema";
 import { ownCompany } from "@/lib/rbac/company";
 import { withoutVisitors } from "@/lib/utils/client-badge";
+import { siteLimit } from "@/lib/rbac/site-limit";
+
+/**
+ * Held to some sites (Site access on their record): only the people at those
+ * sites, for documents as for timecards. Nothing extra for anyone else.
+ */
+async function atTheirSites(actor: { employeeId: string; role: string }): Promise<{ siteId?: { in: string[] } }> {
+  const sites = await siteLimit(actor);
+  return sites ? { siteId: { in: sites } } : {};
+}
 
 // ─── uploadDocument ───────────────────────────────────────────────────────────
 // Uses manual auth because withRBAC cannot handle File/FormData inputs.
@@ -67,8 +77,8 @@ export async function uploadDocument(
       return { success: false, error: "That file is over the 4 MB limit. Choose a smaller one." };
 
     // Tenant-scope guard: verify the employee belongs to this tenant
-    const employee = await db.employee.findUnique({
-      where: { id: employeeId },
+    const employee = await db.employee.findFirst({
+      where: { id: employeeId, ...(await atTheirSites({ employeeId: session.user.employeeId ?? "", role: session.user.role })) },
       select: { tenantId: true },
     });
     if (!employee || employee.tenantId !== tenantId) return failure("NOT_FOUND");
@@ -132,10 +142,10 @@ export const getMyDocuments = withRBAC(
 
 export const getAllDocuments = withRBAC(
   "DOCUMENT_VIEW_ANY",
-  async ({ tenantId }, _input: void) => {
+  async ({ tenantId, employeeId, role }, _input: void) => {
     return db.document.findMany({
       where: {
-        employee: { tenantId: ownCompany(tenantId) },
+        employee: { tenantId: ownCompany(tenantId), ...(await atTheirSites({ employeeId, role })) },
       },
       include: {
         employee: {
@@ -151,9 +161,9 @@ export const getAllDocuments = withRBAC(
 
 export const getEmployeesForDocumentUpload = withRBAC(
   "DOCUMENT_UPLOAD",
-  async ({ tenantId }, _input: void) => {
+  async ({ tenantId, employeeId, role }, _input: void) => {
     return db.employee.findMany({
-      where: withoutVisitors({ isActive: true, tenantId: ownCompany(tenantId) }),
+      where: withoutVisitors({ isActive: true, tenantId: ownCompany(tenantId), ...(await atTheirSites({ employeeId, role })) }),
       include: { user: { select: { name: true } } },
       orderBy: { user: { name: "asc" } },
     });
@@ -164,12 +174,13 @@ export const getEmployeesForDocumentUpload = withRBAC(
 
 export const deleteDocument = withRBAC(
   "DOCUMENT_UPLOAD",
-  async ({ employeeId: actorId, tenantId }, input: DeleteDocumentInput) => {
+  async ({ employeeId: actorId, tenantId, role }, input: DeleteDocumentInput) => {
     const { documentId } = deleteDocumentSchema.parse(input);
 
-    // Found only inside the caller's company: another company's reads as not found.
+    // Found only inside the caller's company, and at their sites when held to
+    // some: anything else reads as not found.
     const doc = await db.document.findFirst({
-      where: { id: documentId, employee: { tenantId: ownCompany(tenantId) } },
+      where: { id: documentId, employee: { tenantId: ownCompany(tenantId), ...(await atTheirSites({ employeeId: actorId, role })) } },
       include: { employee: { select: { tenantId: true } } },
     });
     if (!doc) throw new Error("NOT_FOUND");

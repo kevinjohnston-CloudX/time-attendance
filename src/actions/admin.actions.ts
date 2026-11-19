@@ -36,6 +36,7 @@ import { webPunchByDefault } from "@/lib/web-punch";
 import { isSignInOnlyRole, isVisitorRole, seesTeam, SIGN_IN_ONLY_RULE_SET, VISITOR_DEPARTMENT } from "@/lib/sign-in-only";
 import { cleanLanguages, languageName } from "@/lib/languages";
 import { hoursToSeconds, secondsToMinutes } from "@/lib/leave-time";
+import { auditPageInReach } from "@/lib/audit/audit-reach";
 import { NotFoundError, assertBalanceChangeAllowed, assertNotSenior, assertRecordInReach, assertSiteInReach, siteInReach, siteLimit } from "@/lib/rbac/scope";
 import { assertOwn, ownCompany } from "@/lib/rbac/company";
 import { forgetTabletLanguages } from "@/lib/timeclock/tablet-languages";
@@ -2090,7 +2091,7 @@ export type AuditRange = "any" | "today" | "7" | "30";
 export const getAuditLogs = withRBAC(
   "AUDIT_VIEW",
   async (
-    { tenantId },
+    { tenantId, employeeId, role },
     input: { page?: number; entityType?: string; q?: string; actor?: string; range?: AuditRange; tz?: string } = {}
   ) => {
     const page = Math.max(1, Math.floor(Number(input.page) || 1));
@@ -2134,9 +2135,16 @@ export const getAuditLogs = withRBAC(
         : {}),
     };
 
+    // Held to some sites (Site access): the entries about their sites' people
+    // and every entry about company setup. The ids in reach are found in SQL,
+    // a page at a time, since a site's timecards are too many to list.
+    const sites = await siteLimit({ employeeId, role });
+    const inReach = sites ? await auditPageInReach(sites, { tenantId: ownCompany(tenantId), entityType, actor, since, q }, take, skip) : null;
+    const pageWhere: Prisma.AuditLogWhereInput = inReach ? { id: { in: inReach.ids } } : where;
+
     const [rows, total] = await Promise.all([
       db.auditLog.findMany({
-        where,
+        where: pageWhere,
         select: {
           id: true,
           action: true,
@@ -2150,10 +2158,9 @@ export const getAuditLogs = withRBAC(
           actor: { select: { user: { select: { name: true } } } },
         },
         orderBy: { createdAt: "desc" },
-        take,
-        skip,
+        ...(inReach ? {} : { take, skip }),
       }),
-      db.auditLog.count({ where }),
+      inReach ? Promise.resolve(inReach.total) : db.auditLog.count({ where }),
     ]);
 
     // A timesheet opens on the timecard screen, which is addressed by the

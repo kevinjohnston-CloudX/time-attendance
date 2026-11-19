@@ -7,6 +7,7 @@ import type { PayFrequency } from "@prisma/client";
 import { CalendarRange, Check, CircleAlert, CircleCheck, Clock, Files } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
+import { siteLimit } from "@/lib/rbac/site-limit";
 import { db } from "@/lib/db";
 import { getPayPeriodRail, getPayPeriodDetail } from "@/actions/pay-period.actions";
 import { getAdpConfig } from "@/lib/integrations/adp/client";
@@ -164,8 +165,14 @@ export default async function PayPeriodsPage({
   // ADP's button only for the company the platform's ADP connection is theirs.
   const adpConfigured = getAdpConfig() !== null && (await integrationConnected(payPeriod.tenantId, "adp"));
 
+  // Only the sites on their record (Site access) in the site picker, when it names some.
+  const heldTo = await siteLimit({ employeeId: session.user.employeeId ?? "", role: session.user.role });
   const [sites, departments, payrollRun] = await Promise.all([
-    db.site.findMany({ where: { isActive: true, tenantId: payPeriod.tenantId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.site.findMany({
+      where: { isActive: true, tenantId: payPeriod.tenantId, ...(heldTo ? { id: { in: heldTo } } : {}) },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
     db.department.findMany({
       where: { isActive: true, tenantId: payPeriod.tenantId, ...(siteId ? { sites: { some: { siteId } } } : {}) },
       orderBy: { name: "asc" },

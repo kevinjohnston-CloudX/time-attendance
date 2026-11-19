@@ -40,8 +40,17 @@ export interface TimeOffRow {
 
 type Scope = Prisma.EmployeeWhereInput;
 
-function scopeOf(tenantId: string, employeeId: string | null, isPayroll: boolean): Scope {
-  return isPayroll ? { tenantId } : { tenantId, ...directReportsOf(employeeId ?? "") };
+/**
+ * Whose numbers: false, the viewer's direct reports; true, the whole company;
+ * a list of site ids, the company at those sites only (a Payroll Admin held
+ * to some sites by Site access, or a building picked on the Dashboard). An
+ * empty list is nobody, never everybody.
+ */
+export type Reach = boolean | string[];
+
+function scopeOf(tenantId: string, employeeId: string | null, reach: Reach): Scope {
+  if (Array.isArray(reach)) return { tenantId, siteId: { in: reach } };
+  return reach ? { tenantId } : { tenantId, ...directReportsOf(employeeId ?? "") };
 }
 
 /** Today as the @db.Date columns store it: UTC midnight. */
@@ -52,10 +61,10 @@ function utcToday(now: Date): Date {
 export async function getTeamQueues(
   tenantId: string,
   employeeId: string | null,
-  isPayroll: boolean,
+  reach: Reach,
   now: Date,
 ): Promise<TeamQueues> {
-  const employee = scopeOf(tenantId, employeeId, isPayroll);
+  const employee = scopeOf(tenantId, employeeId, reach);
   const today = utcToday(now);
 
   const [exceptions, leavePending, leaveWithHr, upcomingLeave] = await Promise.all([
@@ -81,7 +90,7 @@ export async function getTeamQueues(
 export async function countMissedPunchRequests(
   tenantId: string,
   employeeId: string | null,
-  isPayroll: boolean,
+  reach: Reach,
 ): Promise<number> {
   const asks = await db.punch.findMany({
     where: {
@@ -92,7 +101,7 @@ export async function countMissedPunchRequests(
       correctsId: null,
       approvedById: null,
       timesheet: {
-        employee: scopeOf(tenantId, employeeId, isPayroll),
+        employee: scopeOf(tenantId, employeeId, reach),
         exceptions: { some: { exceptionType: "MISSING_PUNCH", resolvedAt: null } },
       },
     },
@@ -126,11 +135,11 @@ function dayIn(instant: Date, zone: string): string {
 export async function getExceptionTypes(
   tenantId: string,
   employeeId: string | null,
-  isPayroll: boolean,
+  reach: Reach,
 ): Promise<ExceptionTypeCount[]> {
   const rows = await db.exception.groupBy({
     by: ["exceptionType"],
-    where: { resolvedAt: null, timesheet: { employee: scopeOf(tenantId, employeeId, isPayroll) } },
+    where: { resolvedAt: null, timesheet: { employee: scopeOf(tenantId, employeeId, reach) } },
     _count: { _all: true },
   });
   return rows
@@ -145,11 +154,11 @@ export async function getExceptionTypes(
 export async function getTimeOffAhead(
   tenantId: string,
   employeeId: string | null,
-  isPayroll: boolean,
+  reach: Reach,
   now: Date,
   limit = 6,
 ): Promise<{ rows: TimeOffRow[]; total: number; offToday: number }> {
-  const employee = scopeOf(tenantId, employeeId, isPayroll);
+  const employee = scopeOf(tenantId, employeeId, reach);
   const today = utcToday(now);
   const horizon = new Date(today);
   horizon.setUTCDate(horizon.getUTCDate() + 14);
