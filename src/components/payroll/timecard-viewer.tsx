@@ -25,6 +25,20 @@ import { FilterMultiChip } from "@/components/ui/filter-multi-chip";
 
 /** No agency picked: everybody. One array, so a default does not change on every render. */
 const NO_AGENCIES: string[] = [];
+
+/** The list's Employment filter: on their record, Active (working), On leave, or Inactive. */
+type Employment = "active" | "leave" | "inactive";
+const EMPLOYMENT_OPTIONS: { id: Employment; name: string }[] = [
+  { id: "active", name: "Active" },
+  { id: "leave", name: "On leave" },
+  { id: "inactive", name: "Inactive" },
+];
+/** What the list opens on: everyone still employed, working or on leave. */
+const DEFAULT_EMPLOYMENT: Employment[] = ["active", "leave"];
+const sameEmployment = (a: Employment[], b: Employment[]) => a.length === b.length && a.every((x) => b.includes(x));
+function employmentOf(emp: { isActive: boolean; onLeave?: boolean }): Employment {
+  return !emp.isActive ? "inactive" : emp.onLeave ? "leave" : "active";
+}
 import {
   Badge,
   Button,
@@ -132,6 +146,8 @@ type EmployeeListItem = {
   siteId: string | null;
   siteName: string | null;
   isActive: boolean;
+  /** Active, but on leave: the Employment filter's "On leave". */
+  onLeave?: boolean;
   payType?: string | null;
   /** The day they started, "yyyy-MM-dd": no day before it is an absence. */
   startedOn?: string;
@@ -897,7 +913,11 @@ export function TimecardViewer({
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [exceptionFilter, setExceptionFilter] = useState("ALL");
   const [payTypeFilter, setPayTypeFilter] = useState("ALL");
-  const [activeOnly, setActiveOnly] = useState(true);
+  // Who the list shows by employment: Active and On leave to start with, as
+  // "Active employees only" did, with Inactive a tick away. None ticked is
+  // everybody.
+  const [employment, setEmployment] = useState<Employment[]>(DEFAULT_EMPLOYMENT);
+  const employmentChanged = !sameEmployment(employment, DEFAULT_EMPLOYMENT);
   const [isPending, startTransition] = useTransition();
   const [pendingPayCodes, setPendingPayCodes] = useState<Map<string, string>>(new Map());
   const [pendingReasonCodes, setPendingReasonCodes] = useState<Map<string, string>>(new Map());
@@ -1255,8 +1275,8 @@ export function TimecardViewer({
       emp.department.toLowerCase().includes(q);
     if (!matchesSearch) return false;
 
-    // Active only filter
-    if (activeOnly && !emp.isActive) return false;
+    // Employment: active, on leave, inactive.
+    if (employment.length > 0 && !employment.includes(employmentOf(emp))) return false;
 
     // Pay type filter
     if (payTypeFilter === "HOURLY" && emp.payType !== "HOURLY") return false;
@@ -2275,9 +2295,9 @@ export function TimecardViewer({
   // and how many of the ones inside Filters are, for its button. Status set
   // from the quick views counts too: it is the same filter.
   const listNarrowed =
-    statusFilter !== "ALL" || payTypeFilter !== "ALL" || exceptionFilter !== "ALL" || !activeOnly || !!search.trim();
+    statusFilter !== "ALL" || payTypeFilter !== "ALL" || exceptionFilter !== "ALL" || employmentChanged || !!search.trim();
   const filtersOn =
-    Number(statusFilter !== "ALL") + Number(payTypeFilter !== "ALL") + Number(exceptionFilter !== "ALL") + Number(!activeOnly) +
+    Number(statusFilter !== "ALL") + Number(payTypeFilter !== "ALL") + Number(exceptionFilter !== "ALL") + Number(employmentChanged) +
     // On a phone site, department and agency are picked in Filters too.
     (phone ? Number(!!selectedSiteId) + Number(!!selectedDepartmentId) + Number(selectedAgencyIds.length > 0) : 0);
 
@@ -2585,7 +2605,24 @@ export function TimecardViewer({
                       </Select>
                     </label>
                   ))}
-                  <Checkbox checked={activeOnly} onChange={setActiveOnly} label="Active employees only" />
+                  {/* Several at once; none ticked is everybody. */}
+                  <fieldset className="flex flex-col gap-1.5" style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
+                    <legend className="mb-1" style={{ font: "var(--type-button2)", color: "var(--text-secondary)", padding: 0 }}>
+                      Employment
+                    </legend>
+                    {EMPLOYMENT_OPTIONS.map((o) => (
+                      <Checkbox
+                        key={o.id}
+                        checked={employment.includes(o.id)}
+                        onChange={(on) =>
+                          setEmployment((cur) =>
+                            EMPLOYMENT_OPTIONS.map((x) => x.id).filter((id) => (id === o.id ? on : cur.includes(id))),
+                          )
+                        }
+                        label={o.name}
+                      />
+                    ))}
+                  </fieldset>
                   <div className={`flex items-center justify-between gap-2 pt-1 ${grid.filterFoot}`} style={{ borderTop: "1px solid var(--stroke-divider)" }}>
                     <Button
                       hierarchy="link"
@@ -2596,7 +2633,7 @@ export function TimecardViewer({
                         setStatusFilter("ALL");
                         setPayTypeFilter("ALL");
                         setExceptionFilter("ALL");
-                        setActiveOnly(true);
+                        setEmployment(DEFAULT_EMPLOYMENT);
                         // Site, department and agency are in this sheet on a phone.
                         if (phone && (selectedSiteId || selectedDepartmentId || selectedAgencyIds.length)) navigate(null, selectedPeriodId, null, null, []);
                       }}
