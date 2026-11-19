@@ -11,9 +11,12 @@ export const ID_PAPER_BODY: Record<IdBadgePaper, string> = {
   card: "Card printer, CR80 cards",
 };
 
-/** A CR80 card standing up, in CSS pixels (96 to the inch): 2.125 × 3.375 in. */
-const CARD_W = 204;
-const CARD_H = 324;
+/** A badge's size standing up, in inches. */
+export type BadgeSize = { w: number; h: number };
+/** A CR80 card, the size of a credit card: what card printers take. */
+export const CR80: BadgeSize = { w: 2.125, h: 3.375 };
+/** A visitor's lanyard badge, cut from letter paper for a 3 × 4 in holder. */
+export const BADGE_3X4: BadgeSize = { w: 3, h: 4 };
 
 /**
  * Prints the badge exactly as it is drawn on screen: the card itself is
@@ -26,14 +29,15 @@ const CARD_H = 324;
  * letter paper it sits in a dashed cut line; on a card printer it fills the
  * card.
  */
-export function printIdBadge(card: HTMLElement, paper: IdBadgePaper): void {
+export function printIdBadge(card: HTMLElement, paper: IdBadgePaper, size: BadgeSize = CR80): void {
   // The card is laid out at its own 400px (My Badge's width), whatever scale
   // the screen shows it at, so the paper gets the same wrapping as My Badge.
   const rect = card.getBoundingClientRect();
   if (!rect.width || !rect.height) return;
   const width = 400;
   const height = (rect.height / rect.width) * width;
-  const zoom = Math.min(CARD_W / width, CARD_H / height);
+  // 96 CSS pixels to the inch.
+  const zoom = Math.min((size.w * 96) / width, (size.h * 96) / height);
 
   const styles = [...document.querySelectorAll('link[rel="stylesheet"], style')]
     .map((el) => el.outerHTML)
@@ -46,18 +50,16 @@ export function printIdBadge(card: HTMLElement, paper: IdBadgePaper): void {
 ${styles}
 <style>
   ${fontFace()}
-  @page { ${letter ? "size: letter; margin: 0.5in" : "size: 2.125in 3.375in; margin: 0"}; }
+  @page { ${letter ? "size: letter; margin: 0.5in" : "size: ${size.w}in ${size.h}in; margin: 0"}; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   :root { --font-sans: ${sans}; --wms-font-sans: ${sans}; color-scheme: light; }
   html, body { margin: 0; padding: 0; background: #fff; }
   .sheet { ${letter ? "display: flex; flex-direction: column; align-items: center; padding-top: 0.25in;" : ""} }
-  .cut { position: relative; display: grid; place-items: center; width: 2.125in; height: 3.375in; overflow: hidden; }
+  .cut { position: relative; display: grid; place-items: center; width: ${size.w}in; height: ${size.h}in; overflow: hidden; }
   ${letter ? '.cut::after { content: ""; position: absolute; inset: 0; border: 1px dashed #8c8c8c; border-radius: 0.125in; pointer-events: none; }' : ""}
   .cut > article { width: ${width}px; max-width: none; margin: 0; box-shadow: none; zoom: ${zoom}; }
-  .note { margin: 0.2in 0 0; width: 3.4in; font: 9pt/1.45 ${sans}; color: #555; text-align: center; }
 </style></head><body>
-<div class="sheet"><div class="cut">${card.outerHTML}</div>
-${letter ? '<p class="note">Cut along the dashed line to fit a standard badge holder.<br>Print at Actual size (100%), not Fit to page.</p>' : ""}</div>
+<div class="sheet"><div class="cut">${card.outerHTML}</div></div>
 </body></html>`;
   printBadgeSheet(html);
 }

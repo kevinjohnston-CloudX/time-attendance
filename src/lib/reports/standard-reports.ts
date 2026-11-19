@@ -582,6 +582,45 @@ export const STANDARD_REPORTS: StandardReport[] = [
     dates: "previousWeek",
   },
   {
+    // Bergen Canada's payroll backups (Tony Deroy, through John, Nov 18):
+    // NovaTime's Weekly Payroll Report for an agency's people, and its BW
+    // Payroll Report for the company's own, hourly and salaried together.
+    // Run apart, by agency, with holiday as its own column and the pay
+    // period at the top of the file.
+    id: "agency-payroll-backup",
+    folder: "Payroll",
+    name: "Agency payroll backup",
+    novaTimeName: "Weekly Payroll Report",
+    description: "Last week's hours and pay for an agency's people: regular, overtime and holiday hours, total hours, total pay and rate, with totals. Pick the agency and the site.",
+    source: "HOURS_AND_PAY",
+    columns: ["employeeName", "employeeCode", "regMinutes", "otMinutes", "holidayMinutes", "totalMinutes", "payCost", "payRate"],
+    // Left empty for the person to pick; an empty filter is skipped until then.
+    filters: [
+      { field: "agencyId", operator: "in", value: [] },
+      { field: "siteId", operator: "in", value: [] },
+    ],
+    sortBy: [{ field: "employeeName", direction: "asc" }],
+    dates: "previousWeek",
+  },
+  {
+    id: "fte-payroll-backup",
+    folder: "Payroll",
+    name: "FTE payroll backup",
+    novaTimeName: "BW Payroll Report",
+    description: "The last pay period's hours and pay for the company's own people, hourly and salaried together: salary, regular, overtime, holiday and paid time off hours, total hours, total pay and rate, with totals. Pick the agency and the site.",
+    source: "HOURS_AND_PAY",
+    columns: [
+      "employeeName", "employeeCode", "department", "salaryMinutes", "regMinutes", "otMinutes",
+      "holidayMinutes", "ptoMinutes", "totalMinutes", "payCost", "payRate",
+    ],
+    filters: [
+      { field: "agencyId", operator: "in", value: [] },
+      { field: "siteId", operator: "in", value: [] },
+    ],
+    sortBy: [{ field: "employeeName", direction: "asc" }],
+    dates: "previousPayPeriod",
+  },
+  {
     id: "payroll-detail-signoff",
     folder: "Payroll",
     name: "Detail signoff report",
