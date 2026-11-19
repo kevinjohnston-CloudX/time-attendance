@@ -2085,7 +2085,7 @@ export async function syncHolidayCredits(
     employee.id,
     timesheetId,
     [...holidayDates]
-      .filter((ds) => ds >= periodStartStr && ds <= periodEndStr && ds < todayStr)
+      .filter((ds) => ds >= periodStartStr && ds <= periodEndStr && ds < todayStr && !salaryAutoPaidDays.has(ds))
       .flatMap((ds) => [adjacentWorkDay(ds, -1), adjacentWorkDay(ds, 1)])
       .filter((day) => day && (day < periodStartStr || day > periodEndStr) && day < todayStr),
     localDateOf,
@@ -2225,9 +2225,14 @@ export async function syncHolidayCredits(
   for (const ds of holidayDates) {
     // Both days inclusive: a holiday on the period's last day was left out.
     if (ds < periodStartStr || ds > periodEndStr) continue;
-    if (ds >= todayStr) continue;
+    // A day given salary hours automatically is paid as the holiday from the
+    // start, as the rest of the period is paid ahead. The days around it would
+    // only change the code its hours carry, regular or holiday, so they are
+    // not waited for or checked.
+    const salaryDay = salaryAutoPaidDays.has(ds);
+    if (!salaryDay && ds >= todayStr) continue;
 
-    const workedMinsOnHoliday = salaryAutoPaidDays.has(ds) ? 0 : (workedMinsByDay.get(ds) ?? 0);
+    const workedMinsOnHoliday = salaryDay ? 0 : (workedMinsByDay.get(ds) ?? 0);
 
     // mustNotWorkOnHoliday: if employee worked any hours on the holiday, skip entirely
     if (rule.mustNotWorkOnHoliday && workedMinsOnHoliday > 0) continue;
@@ -2245,7 +2250,9 @@ export async function syncHolidayCredits(
     const bypassAfter = rule.bypassAfterEligibility && (holidayBypassAfter.get(ds) ?? false);
 
     // Day-before / day-after eligibility
-    if (rule.requireDayBeforeOrAfter) {
+    if (salaryDay) {
+      // Not checked: see above.
+    } else if (rule.requireDayBeforeOrAfter) {
       const prev = adjacentWorkDay(ds, -1);
       const prevOk = !!prev && activityDays.has(prev) && meetsScheduledHoursPct(prev);
       let afterOk = bypassAfter;

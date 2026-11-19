@@ -74,24 +74,5 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Salaried timecards of a period that ended in the last week, until payroll
-  // has them. A holiday's work day after can be in the next period (New Year's
-  // Day 2027 is the Friday that ends one), and it is only credited once that
-  // day has gone by. Salaried timecards have no punches, so the nightly
-  // recalculation (detect-missing-punches) never reaches them.
-  const recentlyEnded = await db.timesheet.findMany({
-    where: {
-      payPeriod: { status: "OPEN", endDate: { lt: today, gte: new Date(today.getTime() - 7 * 86_400_000) } },
-      status: { notIn: ["LOCKED", "PAYROLL_APPROVED"] },
-      employee: { isActive: true, payType: "SALARY" },
-    },
-    select: { id: true, employee: { select: { ruleSet: true } } },
-  });
-  let ended = 0;
-  for (const ts of recentlyEnded) {
-    await rebuildSegments(ts.id, ts.employee.ruleSet);
-    ended++;
-  }
-
-  return NextResponse.json({ ok: true, processed, recentlyEnded: ended });
+  return NextResponse.json({ ok: true, processed });
 }

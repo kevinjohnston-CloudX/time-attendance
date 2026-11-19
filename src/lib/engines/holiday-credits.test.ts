@@ -120,6 +120,48 @@ describe("holiday hours", () => {
     expect([...(await credit("2026-12-20", "2026-12-26", noDaysAround))]).toEqual(["2026-12-26"]);
   });
 
+  it("pays a salaried day as the holiday from the start, before the days around it (Thanksgiving, seen 11/23)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-23T15:00:00Z"));
+    state.holidays = [holiday("2026-11-26")];
+    state.own = [work("2026-11-23"), work("2026-11-24"), work("2026-11-25"), work("2026-11-26"), work("2026-11-27")];
+
+    const paid = await credit("2026-11-22", "2026-12-05", US_RULE, new Set(["2026-11-23", "2026-11-24", "2026-11-25", "2026-11-26", "2026-11-27"]));
+
+    expect([...paid]).toEqual(["2026-11-26"]);
+  });
+
+  it("pays a salaried New Year's Day without the Monday after, on the next timecard", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-12-21T15:00:00Z"));
+    state.holidays = [holiday("2027-01-01")];
+    state.own = [work("2026-12-31"), work("2027-01-01")];
+
+    expect([...(await credit("2026-12-20", "2027-01-02", US_RULE, new Set(["2026-12-31", "2027-01-01"])))]).toEqual(["2027-01-01"]);
+  });
+
+  it("keeps a new salaried hire's holiday as their salary hours (90 days' service)", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-23T15:00:00Z"));
+    state.holidays = [holiday("2026-11-26")];
+    state.own = [work("2026-11-26")];
+    const newHire = { ...EMPLOYEE, hireDate: day("2026-10-01") };
+
+    const paid = await syncHolidayCredits("ts", "America/New_York", day("2026-11-22"), day("2026-12-05"), [], US_RULE, "tenant", MON_FRI, newHire, 0, new Set(["2026-11-26"]));
+
+    expect(paid.size).toBe(0);
+    expect(state.created).toEqual([]);
+  });
+
+  it("still waits for an hourly person's day after", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-27T15:00:00Z"));
+    state.holidays = [holiday("2026-11-26")];
+    state.own = [work("2026-11-25")];
+
+    expect((await credit("2026-11-22", "2026-12-05")).size).toBe(0);
+  });
+
   it("does not read a salaried day paid automatically as work on the holiday", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-12-01T15:00:00Z"));
