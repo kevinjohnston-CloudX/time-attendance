@@ -23,6 +23,8 @@ import { Users } from "lucide-react";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { directReportsOf } from "@/lib/get-subordinate-ids";
 import { ownCompany } from "@/lib/rbac/company";
+import { agencySummary, parseAgencyIds } from "@/lib/agency-filter";
+import { agencyOptions } from "@/lib/agency-options";
 
 /**
  * Timecards, as the portal design lays it out: the list template for choosing
@@ -54,6 +56,8 @@ export default async function TimecardsPage({
     periodId?: string;
     siteId?: string;
     departmentId?: string;
+    /** The Agency filter, a comma list (lib/agency-filter). */
+    agency?: string;
     customStart?: string;
     customEnd?: string;
   }>;
@@ -89,16 +93,18 @@ export default async function TimecardsPage({
   // A Payroll Admin held to some sites is offered those sites only, as the
   // list of people is.
   const siteIds = isAllScope ? await siteLimit({ employeeId: session.user.employeeId ?? "", role: session.user.role ?? "" }) : null;
+  const agencyIds = parseAgencyIds(sp.agency);
   const listFilters = {
     siteId: sp.siteId ?? null,
     departmentId: sp.departmentId ?? null,
     payPeriodId: sp.periodId ?? null,
+    agencyIds,
   };
   // A team viewer (a supervisor, an agency) is offered the sites and
   // departments its own people are in: the company's whole list was every
   // site and department name, to a login that can see 11 people.
   const teamOnly = isAllScope ? null : { ...directReportsOf(session.user.employeeId ?? ""), isActive: true };
-  const [employeesResult, sites, departments] = await Promise.all([
+  const [employeesResult, sites, departments, agencies] = await Promise.all([
     isAllScope ? getActiveEmployeesForTimecards(listFilters) : getTeamEmployeesForTimecards(listFilters),
     db.site.findMany({
       where: {
@@ -126,15 +132,18 @@ export default async function TimecardsPage({
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
+    // The agencies of the people this login reaches, and "No agency".
+    t ? agencyOptions(t, teamOnly ?? (siteIds ? { siteId: { in: siteIds } } : {})) : Promise.resolve([]),
   ]);
 
   const employees = employeesResult.success ? employeesResult.data : [];
 
   if (employees.length === 0) {
-    const narrowed = Boolean(sp.siteId || sp.departmentId || sp.periodId);
+    const narrowed = Boolean(sp.siteId || sp.departmentId || sp.periodId || agencyIds.length);
     const narrowedBy = [
       sp.siteId && sites.find((s) => s.id === sp.siteId)?.name,
       sp.departmentId && departments.find((d) => d.id === sp.departmentId)?.name,
+      agencyIds.length > 0 && agencySummary(agencyIds, agencies),
     ]
       .filter(Boolean)
       .join(" · ");
@@ -165,7 +174,7 @@ export default async function TimecardsPage({
             title={narrowed ? "No employees match these filters" : "No active employees"}
             body={
               narrowed
-                ? "There may be employees outside the site, department or pay period selected."
+                ? "There may be employees outside the site, department, agency or pay period selected."
                 : "Nobody at this tenant is active, so there is nothing to show hours for."
             }
           />
@@ -397,6 +406,8 @@ export default async function TimecardsPage({
         selectedSiteId={sp.siteId ?? null}
         departments={departments}
         selectedDepartmentId={sp.departmentId ?? null}
+        agencies={agencies}
+        selectedAgencyIds={agencyIds}
       />
   );
 }

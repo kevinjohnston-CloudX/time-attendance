@@ -137,6 +137,10 @@ export const getOnSiteScanLog = withRBAC(
       visitors: input.visitors === true,
       departmentId: text(input.departmentId),
       shiftId: text(input.shiftId),
+      // Agency ids, and "none" for people with no agency (lib/agency-filter).
+      agencyIds: Array.isArray(input.agencyIds)
+        ? input.agencyIds.filter((x): x is string => typeof x === "string" && /^[A-Za-z0-9_-]{1,40}$/.test(x)).slice(0, 100)
+        : null,
       q: text(input.q),
       ids: idList(input.ids),
       before:

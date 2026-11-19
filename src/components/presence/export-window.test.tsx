@@ -37,6 +37,8 @@ function person(over: Partial<PresencePerson>): PresencePerson {
     jobTitle: null,
     shiftId: "s1",
     shift: "First",
+    agencyId: null,
+    agency: null,
     photoUrl: null,
     salaried: false,
     visitor: false,

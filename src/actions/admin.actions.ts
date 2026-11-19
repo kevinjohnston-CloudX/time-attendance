@@ -36,6 +36,7 @@ import { webPunchByDefault } from "@/lib/web-punch";
 import { isSignInOnlyRole, isVisitorRole, seesTeam, SIGN_IN_ONLY_RULE_SET, VISITOR_DEPARTMENT } from "@/lib/sign-in-only";
 import { cleanLanguages, languageName } from "@/lib/languages";
 import { hoursToSeconds, secondsToMinutes } from "@/lib/leave-time";
+import { agencyWhere, parseAgencyIds } from "@/lib/agency-filter";
 import { auditPageInReach } from "@/lib/audit/audit-reach";
 import { NotFoundError, assertBalanceChangeAllowed, assertNotSenior, assertRecordInReach, assertSiteInReach, siteInReach, siteLimit } from "@/lib/rbac/scope";
 import { assertOwn, ownCompany } from "@/lib/rbac/company";
@@ -300,9 +301,12 @@ export const getEmployees = withRBAC(
     input?: {
       page?: number; q?: string; site?: string; dept?: string; role?: string;
       status?: string; shift?: string; pay?: string; period?: string; punch?: string; missing?: string; sort?: string;
+      /** The Agency filter, a comma list (lib/agency-filter). */
+      agency?: string;
     },
   ) => {
     const { page = 0, q, site, dept, role, shift } = input ?? {};
+    const agencyIds = parseAgencyIds(input?.agency);
     // Only the listed choices count; anything else is no filter at all.
     const status = pick(STATUS_OPTIONS, input?.status);
     const pay = pick(PAY_OPTIONS, input?.pay);
@@ -320,6 +324,8 @@ export const getEmployees = withRBAC(
     if (allowedSiteIds) where.siteId = { in: allowedSiteIds };
     if (site) where.site = { name: site };
     if (dept) where.department = { name: dept };
+    // In AND: "No agency" is an OR of its own, and the search below sets where.OR.
+    if (agencyIds.length) where.AND = [agencyWhere(agencyIds)];
     // The company's own role, as the Role column shows it. The filter used to
     // offer only the built-in levels, so "Employee" also matched Loss
     // Prevention, visitors and agency viewers, and their roles had no choice

@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
 import { badgeWhere } from "@/lib/utils/badge-lookup";
+import { agencyWhere } from "@/lib/agency-filter";
 import {
   CLIENT_BADGE_PREFIX,
   CLIENT_DEPARTMENT_SHOWN,
@@ -112,13 +113,14 @@ export async function getScanLog(
   const notVisitors: Prisma.EmployeeWhereInput = { OR: [{ wmsId: null }, { NOT: visitors }] };
   const employee: Prisma.EmployeeWhereInput = {
     tenantId,
-    ...(input.departmentId === VISITOR_DEPARTMENT_ID
-      ? visitors
-      : input.departmentId
-        ? { departmentId: input.departmentId, AND: [notVisitors] }
-        : {}),
+    ...(input.departmentId === VISITOR_DEPARTMENT_ID ? visitors : input.departmentId ? { departmentId: input.departmentId } : {}),
     ...(input.shiftId ? { shiftId: input.shiftId } : {}),
     ...(who.length ? { OR: who } : {}),
+    // In AND: "No agency" is an OR of its own, beside the search's.
+    AND: [
+      ...(input.departmentId && input.departmentId !== VISITOR_DEPARTMENT_ID ? [notVisitors] : []),
+      ...(input.agencyIds?.length ? [agencyWhere(input.agencyIds)] : []),
+    ],
   };
 
   // What the counts cover: the day, the site and the people filters.

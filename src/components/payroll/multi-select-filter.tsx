@@ -29,37 +29,16 @@ export function MultiSelectFilter({
   onChange: (ids: string[]) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<string[]>(value);
-  const [q, setQ] = useState("");
 
   const names = options.filter((o) => value.includes(o.id)).map((o) => o.name);
   const summary = names.length === 0 ? "All" : names.length <= 2 ? names.join(", ") : `${names.length} selected`;
-
-  const chosen = new Set(draft);
-  const needle = q.trim().toLowerCase();
-  const shown = needle ? options.filter((o) => o.name.toLowerCase().includes(needle)) : options;
-  const shownIds = shown.map((o) => o.id);
-
-  function openDialog() {
-    setDraft(value);
-    setQ("");
-    setOpen(true);
-  }
-  const toggle = (id: string, on: boolean) => setDraft((d) => (on ? [...d, id] : d.filter((x) => x !== id)));
-  const selectShown = () => setDraft((d) => [...new Set([...d, ...shownIds])]);
-  const clearShown = () => setDraft((d) => d.filter((x) => !shownIds.includes(x)));
-
-  const count =
-    draft.length === 0
-      ? `None ticked, so all ${options.length.toLocaleString("en-US")} are included`
-      : `${draft.length.toLocaleString("en-US")} of ${options.length.toLocaleString("en-US")} selected`;
 
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       <span style={{ font: "var(--type-button2)", color: "var(--text-secondary)" }}>{label}</span>
       <button
         type="button"
-        onClick={openDialog}
+        onClick={() => setOpen(true)}
         title={names.length > 2 ? names.join(", ") : undefined}
         className={`${styles.filterButton} ta-field flex h-8 w-full items-center justify-between gap-2 rounded-md px-2.5 text-left`}
         style={{
@@ -73,68 +52,111 @@ export function MultiSelectFilter({
         <ListFilter className="h-4 w-4 flex-none" style={{ color: "var(--icon-tertiary)" }} aria-hidden="true" />
       </button>
 
-      {open && (
-        <Window
-          icon={<ListFilter />}
-          title={label}
-          subtitle="Tick the ones to include. With none ticked, all are included."
-          size="sm"
-          foot={count}
-          onClose={() => setOpen(false)}
-          actions={
-            <>
-              <Button hierarchy="secondary" onClick={() => setOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  onChange(options.filter((o) => chosen.has(o.id)).map((o) => o.id));
-                  setOpen(false);
-                }}
-              >
-                Apply filter
-              </Button>
-            </>
-          }
-        >
-          <WindowCard>
-            <div className={own.tools}>
-              {options.length > SEARCH_FROM ? (
-                <SearchInput value={q} onValueChange={setQ} placeholder={`Search ${label.toLowerCase()}`} width={400} />
-              ) : (
-                <span className={own.toolsLabel}>{options.length.toLocaleString("en-US")} to choose from</span>
-              )}
-              <span className={own.toolsActions}>
-                <Button size="sm" hierarchy="link" disabled={!shown.length || shown.every((o) => chosen.has(o.id))} onClick={selectShown}>
-                  Select all
-                </Button>
-                <Button size="sm" hierarchy="link" disabled={!shown.some((o) => chosen.has(o.id))} onClick={clearShown}>
-                  Clear
-                </Button>
-              </span>
-            </div>
-            <div className={`${own.list} ta-scroll`} data-search={options.length > SEARCH_FROM || undefined} role="group" aria-label={label}>
-              {shown.map((o) => {
-                const on = chosen.has(o.id);
-                return (
-                  <label key={o.id} className={own.row} data-on={on}>
-                    <input type="checkbox" className="sr-only" checked={on} onChange={(e) => toggle(o.id, e.target.checked)} />
-                    <span className={own.mark} aria-hidden="true">
-                      {on && <Check />}
-                    </span>
-                    <span className={own.name} title={o.name}>
-                      {o.name}
-                    </span>
-                  </label>
-                );
-              })}
-              {shown.length === 0 && (
-                <p className={own.empty}>{options.length ? "Nothing matches that search." : "Nothing to filter by yet."}</p>
-              )}
-            </div>
-          </WindowCard>
-        </Window>
-      )}
+      {open && <MultiSelectWindow label={label} options={options} value={value} onApply={onChange} onClose={() => setOpen(false)} />}
     </div>
+  );
+}
+
+/**
+ * The window behind a several-value filter: the list with a tick on each row,
+ * a search when it is long, and Select all and Clear for the rows shown. What
+ * is ticked is a draft until Apply filter. Shared by the Run Payroll filters
+ * and the filter chips on the list screens (FilterMultiChip).
+ */
+export function MultiSelectWindow({
+  label,
+  options,
+  value,
+  onApply,
+  onClose,
+  raised = false,
+}: {
+  label: string;
+  options: Option[];
+  value: string[];
+  onApply: (ids: string[]) => void;
+  onClose: () => void;
+  /** Opened from a phone's Filters sheet: drawn above it (Window). */
+  raised?: boolean;
+}) {
+  const [draft, setDraft] = useState<string[]>(value);
+  const [q, setQ] = useState("");
+
+  const chosen = new Set(draft);
+  const needle = q.trim().toLowerCase();
+  const shown = needle ? options.filter((o) => o.name.toLowerCase().includes(needle)) : options;
+  const shownIds = shown.map((o) => o.id);
+
+  const toggle = (id: string, on: boolean) => setDraft((d) => (on ? [...d, id] : d.filter((x) => x !== id)));
+  const selectShown = () => setDraft((d) => [...new Set([...d, ...shownIds])]);
+  const clearShown = () => setDraft((d) => d.filter((x) => !shownIds.includes(x)));
+
+  const count =
+    draft.length === 0
+      ? `None ticked, so all ${options.length.toLocaleString("en-US")} are included`
+      : `${draft.length.toLocaleString("en-US")} of ${options.length.toLocaleString("en-US")} selected`;
+
+  return (
+    <Window
+      icon={<ListFilter />}
+      title={label}
+      subtitle="Tick the ones to include. With none ticked, all are included."
+      size="sm"
+      foot={count}
+      raised={raised}
+      onClose={onClose}
+      actions={
+        <>
+          <Button hierarchy="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              onApply(options.filter((o) => chosen.has(o.id)).map((o) => o.id));
+              onClose();
+            }}
+          >
+            Apply filter
+          </Button>
+        </>
+      }
+    >
+      <WindowCard>
+        <div className={own.tools}>
+          {options.length > SEARCH_FROM ? (
+            <SearchInput value={q} onValueChange={setQ} placeholder={`Search ${label.toLowerCase()}`} width={400} />
+          ) : (
+            <span className={own.toolsLabel}>{options.length.toLocaleString("en-US")} to choose from</span>
+          )}
+          <span className={own.toolsActions}>
+            <Button size="sm" hierarchy="link" disabled={!shown.length || shown.every((o) => chosen.has(o.id))} onClick={selectShown}>
+              Select all
+            </Button>
+            <Button size="sm" hierarchy="link" disabled={!shown.some((o) => chosen.has(o.id))} onClick={clearShown}>
+              Clear
+            </Button>
+          </span>
+        </div>
+        <div className={`${own.list} ta-scroll`} data-search={options.length > SEARCH_FROM || undefined} role="group" aria-label={label}>
+          {shown.map((o) => {
+            const on = chosen.has(o.id);
+            return (
+              <label key={o.id} className={own.row} data-on={on}>
+                <input type="checkbox" className="sr-only" checked={on} onChange={(e) => toggle(o.id, e.target.checked)} />
+                <span className={own.mark} aria-hidden="true">
+                  {on && <Check />}
+                </span>
+                <span className={own.name} title={o.name}>
+                  {o.name}
+                </span>
+              </label>
+            );
+          })}
+          {shown.length === 0 && (
+            <p className={own.empty}>{options.length ? "Nothing matches that search." : "Nothing to filter by yet."}</p>
+          )}
+        </div>
+      </WindowCard>
+    </Window>
   );
 }

@@ -20,6 +20,11 @@ import { EditRequestsPanel, type EditRequestView } from "@/components/payroll/ed
 import { periodLastDay } from "@/lib/pay-period-display";
 import type { PayFrequency } from "@prisma/client";
 import { minutesToHoursDecimal } from "@/lib/utils/duration";
+import { agencyParam, agencySummary } from "@/lib/agency-filter";
+import { FilterMultiChip } from "@/components/ui/filter-multi-chip";
+
+/** No agency picked: everybody. One array, so a default does not change on every render. */
+const NO_AGENCIES: string[] = [];
 import {
   Badge,
   Button,
@@ -287,6 +292,10 @@ interface TimecardViewerProps {
   selectedSiteId: string | null;
   departments: { id: string; name: string }[];
   selectedDepartmentId: string | null;
+  /** The Agency filter's choices (lib/agency-options); none hides it. */
+  agencies?: { id: string; name: string }[];
+  /** The agencies picked; empty for everybody. */
+  selectedAgencyIds?: string[];
   userRole: string;
   readOnly?: boolean;
   /**
@@ -812,6 +821,8 @@ export function TimecardViewer({
   selectedSiteId,
   departments,
   selectedDepartmentId,
+  agencies = [],
+  selectedAgencyIds = NO_AGENCIES,
   userRole,
   readOnly = false,
   sendsForApproval = false,
@@ -842,6 +853,7 @@ export function TimecardViewer({
     !navSame("employeeId") &&
     navSame("siteId") &&
     navSame("departmentId") &&
+    navSame("agency") &&
     (!navUrl.searchParams.has("periodId") || navSame("periodId")) &&
     !navUrl.searchParams.has("customStart");
 
@@ -987,6 +999,9 @@ export function TimecardViewer({
     if (!showFilters) return;
     function onDown(e: MouseEvent) {
       const t = e.target as Node;
+      // A window opened from the sheet (the Agency list) is drawn at the page
+      // root; working in it must not close the sheet under it.
+      if ((t as Element).closest?.('[aria-modal="true"]')) return;
       if (filtersRef.current && !filtersRef.current.contains(t) && !filterPanelRef.current?.contains(t)) setShowFilters(false);
     }
     function onKey(e: KeyboardEvent) {
@@ -1265,14 +1280,16 @@ export function TimecardViewer({
     periodId?: string | null,
     sid: string | null = selectedSiteId,
     did: string | null = selectedDepartmentId,
+    aids: readonly string[] = selectedAgencyIds,
   ) {
-    if (holdForUnsaved(() => navigate(employeeId, periodId, sid, did))) return;
+    if (holdForUnsaved(() => navigate(employeeId, periodId, sid, did, aids))) return;
     const params = new URLSearchParams();
     const eid = employeeId ?? selectedEmployeeId;
     if (eid) params.set("employeeId", eid);
     if (periodId) params.set("periodId", periodId);
     if (sid) params.set("siteId", sid);
     if (did) params.set("departmentId", did);
+    if (aids.length) params.set("agency", agencyParam(aids));
     router.push(`/payroll/timecards?${params.toString()}`);
   }
 
@@ -1305,6 +1322,7 @@ export function TimecardViewer({
     if (selectedPeriodId) params.set("periodId", selectedPeriodId);
     if (selectedSiteId) params.set("siteId", selectedSiteId);
     if (selectedDepartmentId) params.set("departmentId", selectedDepartmentId);
+    if (selectedAgencyIds.length) params.set("agency", agencyParam(selectedAgencyIds));
     router.push(`/payroll/timecards?${params.toString()}`);
     setShowCalendar(false);
   }
@@ -2260,8 +2278,22 @@ export function TimecardViewer({
     statusFilter !== "ALL" || payTypeFilter !== "ALL" || exceptionFilter !== "ALL" || !activeOnly || !!search.trim();
   const filtersOn =
     Number(statusFilter !== "ALL") + Number(payTypeFilter !== "ALL") + Number(exceptionFilter !== "ALL") + Number(!activeOnly) +
-    // On a phone site and department are picked in Filters too.
-    (phone ? Number(!!selectedSiteId) + Number(!!selectedDepartmentId) : 0);
+    // On a phone site, department and agency are picked in Filters too.
+    (phone ? Number(!!selectedSiteId) + Number(!!selectedDepartmentId) + Number(selectedAgencyIds.length > 0) : 0);
+
+  // Agency: Bergen alone (the company's own people), or everyone but Bergen
+  // (the temps), or any others. Kept in the address, as site and department
+  // are. Only when there are agencies to choose between.
+  const agencyChip =
+    agencies.length > 1 ? (
+      <FilterMultiChip
+        label="Agency"
+        value={selectedAgencyIds}
+        options={agencies}
+        summary={(ids) => agencySummary(ids, agencies)}
+        onChange={(ids) => navigate(null, selectedPeriodId, selectedSiteId, selectedDepartmentId, ids)}
+      />
+    ) : null;
 
   return (
     // The whole window, as a workspace: the header and the pay period control
@@ -2304,6 +2336,7 @@ export function TimecardViewer({
                   options={departments}
                   onChange={(v) => navigate(selectedEmployeeId, selectedPeriodId, selectedSiteId, v || null)}
                 />
+                {agencyChip}
 
               <span aria-hidden="true" className="ta-desktop-only">
                 <span className="mx-1 h-5 w-px flex-none" style={{ background: "var(--stroke-divider)" }} />
@@ -2529,6 +2562,12 @@ export function TimecardViewer({
                       </Select>
                     </label>
                   )}
+                  {phone && agencyChip && (
+                    <div className="flex flex-col gap-1">
+                      <span style={{ font: "var(--type-button2)", color: "var(--text-secondary)" }}>Agency</span>
+                      <span className="flex">{agencyChip}</span>
+                    </div>
+                  )}
                   {[
                     { label: "Status", value: statusFilter, set: setStatusFilter, all: "All statuses", options: STATUS_FILTER_OPTIONS },
                     { label: "Pay type", value: payTypeFilter, set: setPayTypeFilter, all: "All pay types", options: PAY_TYPE_FILTER_OPTIONS },
@@ -2551,15 +2590,15 @@ export function TimecardViewer({
                     <Button
                       hierarchy="link"
                       size="sm"
-                      disabled={!listNarrowed && !(phone && (selectedSiteId || selectedDepartmentId))}
+                      disabled={!listNarrowed && !(phone && (selectedSiteId || selectedDepartmentId || selectedAgencyIds.length))}
                       onClick={() => {
                         setSearch("");
                         setStatusFilter("ALL");
                         setPayTypeFilter("ALL");
                         setExceptionFilter("ALL");
                         setActiveOnly(true);
-                        // Site and department are in this sheet on a phone.
-                        if (phone && (selectedSiteId || selectedDepartmentId)) navigate(null, selectedPeriodId, null, null);
+                        // Site, department and agency are in this sheet on a phone.
+                        if (phone && (selectedSiteId || selectedDepartmentId || selectedAgencyIds.length)) navigate(null, selectedPeriodId, null, null, []);
                       }}
                     >
                       Clear all
