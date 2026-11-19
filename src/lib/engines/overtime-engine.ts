@@ -512,13 +512,26 @@ export function reclassifySegments(
 // ─── DB-aware wrapper ─────────────────────────────────────────────────────────
 
 /**
+ * The bucket for hours under a pay code that does not count toward overtime:
+ * an overtime or double time code's own (OT RETRO pays overtime owed from
+ * another week), REG for every other kind. Exported for its test.
+ */
+export function exemptBucket(codeBucket: PayBucket | null | undefined): PayBucket {
+  return codeBucket === "OT" || codeBucket === "DT" ? codeBucket : "REG";
+}
+
+/**
  * Recalculate OvertimeBuckets for a timesheet and reclassify WORK segment
  * payBuckets (splitting at daily OT/DT thresholds and applying weekly OT).
  * Call this after rebuildSegments().
  *
  * WORK segments whose originating CLOCK_IN punch carries a pay code with
- * countsTowardOt = false are excluded from the OT accumulator and remain REG.
- * Their minutes are added back into the REG bucket total so aggregate hours balance.
+ * countsTowardOt = false are excluded from the OT accumulator. They stay REG,
+ * unless the code is itself an overtime or double time code (OT RETRO,
+ * DOUBLE TIME RETRO): those hours are overtime paid outside this week's
+ * count, so they keep the code's own bucket (HR, 11/18: retro OT showed as
+ * Regular on the timecard). Their minutes are added to that bucket's total so
+ * aggregate hours balance.
  */
 export async function applyOvertime(
   timesheetId: string,
@@ -550,36 +563,36 @@ export async function applyOvertime(
   // Build exempt time ranges from punch pairs whose clock-in pay code excludes
   // OT counting. Each range runs from that clock-in to the next clock-out, coded
   // or not; only a pair still open at the end of the sheet runs on.
-  const exemptRanges: Array<{ start: Date; end: Date | null }> = [];
+  const exemptRanges: Array<{ start: Date; end: Date | null; bucket: PayBucket }> = [];
   const codedIds = [...new Set(clockPunches.map((p) => p.payCodeId).filter((id): id is string => !!id))];
   if (codedIds.length > 0) {
     const exemptCodes = await db.payCode.findMany({
       where: { id: { in: codedIds }, countsTowardOt: false },
-      select: { id: true },
+      select: { id: true, payBucket: true },
     });
-    const exemptIdSet = new Set(exemptCodes.map((c) => c.id));
-    if (exemptIdSet.size > 0) {
+    const exemptBucketOf = new Map(exemptCodes.map((c) => [c.id, exemptBucket(c.payBucket)]));
+    if (exemptBucketOf.size > 0) {
       for (let i = 0; i < clockPunches.length; i++) {
         const p = clockPunches[i];
-        if (p.punchType !== "CLOCK_IN" || !p.payCodeId || !exemptIdSet.has(p.payCodeId)) continue;
+        const bucket = p.payCodeId ? exemptBucketOf.get(p.payCodeId) : undefined;
+        if (p.punchType !== "CLOCK_IN" || !bucket) continue;
         const clockOut = clockPunches.slice(i + 1).find((pp) => pp.punchType === "CLOCK_OUT") ?? null;
         // Segments start on the whole minute (computeSegments truncates), so the
         // range does too, or the pair's first segment would fall just before it.
         const start = new Date(Math.floor(p.roundedTime.getTime() / 60_000) * 60_000);
-        exemptRanges.push({ start, end: clockOut?.roundedTime ?? null });
+        exemptRanges.push({ start, end: clockOut?.roundedTime ?? null, bucket });
       }
     }
   }
 
-  // Separate WORK segments that fall inside an exempt punch pair's window
-  const isExemptSeg = exemptRanges.length === 0
-    ? () => false
-    : (seg: WorkSegment) => {
-        for (const range of exemptRanges) {
-          if (seg.startTime >= range.start && (range.end === null || seg.startTime < range.end)) return true;
-        }
-        return false;
-      };
+  // The exempt punch pair a WORK segment falls inside, if any.
+  const exemptRangeOf = (seg: WorkSegment) => {
+    for (const range of exemptRanges) {
+      if (seg.startTime >= range.start && (range.end === null || seg.startTime < range.end)) return range;
+    }
+    return null;
+  };
+  const isExemptSeg = (seg: WorkSegment) => exemptRanges.length > 0 && exemptRangeOf(seg) !== null;
 
   const isMissedPunchSeg = (seg: WorkSegment) =>
     seg.segmentType === "WORK" && missedPunchDates.has(format(seg.segmentDate, "yyyy-MM-dd"));
@@ -590,8 +603,10 @@ export async function applyOvertime(
   const result = computeOvertime(otEligible, ruleSet, shift, timezone);
   const reclassified = reclassifySegments(otEligible, result, ruleSet);
 
-  // Exempt segments stay as REG — preserve all fields except payBucket
-  const exemptAsReg: ReclassifiedSegment[] = workExempt.map((seg) => ({
+  // Exempt segments keep every field; their bucket is REG, or OT / DT under an
+  // overtime code that does not count toward overtime. A day still missing a
+  // punch stays REG whatever its code, until the punch is added.
+  const exemptReclassified: ReclassifiedSegment[] = workExempt.map((seg) => ({
     timesheetId: seg.timesheetId,
     segmentType: "WORK" as const,
     startTime: seg.startTime,
@@ -599,14 +614,15 @@ export async function applyOvertime(
     durationMinutes: seg.durationMinutes,
     segmentDate: seg.segmentDate,
     isPaid: seg.isPaid,
-    payBucket: "REG" as PayBucket,
+    payBucket: isMissedPunchSeg(seg) ? "REG" : (exemptRangeOf(seg)?.bucket ?? "REG"),
     isSplit: seg.isSplit,
     payCodeId: seg.payCodeId ?? null,
     leaveRequestId: seg.leaveRequestId ?? null,
   }));
 
-  const exemptMinutes = workExempt.reduce((s, seg) => s + seg.durationMinutes, 0);
-  const allReclassified = [...reclassified, ...exemptAsReg];
+  const exemptMinutes = (bucket: PayBucket) =>
+    exemptReclassified.filter((s) => s.payBucket === bucket).reduce((sum, s) => sum + s.durationMinutes, 0);
+  const allReclassified = [...reclassified, ...exemptReclassified];
 
   // When OT requires authorization and new OT exists, reset otAuthorized to false
   // so a supervisor must re-approve after any recalculation.
@@ -623,9 +639,9 @@ export async function applyOvertime(
     }),
     db.overtimeBucket.createMany({
       data: [
-        { timesheetId, bucket: "REG", totalMinutes: result.totalReg + exemptMinutes },
-        { timesheetId, bucket: "OT", totalMinutes: result.totalOt },
-        { timesheetId, bucket: "DT", totalMinutes: result.totalDt },
+        { timesheetId, bucket: "REG", totalMinutes: result.totalReg + exemptMinutes("REG") },
+        { timesheetId, bucket: "OT", totalMinutes: result.totalOt + exemptMinutes("OT") },
+        { timesheetId, bucket: "DT", totalMinutes: result.totalDt + exemptMinutes("DT") },
       ],
     }),
     ...(requiresAuth
