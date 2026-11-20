@@ -898,12 +898,17 @@ export function CreateEmployeeForm({ sites, departments, ruleSets, employees, cu
                       Cancel
                     </Button>
                   )}
+                  {/* Each with its own key: without one React kept the same
+                      <button> and only changed its type, so the click on
+                      Continue that reached the last step finished as a submit
+                      and created the person there, Personal details never
+                      shown (Tony, copying a setup, 11/19). */}
                   {onLast ? (
-                    <Button pending={isPending} type="submit" disabled={isPending}>
+                    <Button key="create" pending={isPending} type="submit" disabled={isPending}>
                       {isPending ? "Creating…" : "Create employee"}
                     </Button>
                   ) : (
-                    <Button type="button" onClick={handleContinue}>
+                    <Button key="continue" type="button" onClick={handleContinue}>
                       Continue
                     </Button>
                   )}
