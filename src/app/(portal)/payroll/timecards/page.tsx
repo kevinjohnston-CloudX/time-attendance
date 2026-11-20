@@ -228,8 +228,11 @@ export default async function TimecardsPage({
     }
   }
 
-  // Load timecard for employee + period (null = no punches yet, not an error)
+  // Load timecard for employee + period (null = no punches yet, not an error).
+  // A load that failed is said as one: it read as "No punches yet", and hours
+  // added there seemed not to save (Tony, 11/19).
   let timecard = null;
+  let timecardLoadError: string | null = null;
   if (selectedPeriodId) {
     const result = await getTimecardByEmployeeAndPeriod({
       employeeId: selectedEmployeeId,
@@ -237,6 +240,8 @@ export default async function TimecardsPage({
     });
     if (result.success) {
       timecard = result.data ?? null;
+    } else {
+      timecardLoadError = result.error;
     }
   }
 
@@ -379,6 +384,7 @@ export default async function TimecardsPage({
         employees={employees}
         selectedEmployeeId={selectedEmployeeId}
         timecard={serializedTimecard}
+        timecardLoadError={timecardLoadError}
         siteTimezone={siteOfEmployee ? personTimeZone(siteOfEmployee) : null}
         payFrequency={payFrequency}
         userRole={session.user.role ?? "EMPLOYEE"}

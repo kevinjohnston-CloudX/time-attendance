@@ -338,6 +338,8 @@ interface TimecardViewerProps {
    * and every typed time read, in it, whoever is looking.
    */
   siteTimezone?: string | null;
+  /** Why the timecard could not be loaded, or null: shown, and nothing can be added to it. */
+  timecardLoadError?: string | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -849,6 +851,7 @@ export function TimecardViewer({
   subtitle,
   headerActions,
   siteTimezone,
+  timecardLoadError = null,
 }: TimecardViewerProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1166,7 +1169,7 @@ export function TimecardViewer({
   // An inactive employee's timecards are closed to changes, and none is made
   // for them; the server refuses either way (inactive-timecards).
   const selectedInactive = employees.find((e) => e.employeeId === selectedEmployeeId)?.isActive === false;
-  const canChange = !readOnly && !selectedInactive && (timecard
+  const canChange = !readOnly && !selectedInactive && !timecardLoadError && (timecard
     ? (timecard.status !== "LOCKED" && timecard.status !== "PAYROLL_APPROVED")
     : (!!selectedEmployeeId && !!selectedPeriodId));
   // Every change on the timecard; or, for a supervisor where the person's
@@ -1180,9 +1183,12 @@ export function TimecardViewer({
   const addTimeMin = format(parseUtcDate(addTimePeriod?.startDate ?? new Date().toISOString()), "yyyy-MM-dd");
   const storedEnd = format(parseUtcDate(addTimePeriod?.endDate ?? new Date().toISOString()), "yyyy-MM-dd");
   const todayKey = format(toSiteClock(new Date(), siteTz), "yyyy-MM-dd");
-  // The supervisor's last day is the period's own (a weekly period stores the day after it).
+  // The period's own last day (a weekly period stores the day after it), for
+  // everyone: an editor's limit was the stored end, so on a past week Add time
+  // opened on the day after it, off the grid, and the hours saved there
+  // seemed not to save (Tony, 11/19). A supervisor goes no later than today.
   const lastDayKey = addTimePeriod ? format(lastDayOf(addTimePeriod.endDate), "yyyy-MM-dd") : storedEnd;
-  const addTimeMax = canEdit ? storedEnd : todayKey < lastDayKey ? todayKey : lastDayKey;
+  const addTimeMax = canEdit ? lastDayKey : todayKey < lastDayKey ? todayKey : lastDayKey;
   const regularCode = payCodes.find((pc) => pc.id === timecard?.employee.ruleSet?.defaultPayCodeId);
   // What a supervisor may send HR (lib/timecards/supervisor-edit-rules):
   // rows of regular hours (a shift's code is on its clock in), today or
@@ -2817,6 +2823,10 @@ export function TimecardViewer({
                       <Badge tone={statusTone(timecard.status)}>
                         {TIMESHEET_STATUS_LABEL[timecard.status as TimesheetStatusValue] ?? timecard.status}
                       </Badge>
+                    ) : timecardLoadError ? (
+                      <span title={timecardLoadError}>
+                        <Badge tone="error">Couldn&apos;t load this timecard. Reload the page.</Badge>
+                      </span>
                     ) : (
                       <Badge>No punches yet</Badge>
                     )}
