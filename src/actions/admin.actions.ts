@@ -28,6 +28,7 @@ import { encryptPiiFields, decryptPiiFields } from "@/lib/crypto/pii";
 import { activeChangeEvent, queueEmployeeEvent, sendSoon } from "@/lib/webhooks/employee-events";
 import { currentIdentity } from "@/lib/rbac/current";
 import { employeeRank, forgetIdentity, type LiveIdentity } from "@/lib/rbac/identity";
+import { WAIT_RELEASE_NOTE } from "@/lib/engines/accrual-engine";
 import { ROLE_RANK, isValidRole, givesLiveAttendanceRoles, givesRank, editsPeers } from "@/lib/rbac/roles";
 import { todayKey } from "@/lib/pay-rates";
 import { personTimeZone, timeZoneLabel } from "@/lib/utils/person-time-zone";
@@ -2773,7 +2774,7 @@ export const getLeaveBalancesAsOf = withRBAC(
       db.leaveBalance.findMany({ where: { employeeId, accrualYear: year }, select: { leaveTypeId: true, balanceSeconds: true } }),
       db.leaveAccrualLedger.findMany({
         where: { employeeId, createdAt: { gte: yearStart, lt: yearEnd }, action: { not: "EOD_SNAPSHOT" } },
-        select: { leaveTypeId: true, action: true, deltaSeconds: true, createdAt: true, payPeriodEnd: true, leaveRequestId: true, leaveRequest: { select: { startDate: true } } },
+        select: { leaveTypeId: true, action: true, deltaSeconds: true, createdAt: true, payPeriodEnd: true, leaveRequestId: true, note: true, leaveRequest: { select: { startDate: true } } },
       }),
       db.leaveRequest.findMany({
         where: { employeeId, status: { in: ["APPROVED", "PENDING", "POSTED"] }, startDate: { gte: yearStart, lte: new Date(`${date}T00:00:00Z`) } },
@@ -2794,7 +2795,9 @@ export const getLeaveBalancesAsOf = withRBAC(
       if ((e.action === "ACCRUAL" || e.action === "EARNED_ADJUSTMENT") && e.payPeriodEnd && dayOf(e.payPeriodEnd) <= date) {
         r.accruedMinutes += e.deltaSeconds / 60;
       }
-      if (e.action === "ADJUSTMENT" && dayOf(e.createdAt) <= date && !(e.leaveRequestId && timecardRequests.has(e.leaveRequestId))) {
+      // A new hire's release after the waiting period is hours Accrued already shows.
+      const waitRelease = e.note?.startsWith(WAIT_RELEASE_NOTE) ?? false;
+      if (e.action === "ADJUSTMENT" && !waitRelease && dayOf(e.createdAt) <= date && !(e.leaveRequestId && timecardRequests.has(e.leaveRequestId))) {
         r.netAdjustmentMinutes = (r.netAdjustmentMinutes ?? 0) + e.deltaSeconds / 60;
       }
     }
