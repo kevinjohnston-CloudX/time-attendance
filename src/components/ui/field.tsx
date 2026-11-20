@@ -1,7 +1,7 @@
 "use client";
 
-import { Search } from "lucide-react";
-import { useId, type ChangeEvent, type ReactNode, type SelectHTMLAttributes } from "react";
+import { Search, X } from "lucide-react";
+import { useId, useRef, type ChangeEvent, type ReactNode, type SelectHTMLAttributes } from "react";
 
 /**
  * The two controls a list toolbar is made of, from the portal design.
@@ -35,7 +35,12 @@ export function Select({
   );
 }
 
-/** Search box with a leading glyph, as the design draws it in list toolbars. */
+/**
+ * Search box with a leading glyph, as the design draws it in list toolbars.
+ * Once something is typed an ✕ clears it, and the list with it: the
+ * browser's own clear button is hidden (globals.css), so the text had to be
+ * deleted by hand (Tony, 11/19).
+ */
 export function SearchInput({
   value,
   onValueChange,
@@ -48,6 +53,7 @@ export function SearchInput({
   width?: number;
 }) {
   const searchId = `search-${useId().replace(/:/g, "")}`;
+  const input = useRef<HTMLInputElement>(null);
   return (
     <label
       className="ta-field ta-search flex h-8 items-center gap-2 rounded-md px-2.5"
@@ -64,6 +70,7 @@ export function SearchInput({
           name says "search" too: Safari and the iCloud Passwords extension
           read a field's name, and "q" told them nothing. */}
       <input
+        ref={input}
         type="search"
         name="search"
         id={searchId}
@@ -84,6 +91,23 @@ export function SearchInput({
         className="min-w-0 flex-1 border-0 bg-transparent outline-none"
         style={{ font: "var(--type-body1)", color: "var(--text-primary)" }}
       />
+      {value && (
+        <button
+          type="button"
+          aria-label="Clear search"
+          title="Clear search"
+          onClick={(e) => {
+            // Not the label's click, which would only move focus.
+            e.preventDefault();
+            onValueChange("");
+            input.current?.focus();
+          }}
+          className="ta-hoverable flex h-5 w-5 flex-none items-center justify-center rounded"
+          style={{ border: 0, padding: 0, background: "transparent", color: "var(--icon-tertiary)", cursor: "pointer" }}
+        >
+          <X className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+      )}
     </label>
   );
 }
