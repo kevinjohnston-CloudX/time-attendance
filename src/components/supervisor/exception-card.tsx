@@ -451,6 +451,18 @@ export function ExceptionCard({
         ))}
       </div>
 
+      {/* Someone who no longer works here: their hours are closed to
+          changes (the server refuses them), so the card says so plainly
+          and offers only the note. */}
+      {!row.employeeActive && (
+        <p
+          className="px-4 pt-3"
+          style={{ margin: 0, font: "var(--type-body2)", color: "var(--text-secondary)" }}
+        >
+          This person no longer works here, so their hours can&apos;t be changed. You can still resolve this with a note.
+        </p>
+      )}
+
       {error && (
         <p
           className="px-4 pt-3"
@@ -462,7 +474,7 @@ export function ExceptionCard({
 
       {mode === null && (
         <div className={`${styles.cardActions} flex flex-wrap items-center gap-2 px-4 py-3`}>
-          {row.requested && (
+          {row.requested && row.employeeActive && (
             <>
               <Button size="sm" disabled={isPending} onClick={() => decideRequest(true)}>
                 Approve Request
@@ -472,15 +484,18 @@ export function ExceptionCard({
               </Button>
             </>
           )}
-          <Button
-            size="sm"
-            hierarchy={row.requested ? "secondary" : undefined}
-            disabled={loadingPunches || (!addsPunches && !row.hasPunches)}
-            onClick={openPunchForm}
-          >
-            {fixLabel}
-          </Button>
-          <Button hierarchy="secondary" size="sm" onClick={() => setMode("note")}>
+          {row.employeeActive && (
+            <Button
+              size="sm"
+              hierarchy={row.requested ? "secondary" : undefined}
+              disabled={loadingPunches || (!addsPunches && !row.hasPunches)}
+              onClick={openPunchForm}
+            >
+              {fixLabel}
+            </Button>
+          )}
+          {/* The only way out for a leaver, so it leads there. */}
+          <Button hierarchy={row.employeeActive ? "secondary" : undefined} size="sm" onClick={() => setMode("note")}>
             Resolve with Note
           </Button>
           {/* Pushed to the far end of the row, as the handoff has it: it

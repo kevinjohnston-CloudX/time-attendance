@@ -157,6 +157,7 @@ export default async function ExceptionsPage({
     timesheetId: ex.timesheetId,
     employeeId: ex.timesheet.employeeId,
     employeeName: ex.timesheet.employee.user?.name ?? `Employee ${ex.timesheet.employeeId}`,
+    employeeActive: ex.timesheet.employee.isActive,
     siteName: ex.timesheet.employee.site?.name ?? null,
     departmentName: ex.timesheet.employee.department?.name ?? null,
     payPeriod: {

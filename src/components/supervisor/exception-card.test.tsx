@@ -23,7 +23,7 @@ afterEach(cleanup);
 // Thursday 11/05, Eastern (standard time: 8:00 AM is 13:00 UTC), marked Absent.
 const row: ExceptionRow = {
   id: "x1", exceptionType: "ABSENT", description: "Absent", occurredAt: new Date("2026-11-05T12:00:00.000Z"), zone: "America/New_York",
-  timesheetId: "t1", employeeId: "e1", employeeName: "Test Person", siteName: null, departmentName: null,
+  timesheetId: "t1", employeeId: "e1", employeeName: "Test Person", employeeActive: true, siteName: null, departmentName: null,
   payPeriod: { id: "p1", label: "Nov 1 to Nov 14, 2026" }, hasPunches: false,
   scheduled: { start: null, end: null }, recorded: { in: null, out: null }, requested: null,
 };
@@ -60,5 +60,18 @@ describe("filling a day marked Absent from the Exceptions page", () => {
     expect(addAbsentDayPunches).toHaveBeenCalledWith(expect.objectContaining({
       inTime: "2026-11-06T03:00:00.000Z", outTime: "2026-11-06T11:30:00.000Z",
     }));
+  });
+});
+
+// 79641 (11/23): a former employee's flag closes with a note only.
+describe("an exception of someone who no longer works here", () => {
+  it("offers Resolve with Note alone, with a plain hint in place of the punch fixes", () => {
+    const requested = { punchId: "p1", punchType: "CLOCK_IN", time: "08:00", note: null };
+    render(<ExceptionCard row={{ ...row, employeeActive: false, requested }} typeLabel="Absent" severity={1} reasonCodes={[]} onDone={() => {}} />);
+    expect(screen.queryByText("Add Punches")).toBeNull();
+    expect(screen.queryByText("Approve Request")).toBeNull();
+    expect(screen.queryByText("Reject Request")).toBeNull();
+    expect(screen.getByText("Resolve with Note")).toBeTruthy();
+    expect(screen.getByText(/no longer works here, so their hours can't be changed/)).toBeTruthy();
   });
 });
