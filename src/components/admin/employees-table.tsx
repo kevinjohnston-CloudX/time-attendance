@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, type ReactNode } from "react";
+import { agencyParam, agencySummary, parseAgencyIds } from "@/lib/agency-filter";
+import { FilterMultiChip } from "@/components/ui/filter-multi-chip";
 import { mailAddress } from "@/lib/email-address";
 import { format } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
@@ -66,7 +68,7 @@ interface Employee {
   photo: string | null;
 }
 
-type Filters = Record<"q" | "site" | "dept" | "role" | "status" | "shift" | "pay" | "period" | "punch" | "missing" | "sort", string>;
+type Filters = Record<"q" | "site" | "dept" | "agency" | "role" | "status" | "shift" | "pay" | "period" | "punch" | "missing" | "sort", string>;
 
 interface Props {
   employees: Employee[];
@@ -78,6 +80,8 @@ interface Props {
   shifts: { id: string; name: string; startTime: string }[];
   /** The company's roles, by their own names: what the Role column shows and the filter offers. */
   roles?: { id: string; name: string }[];
+  /** The Agency filter's choices (lib/agency-options). */
+  agencies?: { id: string; name: string }[];
   currentFilters: Filters;
   /** The page header, pinned together with the filters under it, and slimmed once the page scrolls. */
   title: ReactNode;
@@ -87,6 +91,7 @@ interface Props {
 
 export function EmployeesTable({
   roles,
+  agencies = [],
   employees,
   total,
   page,
@@ -153,10 +158,11 @@ export function EmployeesTable({
 
   // The sort is not a filter: it hides nobody, so it does not count here.
   const isFiltered = Boolean(
-    currentFilters.q || currentFilters.site || currentFilters.dept || currentFilters.role ||
+    currentFilters.q || currentFilters.site || currentFilters.dept || currentFilters.agency || currentFilters.role ||
     currentFilters.status || currentFilters.shift || currentFilters.pay || currentFilters.period || currentFilters.punch || currentFilters.missing,
   );
 
+  const agencyIds = useMemo(() => parseAgencyIds(currentFilters.agency), [currentFilters.agency]);
   const shiftById = new Map(shifts.map((s) => [s.id, s]));
   const shiftOptions = [...shifts].sort((a, b) => a.name.localeCompare(b.name)).map((s) => ({ id: s.id, name: s.name }));
 
@@ -215,6 +221,16 @@ export function EmployeesTable({
               options={departments.map((d) => ({ id: d, name: d }))}
               onChange={(v) => onFilterChange("dept", v)}
             />
+            {agencies.length > 1 && (
+              // Several at once: Bergen alone, or everyone but Bergen (the temps).
+              <FilterMultiChip
+                label="Agency"
+                value={agencyIds}
+                options={agencies}
+                summary={(ids) => agencySummary(ids, agencies)}
+                onChange={(ids) => onFilterChange("agency", agencyParam(ids))}
+              />
+            )}
             <FilterSelectChip
               label="Role"
               value={currentFilters.role}

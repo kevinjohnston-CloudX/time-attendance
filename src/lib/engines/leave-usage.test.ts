@@ -14,8 +14,10 @@ function fakeTx(opts: { tracked?: boolean; balance?: number | null; ledger?: Ent
     leaveRequest: {
       findUniqueOrThrow: async () => ({
         id: "r1", employeeId: "e1", leaveTypeId: "lt", durationSeconds: opts.duration ?? 28800,
-        startDate: new Date("2026-09-21T00:00:00Z"), leaveType: { accrualTracked: opts.tracked ?? true },
+        startDate: new Date("2026-09-21T00:00:00Z"), endDate: new Date("2026-09-21T00:00:00Z"),
+        note: null, selectedDays: null, reviewedById: null, leaveType: { accrualTracked: opts.tracked ?? true },
       }),
+      findMany: async () => [], // no NovaTime import on the day (novatime-import-leave.test.ts)
     },
     leaveAccrualLedger: {
       aggregate: async ({ where }: { where: { leaveRequestId: string; action: { in: string[] } } }) => ({

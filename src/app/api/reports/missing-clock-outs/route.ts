@@ -3,6 +3,8 @@ import { cookies } from "next/headers";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
+import { siteLimit } from "@/lib/rbac/site-limit";
+import { Prisma } from "@prisma/client";
 import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
 import { recordDownload } from "@/lib/audit/downloads";
 
@@ -44,6 +46,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       ? (await cookies()).get(SUPER_ADMIN_TENANT_COOKIE)?.value ?? null
       : session.user.tenantId ?? null;
   if (!tenantId) return notFound;
+  // Held to some sites (Site access): their people there only. A scan matched
+  // to nobody has no site of record, so it is left out for them.
+  const sites = await siteLimit({ employeeId: session.user.employeeId ?? "", role: session.user.role });
+  const atSites = sites ? Prisma.sql`AND e."siteId" IN (${Prisma.join(sites.length ? sites : ["-"])})` : Prisma.empty;
 
   const { searchParams } = new URL(req.url);
 
@@ -92,6 +98,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       AND  s."tenantId" = ${tenantId}
       AND  s."scanTime" >= ${from}
       AND  s."scanTime" <= ${to}
+      ${atSites}
     GROUP  BY s."employeeId"
     HAVING COUNT(*) >= ${minCount}
     ORDER  BY COUNT(*) DESC, MAX(s."scanTime") DESC

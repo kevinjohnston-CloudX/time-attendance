@@ -1,10 +1,62 @@
-import { getYear, differenceInMonths, addDays } from "date-fns";
+import { getYear, addDays } from "date-fns";
 import { AccrualPostingFreq, AccrualRateMode, ServiceMonthBasis } from "@prisma/client";
 import { db } from "@/lib/db";
 import type { TxClient } from "@/types/prisma";
 import { parseUtcDate } from "@/lib/utils/date";
 import { hoursToSeconds } from "@/lib/leave-time";
 import { withoutVisitors } from "@/lib/utils/client-badge";
+import { replaceNovaTimeImports } from "@/lib/engines/novatime-import-leave";
+
+/**
+ * Whole months of service on a day, counted from the calendar day of the
+ * basis date. Hire dates are kept at local midnight (04:00 or 05:00 UTC) and
+ * postings at UTC midnight, so on the anniversary itself the posting fell a
+ * few hours short and counted a month less: the tier stepped up one posting
+ * late (Linda Carmona, hired 11/07/2022, got 1.54 h on 11/07/2026, not 1.85).
+ */
+export function serviceMonths(on: Date, basis: Date): number {
+  // On the UTC calendar days of both, so the machine's own time zone plays no part.
+  const months = (on.getUTCFullYear() - basis.getUTCFullYear()) * 12 + (on.getUTCMonth() - basis.getUTCMonth());
+  // A month is complete on the same day of the month, or on the last day of a shorter month (hired 1/31, 2/28).
+  const lastDay = new Date(Date.UTC(on.getUTCFullYear(), on.getUTCMonth() + 1, 0)).getUTCDate();
+  const complete = on.getUTCDate() >= basis.getUTCDate() || on.getUTCDate() === lastDay;
+  return months - (complete ? 0 : 1);
+}
+
+/** Ledger note on the postings that end a new hire's waiting period. */
+export const WAIT_RELEASE_NOTE = "Released after the waiting period";
+
+/** Frequencies that post for the days just worked, and the days between postings. */
+const CYCLE_DAYS: Partial<Record<AccrualPostingFreq, number>> = { DAILY: 1, WEEKLY: 7, BI_WEEKLY: 14 };
+
+/**
+ * The UTC day a new hire's waiting period ends: the service date's day plus
+ * that many months, on the last day of a shorter month (hired 11/30, three
+ * months: 2/28), the first day serviceMonths reaches them.
+ */
+export function waitEnds(basis: Date, months: number): Date {
+  const y = basis.getUTCFullYear(), m = basis.getUTCMonth() + months;
+  const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(y, m, Math.min(basis.getUTCDate(), last)));
+}
+
+/**
+ * Whether a posting on `postingDay` (a UTC day) is the one that ends the wait,
+ * as NovaTime releases: a fortnightly policy on its first posting on or after
+ * the day the wait ends (Banchon, hired 8/11: wait ends 11/11, released on the
+ * 11/21 posting); a yearly grant on that day itself (her 40 h Sick on 11/11).
+ */
+/** A date's UTC calendar day. */
+function utcDayOf(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
+export function endsWait(basis: Date, months: number, postingDay: Date, freq: AccrualPostingFreq): boolean {
+  const end = waitEnds(basis, months);
+  const cycle = CYCLE_DAYS[freq];
+  if (cycle == null) return postingDay.getTime() === end.getTime();
+  return postingDay >= end && postingDay.getTime() - cycle * 86_400_000 < end.getTime();
+}
 
 /** Derive how many pay periods fit in a year from a single period's date range. */
 function periodsPerYear(startDate: Date, endDate: Date): number {
@@ -338,7 +390,7 @@ export async function postAccruals(payPeriodId: string, employeeIds?: string[]):
       // Don't post for periods that end before the employee's basis date.
       if (ppEndIncl < empBasisDate) continue;
 
-      const tenureMonths = differenceInMonths(payPeriod.endDate, basisRaw);
+      const tenureMonths = serviceMonths(payPeriod.endDate, basisRaw);
       const rule = tiers.find(
         (t) =>
           t.minTenureMonths <= tenureMonths &&
@@ -636,6 +688,7 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
             resetDay:                   true,
             carryOverEnabled:           true,
             carryOverRespectMaxBalance: true,
+            waitingPeriodMonths:        true,
           },
         },
       },
@@ -767,12 +820,12 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
       // cycle phase), otherwise fall back to the individual hire-basis date.
       const cycleAnchor = pConfig.postingAnchorDate ? parseUtcDate(pConfig.postingAnchorDate) : empBasisDate;
 
-      // Don't post before the employee's basis date. differenceInMonths returns 0
-      // for any gap < 1 month, so a cycle landing up to 28 days before hire would
-      // incorrectly match the minTenureMonths = 0 tier without this guard.
+      // Don't post before the employee's basis date. Months of service can
+      // read 0 for a day a few weeks before hire, so a cycle landing then would
+      // match the minTenureMonths = 0 tier without this guard.
       if (ppDay < empBasisDate) continue;
 
-      const tenureMonths = differenceInMonths(postingDate, basisRaw);
+      const tenureMonths = serviceMonths(postingDate, basisRaw);
       const rule = tiers.find(
         (t) =>
           t.minTenureMonths <= tenureMonths &&
@@ -816,6 +869,26 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
           postingCount = p1count || p2count;
         }
       }
+
+      // A new hire's waiting period (waitingPeriodMonths) ends with this posting:
+      // a fortnightly policy's first posting after it, a yearly grant's own day
+      // (endsWait). Released once: a release already on the ledger since hire
+      // means it was given (by an earlier run or by hand).
+      const wait = pConfig.waitingPeriodMonths;
+      const endsWaitToday = !!wait && effectiveAnnualHours > 0 && endsWait(basisRaw, wait, postingDate, pConfig.posting1Freq);
+      let waitReleased = false;
+      if (endsWaitToday) {
+        waitReleased = !!(await db.leaveAccrualLedger.findFirst({
+          where: { employeeId: employee.id, leaveTypeId: leaveType.id, note: { startsWith: WAIT_RELEASE_NOTE }, payPeriodEnd: { gte: utcDayOf(basisRaw) } },
+          select: { id: true },
+        }));
+        // A yearly grant (NJ Sick) is given on the day the wait ends, not only on its own date.
+        if (!postingCount && !waitReleased && CYCLE_DAYS[pConfig.posting1Freq] == null) {
+          activeFreq = pConfig.posting1Freq;
+          postingCount = 1;
+        }
+      }
+      const releasing = endsWaitToday && !waitReleased && postingCount > 0;
       const accrualFires = postingCount > 0;
 
       if (!accrualFires && !isResetDay) continue;
@@ -987,33 +1060,71 @@ export async function runDailyAccruals(runDate?: Date): Promise<{ posted: number
         rate = Math.min(rate, annualCapSeconds - alreadyAccrued);
       }
 
+      // The wait ends: every fortnight since hire comes in with this posting, at
+      // its rate, as NovaTime releases what it held. What the 10/22 NovaTime
+      // rebuild already wrote as accruals without adding them to the balance
+      // (Banchon's six 1.54 h rows, a 40 h Sick row) is released as it stands,
+      // so Accrued does not count it twice; the posting brings in the rest.
+      let releaseHeld = 0;
+      if (releasing) {
+        if (CYCLE_DAYS[activeFreq!] != null) {
+          const heldPostings = postingTriggered(activeFreq!, null, null, empBasisDate, addDays(ppDay, -1), cycleAnchor, empBasisDate);
+          rate += computeRate(activeFreq!, rateMode, effectiveAnnualHours, 0) * heldPostings;
+        }
+        const onLedger = await db.leaveAccrualLedger.aggregate({
+          where: { employeeId: employee.id, leaveTypeId: leaveType.id, action: "ACCRUAL", payPeriodEnd: { gte: utcDayOf(basisRaw), lt: postingDate } },
+          _sum: { deltaSeconds: true },
+        });
+        releaseHeld = Math.min(Math.max(0, onLedger._sum.deltaSeconds ?? 0), rate);
+        rate -= releaseHeld;
+      }
+
       // Use post-reset balance as the starting point for this accrual
       const currentBalance = balanceAfterReset;
       const cap = rule?.maxBalanceHours != null
         ? hoursToSeconds(rule.maxBalanceHours)
         : leaveType.maxBalanceMinutes != null ? leaveType.maxBalanceMinutes * 60 : null;
       const newBalance = cap !== null
-        ? Math.min(currentBalance + rate, cap)
-        : currentBalance + rate;
+        ? Math.min(currentBalance + rate + releaseHeld, cap)
+        : currentBalance + rate + releaseHeld;
 
-      const actualDelta = newBalance - currentBalance;
-      if (actualDelta <= 0) continue;
+      const totalDelta = newBalance - currentBalance;
+      if (totalDelta <= 0) continue;
+      // The cap trims the new accrual before the release of what is already earned.
+      const releaseDelta = Math.min(releaseHeld, totalDelta);
+      const actualDelta = totalDelta - releaseDelta;
 
       await db.$transaction([
         db.leaveBalance.update({
           where: { id: existing.id },
           data: { balanceSeconds: newBalance },
         }),
-        db.leaveAccrualLedger.create({
-          data: {
-            employeeId: employee.id,
-            leaveTypeId: leaveType.id,
-            action: "ACCRUAL",
-            deltaSeconds: actualDelta,
-            balanceAfterSeconds: newBalance,
-            payPeriodEnd: postingDate,
-          },
-        }),
+        ...(releaseDelta > 0
+          ? [db.leaveAccrualLedger.create({
+              data: {
+                employeeId: employee.id,
+                leaveTypeId: leaveType.id,
+                action: "ADJUSTMENT",
+                deltaSeconds: releaseDelta,
+                balanceAfterSeconds: currentBalance + releaseDelta,
+                payPeriodEnd: postingDate,
+                note: `${WAIT_RELEASE_NOTE}: held since hire`,
+              },
+            })]
+          : []),
+        ...(actualDelta > 0
+          ? [db.leaveAccrualLedger.create({
+              data: {
+                employeeId: employee.id,
+                leaveTypeId: leaveType.id,
+                action: "ACCRUAL",
+                deltaSeconds: actualDelta,
+                balanceAfterSeconds: newBalance,
+                payPeriodEnd: postingDate,
+                ...(releasing ? { note: WAIT_RELEASE_NOTE } : {}),
+              },
+            })]
+          : []),
       ]);
 
       // Keep the in-memory sum accurate for subsequent iterations in the same run
@@ -1077,7 +1188,7 @@ export async function pendingCarrySeconds(employeeId: string, leaveTypeId: strin
     basis === "ORIENTATION_DATE"   ? (emp.orientationDate  ?? emp.hireDate) :
     basis === "USER_DATE_2"        ? (emp.userDate2        ?? emp.hireDate) :
     emp.hireDate;
-  const tenureMonths = differenceInMonths(yearStart, basisRaw);
+  const tenureMonths = serviceMonths(yearStart, basisRaw);
   const rule = policy.rules.find(
     (t) => t.minTenureMonths <= tenureMonths && (t.maxTenureMonths === null || tenureMonths < t.maxTenureMonths),
   );
@@ -1106,6 +1217,9 @@ export async function postLeaveUsage(leaveRequestId: string, tx?: TxClient): Pro
   });
   if (!request.leaveType.accrualTracked) return;
   if ((await debitedSeconds(tx, leaveRequestId)) > 0) return;
+
+  // NovaTime's own booking of the same days, charged already, steps aside.
+  await replaceNovaTimeImports(tx, request, request.reviewedById);
 
   const accrualYear = getYear(request.startDate);
   const key = { employeeId: request.employeeId, leaveTypeId: request.leaveTypeId, accrualYear };

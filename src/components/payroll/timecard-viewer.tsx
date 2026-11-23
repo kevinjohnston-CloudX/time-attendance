@@ -20,6 +20,25 @@ import { EditRequestsPanel, type EditRequestView } from "@/components/payroll/ed
 import { periodLastDay } from "@/lib/pay-period-display";
 import type { PayFrequency } from "@prisma/client";
 import { minutesToHoursDecimal } from "@/lib/utils/duration";
+import { agencyParam, agencySummary } from "@/lib/agency-filter";
+import { FilterMultiChip } from "@/components/ui/filter-multi-chip";
+
+/** No agency picked: everybody. One array, so a default does not change on every render. */
+const NO_AGENCIES: string[] = [];
+
+/** The list's Employment filter: on their record, Active (working), On leave, or Inactive. */
+type Employment = "active" | "leave" | "inactive";
+const EMPLOYMENT_OPTIONS: { id: Employment; name: string }[] = [
+  { id: "active", name: "Active" },
+  { id: "leave", name: "On leave" },
+  { id: "inactive", name: "Inactive" },
+];
+/** What the list opens on: everyone still employed, working or on leave. */
+const DEFAULT_EMPLOYMENT: Employment[] = ["active", "leave"];
+const sameEmployment = (a: Employment[], b: Employment[]) => a.length === b.length && a.every((x) => b.includes(x));
+function employmentOf(emp: { isActive: boolean; onLeave?: boolean }): Employment {
+  return !emp.isActive ? "inactive" : emp.onLeave ? "leave" : "active";
+}
 import {
   Badge,
   Button,
@@ -127,6 +146,8 @@ type EmployeeListItem = {
   siteId: string | null;
   siteName: string | null;
   isActive: boolean;
+  /** Active, but on leave: the Employment filter's "On leave". */
+  onLeave?: boolean;
   payType?: string | null;
   /** The day they started, "yyyy-MM-dd": no day before it is an absence. */
   startedOn?: string;
@@ -287,6 +308,10 @@ interface TimecardViewerProps {
   selectedSiteId: string | null;
   departments: { id: string; name: string }[];
   selectedDepartmentId: string | null;
+  /** The Agency filter's choices (lib/agency-options); none hides it. */
+  agencies?: { id: string; name: string }[];
+  /** The agencies picked; empty for everybody. */
+  selectedAgencyIds?: string[];
   userRole: string;
   readOnly?: boolean;
   /**
@@ -313,6 +338,8 @@ interface TimecardViewerProps {
    * and every typed time read, in it, whoever is looking.
    */
   siteTimezone?: string | null;
+  /** Why the timecard could not be loaded, or null: shown, and nothing can be added to it. */
+  timecardLoadError?: string | null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -812,6 +839,8 @@ export function TimecardViewer({
   selectedSiteId,
   departments,
   selectedDepartmentId,
+  agencies = [],
+  selectedAgencyIds = NO_AGENCIES,
   userRole,
   readOnly = false,
   sendsForApproval = false,
@@ -822,6 +851,7 @@ export function TimecardViewer({
   subtitle,
   headerActions,
   siteTimezone,
+  timecardLoadError = null,
 }: TimecardViewerProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -842,6 +872,7 @@ export function TimecardViewer({
     !navSame("employeeId") &&
     navSame("siteId") &&
     navSame("departmentId") &&
+    navSame("agency") &&
     (!navUrl.searchParams.has("periodId") || navSame("periodId")) &&
     !navUrl.searchParams.has("customStart");
 
@@ -885,7 +916,11 @@ export function TimecardViewer({
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [exceptionFilter, setExceptionFilter] = useState("ALL");
   const [payTypeFilter, setPayTypeFilter] = useState("ALL");
-  const [activeOnly, setActiveOnly] = useState(true);
+  // Who the list shows by employment: Active and On leave to start with, as
+  // "Active employees only" did, with Inactive a tick away. None ticked is
+  // everybody.
+  const [employment, setEmployment] = useState<Employment[]>(DEFAULT_EMPLOYMENT);
+  const employmentChanged = !sameEmployment(employment, DEFAULT_EMPLOYMENT);
   const [isPending, startTransition] = useTransition();
   const [pendingPayCodes, setPendingPayCodes] = useState<Map<string, string>>(new Map());
   const [pendingReasonCodes, setPendingReasonCodes] = useState<Map<string, string>>(new Map());
@@ -987,6 +1022,9 @@ export function TimecardViewer({
     if (!showFilters) return;
     function onDown(e: MouseEvent) {
       const t = e.target as Node;
+      // A window opened from the sheet (the Agency list) is drawn at the page
+      // root; working in it must not close the sheet under it.
+      if ((t as Element).closest?.('[aria-modal="true"]')) return;
       if (filtersRef.current && !filtersRef.current.contains(t) && !filterPanelRef.current?.contains(t)) setShowFilters(false);
     }
     function onKey(e: KeyboardEvent) {
@@ -1131,7 +1169,7 @@ export function TimecardViewer({
   // An inactive employee's timecards are closed to changes, and none is made
   // for them; the server refuses either way (inactive-timecards).
   const selectedInactive = employees.find((e) => e.employeeId === selectedEmployeeId)?.isActive === false;
-  const canChange = !readOnly && !selectedInactive && (timecard
+  const canChange = !readOnly && !selectedInactive && !timecardLoadError && (timecard
     ? (timecard.status !== "LOCKED" && timecard.status !== "PAYROLL_APPROVED")
     : (!!selectedEmployeeId && !!selectedPeriodId));
   // Every change on the timecard; or, for a supervisor where the person's
@@ -1145,9 +1183,12 @@ export function TimecardViewer({
   const addTimeMin = format(parseUtcDate(addTimePeriod?.startDate ?? new Date().toISOString()), "yyyy-MM-dd");
   const storedEnd = format(parseUtcDate(addTimePeriod?.endDate ?? new Date().toISOString()), "yyyy-MM-dd");
   const todayKey = format(toSiteClock(new Date(), siteTz), "yyyy-MM-dd");
-  // The supervisor's last day is the period's own (a weekly period stores the day after it).
+  // The period's own last day (a weekly period stores the day after it), for
+  // everyone: an editor's limit was the stored end, so on a past week Add time
+  // opened on the day after it, off the grid, and the hours saved there
+  // seemed not to save (Tony, 11/19). A supervisor goes no later than today.
   const lastDayKey = addTimePeriod ? format(lastDayOf(addTimePeriod.endDate), "yyyy-MM-dd") : storedEnd;
-  const addTimeMax = canEdit ? storedEnd : todayKey < lastDayKey ? todayKey : lastDayKey;
+  const addTimeMax = canEdit ? lastDayKey : todayKey < lastDayKey ? todayKey : lastDayKey;
   const regularCode = payCodes.find((pc) => pc.id === timecard?.employee.ruleSet?.defaultPayCodeId);
   // What a supervisor may send HR (lib/timecards/supervisor-edit-rules):
   // rows of regular hours (a shift's code is on its clock in), today or
@@ -1240,8 +1281,8 @@ export function TimecardViewer({
       emp.department.toLowerCase().includes(q);
     if (!matchesSearch) return false;
 
-    // Active only filter
-    if (activeOnly && !emp.isActive) return false;
+    // Employment: active, on leave, inactive.
+    if (employment.length > 0 && !employment.includes(employmentOf(emp))) return false;
 
     // Pay type filter
     if (payTypeFilter === "HOURLY" && emp.payType !== "HOURLY") return false;
@@ -1265,14 +1306,16 @@ export function TimecardViewer({
     periodId?: string | null,
     sid: string | null = selectedSiteId,
     did: string | null = selectedDepartmentId,
+    aids: readonly string[] = selectedAgencyIds,
   ) {
-    if (holdForUnsaved(() => navigate(employeeId, periodId, sid, did))) return;
+    if (holdForUnsaved(() => navigate(employeeId, periodId, sid, did, aids))) return;
     const params = new URLSearchParams();
     const eid = employeeId ?? selectedEmployeeId;
     if (eid) params.set("employeeId", eid);
     if (periodId) params.set("periodId", periodId);
     if (sid) params.set("siteId", sid);
     if (did) params.set("departmentId", did);
+    if (aids.length) params.set("agency", agencyParam(aids));
     router.push(`/payroll/timecards?${params.toString()}`);
   }
 
@@ -1305,6 +1348,7 @@ export function TimecardViewer({
     if (selectedPeriodId) params.set("periodId", selectedPeriodId);
     if (selectedSiteId) params.set("siteId", selectedSiteId);
     if (selectedDepartmentId) params.set("departmentId", selectedDepartmentId);
+    if (selectedAgencyIds.length) params.set("agency", agencyParam(selectedAgencyIds));
     router.push(`/payroll/timecards?${params.toString()}`);
     setShowCalendar(false);
   }
@@ -2257,11 +2301,25 @@ export function TimecardViewer({
   // and how many of the ones inside Filters are, for its button. Status set
   // from the quick views counts too: it is the same filter.
   const listNarrowed =
-    statusFilter !== "ALL" || payTypeFilter !== "ALL" || exceptionFilter !== "ALL" || !activeOnly || !!search.trim();
+    statusFilter !== "ALL" || payTypeFilter !== "ALL" || exceptionFilter !== "ALL" || employmentChanged || !!search.trim();
   const filtersOn =
-    Number(statusFilter !== "ALL") + Number(payTypeFilter !== "ALL") + Number(exceptionFilter !== "ALL") + Number(!activeOnly) +
-    // On a phone site and department are picked in Filters too.
-    (phone ? Number(!!selectedSiteId) + Number(!!selectedDepartmentId) : 0);
+    Number(statusFilter !== "ALL") + Number(payTypeFilter !== "ALL") + Number(exceptionFilter !== "ALL") + Number(employmentChanged) +
+    // On a phone site, department and agency are picked in Filters too.
+    (phone ? Number(!!selectedSiteId) + Number(!!selectedDepartmentId) + Number(selectedAgencyIds.length > 0) : 0);
+
+  // Agency: Bergen alone (the company's own people), or everyone but Bergen
+  // (the temps), or any others. Kept in the address, as site and department
+  // are. Only when there are agencies to choose between.
+  const agencyChip =
+    agencies.length > 1 ? (
+      <FilterMultiChip
+        label="Agency"
+        value={selectedAgencyIds}
+        options={agencies}
+        summary={(ids) => agencySummary(ids, agencies)}
+        onChange={(ids) => navigate(null, selectedPeriodId, selectedSiteId, selectedDepartmentId, ids)}
+      />
+    ) : null;
 
   return (
     // The whole window, as a workspace: the header and the pay period control
@@ -2304,6 +2362,7 @@ export function TimecardViewer({
                   options={departments}
                   onChange={(v) => navigate(selectedEmployeeId, selectedPeriodId, selectedSiteId, v || null)}
                 />
+                {agencyChip}
 
               <span aria-hidden="true" className="ta-desktop-only">
                 <span className="mx-1 h-5 w-px flex-none" style={{ background: "var(--stroke-divider)" }} />
@@ -2529,6 +2588,12 @@ export function TimecardViewer({
                       </Select>
                     </label>
                   )}
+                  {phone && agencyChip && (
+                    <div className="flex flex-col gap-1">
+                      <span style={{ font: "var(--type-button2)", color: "var(--text-secondary)" }}>Agency</span>
+                      <span className="flex">{agencyChip}</span>
+                    </div>
+                  )}
                   {[
                     { label: "Status", value: statusFilter, set: setStatusFilter, all: "All statuses", options: STATUS_FILTER_OPTIONS },
                     { label: "Pay type", value: payTypeFilter, set: setPayTypeFilter, all: "All pay types", options: PAY_TYPE_FILTER_OPTIONS },
@@ -2546,20 +2611,37 @@ export function TimecardViewer({
                       </Select>
                     </label>
                   ))}
-                  <Checkbox checked={activeOnly} onChange={setActiveOnly} label="Active employees only" />
+                  {/* Several at once; none ticked is everybody. */}
+                  <fieldset className="flex flex-col gap-1.5" style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
+                    <legend className="mb-1" style={{ font: "var(--type-button2)", color: "var(--text-secondary)", padding: 0 }}>
+                      Employment
+                    </legend>
+                    {EMPLOYMENT_OPTIONS.map((o) => (
+                      <Checkbox
+                        key={o.id}
+                        checked={employment.includes(o.id)}
+                        onChange={(on) =>
+                          setEmployment((cur) =>
+                            EMPLOYMENT_OPTIONS.map((x) => x.id).filter((id) => (id === o.id ? on : cur.includes(id))),
+                          )
+                        }
+                        label={o.name}
+                      />
+                    ))}
+                  </fieldset>
                   <div className={`flex items-center justify-between gap-2 pt-1 ${grid.filterFoot}`} style={{ borderTop: "1px solid var(--stroke-divider)" }}>
                     <Button
                       hierarchy="link"
                       size="sm"
-                      disabled={!listNarrowed && !(phone && (selectedSiteId || selectedDepartmentId))}
+                      disabled={!listNarrowed && !(phone && (selectedSiteId || selectedDepartmentId || selectedAgencyIds.length))}
                       onClick={() => {
                         setSearch("");
                         setStatusFilter("ALL");
                         setPayTypeFilter("ALL");
                         setExceptionFilter("ALL");
-                        setActiveOnly(true);
-                        // Site and department are in this sheet on a phone.
-                        if (phone && (selectedSiteId || selectedDepartmentId)) navigate(null, selectedPeriodId, null, null);
+                        setEmployment(DEFAULT_EMPLOYMENT);
+                        // Site, department and agency are in this sheet on a phone.
+                        if (phone && (selectedSiteId || selectedDepartmentId || selectedAgencyIds.length)) navigate(null, selectedPeriodId, null, null, []);
                       }}
                     >
                       Clear all
@@ -2741,6 +2823,10 @@ export function TimecardViewer({
                       <Badge tone={statusTone(timecard.status)}>
                         {TIMESHEET_STATUS_LABEL[timecard.status as TimesheetStatusValue] ?? timecard.status}
                       </Badge>
+                    ) : timecardLoadError ? (
+                      <span title={timecardLoadError}>
+                        <Badge tone="error">Couldn&apos;t load this timecard. Reload the page.</Badge>
+                      </span>
                     ) : (
                       <Badge>No punches yet</Badge>
                     )}

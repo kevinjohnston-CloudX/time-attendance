@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { hrApprovers } from "@/lib/notify/approvers";
+import { coversSite, hrApprovers } from "@/lib/notify/approvers";
 import { emailUsers, leaveDays, leaveHours, type ApprovalEmail } from "@/lib/notify/approval-email";
 import { pushToUsers } from "./send";
 
@@ -58,6 +58,7 @@ async function requestWithOwner(leaveRequestId: string) {
         select: {
           id: true,
           tenantId: true,
+          siteId: true,
           userId: true,
           user: { select: { name: true } },
           supervisor: { select: { userId: true, isActive: true } },
@@ -96,7 +97,9 @@ export async function alertLeaveWaitingOnHr(leaveRequestId: string, actorEmploye
   const request = await requestWithOwner(leaveRequestId).catch(() => null);
   if (request?.status !== "PENDING_HR" || !request.employee.tenantId) return;
 
-  const approvers = await hrApprovers(request.employee.tenantId, [request.employee.id, actorEmployeeId]);
+  // Only those who see this person's site: a Payroll Admin held to Brampton is not told of Bergen's.
+  const approvers = (await hrApprovers(request.employee.tenantId, [request.employee.id, actorEmployeeId]))
+    .filter((a) => coversSite(a, request.employee.siteId));
 
   const name = fullName(request.employee.user?.name);
   await tell(

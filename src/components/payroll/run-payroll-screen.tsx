@@ -63,7 +63,7 @@ export function RunPayrollScreen({ frequencies, periods, ruleSets, payCategories
   const [from, setFrom] = useState(initial?.defaultFrom ?? "");
   const [to, setTo] = useState(initial?.defaultTo ?? "");
   const [codes, setCodes] = useState<RunCodes>(savedCodes);
-  const [filters, setFilters] = useState({ badgeIds: "", ruleSetIds: [] as string[], payCategoryIds: [] as string[], siteIds: [] as string[], departmentIds: [] as string[], agencyIds: [] as string[], status: "ALL" as "ALL" | "ACTIVE" | "INACTIVE", excludeMissedPunches: false });
+  const [filters, setFilters] = useState({ badgeIds: "", ruleSetIds: [] as string[], payCategoryIds: [] as string[], siteIds: [] as string[], departmentIds: [] as string[], agencyIds: [] as string[], status: "ACTIVE" as "ALL" | "ACTIVE" | "INACTIVE", excludeMissedPunches: false });
   const [preview, setPreview] = useState<RunPreview | null>(null);
   const [result, setResult] = useState<{ csv: string; filename: string; summary: EpiSummary; locked: number; periodsLocked: number; leftOpen: number } | null>(null);
   const [error, setError] = useState<string | null>(null);

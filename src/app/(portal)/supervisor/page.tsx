@@ -7,6 +7,7 @@ import { ChevronRight, UserCheck } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { userHasPermission } from "@/lib/rbac/check-permission";
+import { siteLimit } from "@/lib/rbac/site-limit";
 import { parseUtcDate } from "@/lib/utils/date";
 import { getPresence } from "@/lib/dashboard/dashboard-data";
 import { getExceptionTypes, getTeamQueues, getTimeOffAhead } from "@/lib/team/team-overview";
@@ -60,13 +61,16 @@ export default async function TeamOverviewPage() {
   const isPayroll =
     ["PAYROLL_ADMIN", "HR_ADMIN", "SYSTEM_ADMIN", "SUPER_ADMIN"].includes(session.user.role) ||
     (await userHasPermission(session.user, "TIMESHEET_APPROVE_ANY"));
+  // The company at the sites on their record (Site access), when held to some.
+  const sites = isPayroll ? await siteLimit({ employeeId: employeeId ?? "", role: session.user.role }) : null;
+  const reach = isPayroll ? (sites ?? true) : false;
   const now = new Date();
 
   const [queues, exceptionTypes, timeOff, presence, anyOpenPeriod, me, canSeeOnSite] = await Promise.all([
-    getTeamQueues(tenantId, employeeId, isPayroll, now),
-    getExceptionTypes(tenantId, employeeId, isPayroll),
-    getTimeOffAhead(tenantId, employeeId, isPayroll, now),
-    getPresence(tenantId, isPayroll ? null : employeeId),
+    getTeamQueues(tenantId, employeeId, reach, now),
+    getExceptionTypes(tenantId, employeeId, reach),
+    getTimeOffAhead(tenantId, employeeId, reach, now),
+    getPresence(tenantId, isPayroll ? null : employeeId, now, sites),
     db.payPeriod.findFirst({
       where: { tenantId, ruleSetId: { not: null }, startDate: { lte: now }, endDate: { gt: now }, status: "OPEN" },
       select: { startDate: true, endDate: true },
@@ -140,7 +144,7 @@ export default async function TeamOverviewPage() {
             Team Overview
           </h1>
           <p style={{ margin: 0, font: "var(--type-body1)", color: "var(--text-secondary)" }}>
-            {isPayroll ? "Every team" : "Your direct reports"}
+            {isPayroll ? (sites ? "Every team at your sites" : "Every team") : "Your direct reports"}
             {periodLabel ? ` · Pay period ${periodLabel}` : ""}
           </p>
         </div>

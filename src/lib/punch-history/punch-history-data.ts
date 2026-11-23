@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { userHasPermission } from "@/lib/rbac/check-permission";
+import { siteLimit } from "@/lib/rbac/site-limit";
 import { endOfDayInTz, snapToLocalTime } from "@/lib/utils/date";
 import { photoUrls } from "@/lib/presence/photos";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
@@ -246,9 +247,13 @@ async function resolveScope(viewer: Viewer, params: PunchHistoryParams) {
   // A supervisor with no employee record of their own reports to nobody and
   // has nobody reporting to them. Scoping by an undefined supervisorId would
   // drop the condition and hand them the whole company.
+  // Payroll held to some sites (Site access on their record) sees those
+  // sites only, as on Timecards; the picked site narrows them further.
+  const heldTo = isPayroll ? await siteLimit({ employeeId: viewer.employeeId ?? "", role: viewer.role }) : null;
+  const atSites: Prisma.EmployeeWhereInput = heldTo ? { siteId: { in: heldTo } } : {};
   const scope: Prisma.EmployeeWhereInput = withoutVisitors(
     isPayroll
-      ? { isActive: true, tenantId }
+      ? { isActive: true, tenantId, ...atSites }
       : { isActive: true, ...directReportsOf(viewer.employeeId ?? "__none__"), tenantId },
   );
 
@@ -278,7 +283,7 @@ async function resolveScope(viewer: Viewer, params: PunchHistoryParams) {
       }
     : filtered;
 
-  return { tenantId, isPayroll, canResolveExceptions, selectedSiteId, selectedDepartmentId, filtered, search, matching };
+  return { tenantId, isPayroll, heldTo, canResolveExceptions, selectedSiteId, selectedDepartmentId, filtered, search, matching };
 }
 
 /**
@@ -331,8 +336,9 @@ export async function loadTeamPunchHistory(
   viewer: Viewer,
   params: PunchHistoryParams,
 ): Promise<PunchHistoryData> {
-  const { tenantId, isPayroll, canResolveExceptions, selectedSiteId, selectedDepartmentId, filtered, search, matching } =
+  const { tenantId, isPayroll, heldTo, canResolveExceptions, selectedSiteId, selectedDepartmentId, filtered, search, matching } =
     await resolveScope(viewer, params);
+  const heldSites = heldTo ? { id: { in: heldTo } } : {};
 
   const employeeSelect = {
     id: true,
@@ -351,7 +357,7 @@ export async function loadTeamPunchHistory(
   const [sites, departments, firstSite, named] = await Promise.all([
     isPayroll
       ? db.site.findMany({
-          where: { isActive: true, tenantId },
+          where: { isActive: true, tenantId, ...heldSites },
           orderBy: { name: "asc" },
           select: { id: true, name: true },
         })
@@ -368,7 +374,7 @@ export async function loadTeamPunchHistory(
         })
       : Promise.resolve([]),
     db.site.findFirst({
-      where: { isActive: true, tenantId },
+      where: { isActive: true, tenantId, ...heldSites },
       orderBy: { name: "asc" },
       select: { timezone: true },
     }),
@@ -650,9 +656,9 @@ export type PunchExport =
  * <p>Each row is on its own employee's site clock, 12 hour.
  */
 export async function loadPunchExport(viewer: Viewer, params: PunchHistoryParams): Promise<PunchExport> {
-  const { tenantId, matching } = await resolveScope(viewer, params);
+  const { tenantId, heldTo, matching } = await resolveScope(viewer, params);
   const firstSite = await db.site.findFirst({
-    where: { isActive: true, tenantId },
+    where: { isActive: true, tenantId, ...(heldTo ? { id: { in: heldTo } } : {}) },
     orderBy: { name: "asc" },
     select: { timezone: true },
   });

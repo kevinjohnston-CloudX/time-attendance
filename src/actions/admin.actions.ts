@@ -28,6 +28,7 @@ import { encryptPiiFields, decryptPiiFields } from "@/lib/crypto/pii";
 import { activeChangeEvent, queueEmployeeEvent, sendSoon } from "@/lib/webhooks/employee-events";
 import { currentIdentity } from "@/lib/rbac/current";
 import { employeeRank, forgetIdentity, type LiveIdentity } from "@/lib/rbac/identity";
+import { WAIT_RELEASE_NOTE } from "@/lib/engines/accrual-engine";
 import { ROLE_RANK, isValidRole, givesLiveAttendanceRoles, givesRank, editsPeers } from "@/lib/rbac/roles";
 import { todayKey } from "@/lib/pay-rates";
 import { personTimeZone, timeZoneLabel } from "@/lib/utils/person-time-zone";
@@ -36,6 +37,8 @@ import { webPunchByDefault } from "@/lib/web-punch";
 import { isSignInOnlyRole, isVisitorRole, seesTeam, SIGN_IN_ONLY_RULE_SET, VISITOR_DEPARTMENT } from "@/lib/sign-in-only";
 import { cleanLanguages, languageName } from "@/lib/languages";
 import { hoursToSeconds, secondsToMinutes } from "@/lib/leave-time";
+import { agencyWhere, parseAgencyIds } from "@/lib/agency-filter";
+import { auditPageInReach } from "@/lib/audit/audit-reach";
 import { NotFoundError, assertBalanceChangeAllowed, assertNotSenior, assertRecordInReach, assertSiteInReach, siteInReach, siteLimit } from "@/lib/rbac/scope";
 import { assertOwn, ownCompany } from "@/lib/rbac/company";
 import { forgetTabletLanguages } from "@/lib/timeclock/tablet-languages";
@@ -299,9 +302,12 @@ export const getEmployees = withRBAC(
     input?: {
       page?: number; q?: string; site?: string; dept?: string; role?: string;
       status?: string; shift?: string; pay?: string; period?: string; punch?: string; missing?: string; sort?: string;
+      /** The Agency filter, a comma list (lib/agency-filter). */
+      agency?: string;
     },
   ) => {
     const { page = 0, q, site, dept, role, shift } = input ?? {};
+    const agencyIds = parseAgencyIds(input?.agency);
     // Only the listed choices count; anything else is no filter at all.
     const status = pick(STATUS_OPTIONS, input?.status);
     const pay = pick(PAY_OPTIONS, input?.pay);
@@ -319,6 +325,8 @@ export const getEmployees = withRBAC(
     if (allowedSiteIds) where.siteId = { in: allowedSiteIds };
     if (site) where.site = { name: site };
     if (dept) where.department = { name: dept };
+    // In AND: "No agency" is an OR of its own, and the search below sets where.OR.
+    if (agencyIds.length) where.AND = [agencyWhere(agencyIds)];
     // The company's own role, as the Role column shows it. The filter used to
     // offer only the built-in levels, so "Employee" also matched Loss
     // Prevention, visitors and agency viewers, and their roles had no choice
@@ -2090,7 +2098,7 @@ export type AuditRange = "any" | "today" | "7" | "30";
 export const getAuditLogs = withRBAC(
   "AUDIT_VIEW",
   async (
-    { tenantId },
+    { tenantId, employeeId, role },
     input: { page?: number; entityType?: string; q?: string; actor?: string; range?: AuditRange; tz?: string } = {}
   ) => {
     const page = Math.max(1, Math.floor(Number(input.page) || 1));
@@ -2134,9 +2142,16 @@ export const getAuditLogs = withRBAC(
         : {}),
     };
 
+    // Held to some sites (Site access): the entries about their sites' people
+    // and every entry about company setup. The ids in reach are found in SQL,
+    // a page at a time, since a site's timecards are too many to list.
+    const sites = await siteLimit({ employeeId, role });
+    const inReach = sites ? await auditPageInReach(sites, { tenantId: ownCompany(tenantId), entityType, actor, since, q }, take, skip) : null;
+    const pageWhere: Prisma.AuditLogWhereInput = inReach ? { id: { in: inReach.ids } } : where;
+
     const [rows, total] = await Promise.all([
       db.auditLog.findMany({
-        where,
+        where: pageWhere,
         select: {
           id: true,
           action: true,
@@ -2150,10 +2165,9 @@ export const getAuditLogs = withRBAC(
           actor: { select: { user: { select: { name: true } } } },
         },
         orderBy: { createdAt: "desc" },
-        take,
-        skip,
+        ...(inReach ? {} : { take, skip }),
       }),
-      db.auditLog.count({ where }),
+      inReach ? Promise.resolve(inReach.total) : db.auditLog.count({ where }),
     ]);
 
     // A timesheet opens on the timecard screen, which is addressed by the
@@ -2760,7 +2774,7 @@ export const getLeaveBalancesAsOf = withRBAC(
       db.leaveBalance.findMany({ where: { employeeId, accrualYear: year }, select: { leaveTypeId: true, balanceSeconds: true } }),
       db.leaveAccrualLedger.findMany({
         where: { employeeId, createdAt: { gte: yearStart, lt: yearEnd }, action: { not: "EOD_SNAPSHOT" } },
-        select: { leaveTypeId: true, action: true, deltaSeconds: true, createdAt: true, payPeriodEnd: true, leaveRequestId: true, leaveRequest: { select: { startDate: true } } },
+        select: { leaveTypeId: true, action: true, deltaSeconds: true, createdAt: true, payPeriodEnd: true, leaveRequestId: true, note: true, leaveRequest: { select: { startDate: true } } },
       }),
       db.leaveRequest.findMany({
         where: { employeeId, status: { in: ["APPROVED", "PENDING", "POSTED"] }, startDate: { gte: yearStart, lte: new Date(`${date}T00:00:00Z`) } },
@@ -2781,7 +2795,9 @@ export const getLeaveBalancesAsOf = withRBAC(
       if ((e.action === "ACCRUAL" || e.action === "EARNED_ADJUSTMENT") && e.payPeriodEnd && dayOf(e.payPeriodEnd) <= date) {
         r.accruedMinutes += e.deltaSeconds / 60;
       }
-      if (e.action === "ADJUSTMENT" && dayOf(e.createdAt) <= date && !(e.leaveRequestId && timecardRequests.has(e.leaveRequestId))) {
+      // A new hire's release after the waiting period is hours Accrued already shows.
+      const waitRelease = e.note?.startsWith(WAIT_RELEASE_NOTE) ?? false;
+      if (e.action === "ADJUSTMENT" && !waitRelease && dayOf(e.createdAt) <= date && !(e.leaveRequestId && timecardRequests.has(e.leaveRequestId))) {
         r.netAdjustmentMinutes = (r.netAdjustmentMinutes ?? 0) + e.deltaSeconds / 60;
       }
     }

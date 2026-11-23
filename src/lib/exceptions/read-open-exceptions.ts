@@ -35,7 +35,8 @@ export async function readOpenExceptions({
 }: {
   /** The tenant, or undefined to read every tenant (as the Prisma filter did). */
   t: string | undefined;
-  idFilter: { id?: { in: string[] } };
+  /** The people, or the sites they work at, the viewer may see (supervisor.actions teamFilter). */
+  idFilter: { id?: { in: string[] }; siteId?: { in: string[] } };
   siteId?: string;
   departmentId?: string;
   shiftId?: string;
@@ -63,6 +64,8 @@ export async function readOpenExceptions({
   }
   if (t) where.push(Prisma.sql`emp."tenantId" = ${t}`);
   if (idFilter.id) where.push(Prisma.sql`emp.id IN (${Prisma.join(idFilter.id.in)})`);
+  // An empty list is no site, never every site.
+  if (idFilter.siteId) where.push(Prisma.sql`emp."siteId" IN (${Prisma.join(idFilter.siteId.in.length ? idFilter.siteId.in : ["-"])})`);
   if (siteId) where.push(Prisma.sql`emp."siteId" = ${siteId}`);
   if (departmentId) where.push(Prisma.sql`emp."departmentId" = ${departmentId}`);
   if (shiftId) where.push(Prisma.sql`emp."shiftId" = ${shiftId}`);
