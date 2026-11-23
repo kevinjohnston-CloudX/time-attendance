@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Calendar, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
-import { createPortal } from "react-dom";
+import { floatingPortal } from "@/components/ui/floating-layer";
 import { Button } from "@/components/ui";
 import { isPhone } from "@/lib/phone";
 import styles from "./punch-history-date-picker.module.css";
@@ -313,5 +313,5 @@ export function PunchHistoryDatePicker({
  *  bar's layer cannot hold it under the tab bar; on a computer it stays
  *  beside the button it drops from. */
 function inPlaceOrOnTop(node: React.ReactNode) {
-  return isPhone() ? createPortal(node, document.body) : node;
+  return isPhone() ? floatingPortal(node) : node;
 }

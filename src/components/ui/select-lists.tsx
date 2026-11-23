@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { floatingPortal, useOwnPresses } from "./floating-layer";
 import { Check } from "lucide-react";
 import { isPhone } from "@/lib/phone";
 import menu from "./menu.module.css";
@@ -26,6 +26,13 @@ import styles from "./select-lists.module.css";
  * select has focus. The arrows move, Enter or a click picks, typing jumps to
  * the option that starts with the letters, and Escape closes it without
  * closing a window underneath. Scrolling the page or resizing it closes it.
+ *
+ * <p>The list is drawn at the edge of the page, outside whatever panel the
+ * select sits in. A press on it is the list's alone: it never reaches the
+ * page, so a panel that closes on a click outside it (Timecards' Filters,
+ * Live Attendance's view options) does not take the press on an option for
+ * one and close, select and all, before the pick lands. That was ticket
+ * 79224: picking a filter did nothing (Abby, Nov 22).
  */
 
 type Row =
@@ -233,6 +240,9 @@ export function SelectLists() {
     };
   }, [open, close, pick]);
 
+  // A press on the list is the list's alone (see floating-layer.tsx).
+  useOwnPresses(listRef);
+
   // Kept inside the window once its width is known, with the chosen option in view.
   useLayoutEffect(() => {
     const list = listRef.current;
@@ -253,7 +263,7 @@ export function SelectLists() {
   if (!sel || !place) return null;
   const chosen = sel.selectedIndex;
 
-  return createPortal(
+  return floatingPortal(
     <div
       ref={listRef}
       id={listId}
@@ -287,7 +297,6 @@ export function SelectLists() {
           </div>
         ),
       )}
-    </div>,
-    document.body,
+    </div>
   );
 }

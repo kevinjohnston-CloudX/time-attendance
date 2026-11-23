@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SelectLists } from "./select-lists";
 
 /**
@@ -95,5 +95,71 @@ describe("SelectLists", () => {
     );
     fireEvent.mouseDown(screen.getByRole("combobox", { name: "Plain" }), { button: 0 });
     expect(screen.queryByRole("listbox")).toBeNull();
+  });
+});
+
+/**
+ * A panel that closes on a press outside it, the way the Timecards Filters
+ * panel and Live Attendance's view options do, with a dropdown inside it.
+ */
+function FiltersPanel({ onPick }: { onPick: (v: string) => void }) {
+  const [open, setOpen] = useState(true);
+  const panel = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!panel.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onPointer = (e: PointerEvent) => {
+      if (!panel.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("pointerdown", onPointer);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("pointerdown", onPointer);
+    };
+  }, [open]);
+  if (!open) return <p>Panel closed</p>;
+  return (
+    <div ref={panel} aria-label="Filters" role="dialog">
+      <Field onPick={onPick} />
+    </div>
+  );
+}
+
+describe("a dropdown inside a panel that closes on a click outside it (ticket 79224)", () => {
+  it("picks the option and leaves the panel open: the list is not outside the panel", () => {
+    const onPick = vi.fn();
+    render(
+      <>
+        <SelectLists />
+        <FiltersPanel onPick={onPick} />
+      </>,
+    );
+    const sel = screen.getByRole("combobox", { name: "Shift" }) as HTMLSelectElement;
+    fireEvent.pointerDown(sel, { pointerType: "mouse" });
+    fireEvent.mouseDown(sel, { button: 0 });
+    const option = within(screen.getByRole("listbox", { name: "Shift" })).getByRole("option", { name: "Days" });
+    // A real press: pointer down, mouse down, then the click.
+    fireEvent.pointerDown(option, { pointerType: "mouse" });
+    const kept = fireEvent.mouseDown(option, { button: 0 });
+    fireEvent.click(option);
+    expect(kept).toBe(false); // the select keeps the focus
+    expect(onPick).toHaveBeenCalledWith("a");
+    expect(screen.getByRole("dialog", { name: "Filters" })).toBeTruthy();
+    expect((screen.getByRole("combobox", { name: "Shift" }) as HTMLSelectElement).value).toBe("a");
+  });
+
+  it("still closes the panel on a press truly outside it", () => {
+    render(
+      <>
+        <SelectLists />
+        <FiltersPanel onPick={() => {}} />
+        <button type="button">Elsewhere</button>
+      </>,
+    );
+    fireEvent.mouseDown(screen.getByRole("button", { name: "Elsewhere" }), { button: 0 });
+    expect(screen.getByText("Panel closed")).toBeTruthy();
   });
 });

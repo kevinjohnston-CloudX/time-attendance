@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { useOutsidePress } from "@/components/ui/floating-layer";
 import Link from "next/link";
 import { Bell } from "lucide-react";
 import type { WaitingItem } from "@/lib/dashboard/dashboard-data";
@@ -25,21 +26,7 @@ export function NotificationBell({ items }: { items: WaitingItem[] }) {
 
   const total = items.reduce((n, i) => n + i.count, 0);
 
-  useEffect(() => {
-    if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  useOutsidePress({ open, inside: [ref], onOutside: () => setOpen(false), escape: true });
 
   const label = total > 0 ? `${total} waiting on you` : "Nothing waiting on you";
 

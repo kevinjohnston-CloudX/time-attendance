@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore, type ComponentProps } from "react";
-import { createPortal } from "react-dom";
+import { floatingPortal } from "./floating-layer";
 
 const noSubscribe = () => () => {};
 
@@ -22,5 +22,5 @@ export function Overlay({ className = "", ...rest }: ComponentProps<"div">) {
   // False while rendering on the server and during hydration, true after.
   const onClient = useSyncExternalStore(noSubscribe, () => true, () => false);
   if (!onClient) return null;
-  return createPortal(<div {...rest} className={`fixed inset-0 ${className}`} />, document.body);
+  return floatingPortal(<div {...rest} className={`fixed inset-0 ${className}`} />);
 }

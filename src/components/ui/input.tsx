@@ -85,6 +85,11 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   size?: Size;
   leadingIcon?: ReactNode;
   trailingIcon?: ReactNode;
+  /**
+   * A control at the field's end, drawn as given rather than as a 16px glyph:
+   * the password field's Show password button.
+   */
+  trailingAction?: ReactNode;
 }
 
 export function Input({
@@ -97,6 +102,7 @@ export function Input({
   readOnly = false,
   leadingIcon,
   trailingIcon,
+  trailingAction,
   id,
   style,
   className,
@@ -131,6 +137,7 @@ export function Input({
             {trailingIcon}
           </span>
         )}
+        {trailingAction}
       </span>
     </FieldShell>
   );

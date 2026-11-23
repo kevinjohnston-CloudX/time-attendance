@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode, type RefObject } from "react";
+import { useOutsidePress } from "./floating-layer";
 import styles from "./menu.module.css";
 
 /**
@@ -79,21 +80,18 @@ export function MenuItem({
  * before a window under the menu hears it, so it closes the menu only.
  */
 export function useMenuDismiss(open: boolean, close: () => void, ref: RefObject<HTMLElement | null>) {
+  // A press on a dropdown's list or a window drawn over the menu is not outside it.
+  useOutsidePress({ open, inside: [ref], onOutside: close });
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) close();
-    };
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       e.stopPropagation();
       close();
       ref.current?.querySelector<HTMLElement>('[aria-expanded="true"]')?.focus();
     };
-    document.addEventListener("pointerdown", onDown);
     window.addEventListener("keydown", onKey, true);
     return () => {
-      document.removeEventListener("pointerdown", onDown);
       window.removeEventListener("keydown", onKey, true);
     };
   }, [open, close, ref]);

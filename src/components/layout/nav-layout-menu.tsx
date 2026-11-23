@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { useOutsidePress } from "@/components/ui/floating-layer";
 import { Check, PanelLeft } from "lucide-react";
 import { navModeStore, useNavMode, type NavMode } from "./nav-mode";
 import styles from "./notification-bell.module.css";
@@ -22,21 +23,7 @@ export function NavLayoutMenu() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  useOutsidePress({ open, inside: [ref], onOutside: () => setOpen(false), escape: true });
 
   return (
     <div ref={ref} className="flex-none">

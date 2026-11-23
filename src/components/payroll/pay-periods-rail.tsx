@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { createPortal } from "react-dom";
+import { floatingPortal } from "@/components/ui/floating-layer";
 import Link from "next/link";
 import { ArrowUpRight, Calendar, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useRouter } from "@/components/layout/navigation-progress";
@@ -81,7 +81,7 @@ function inMonth(p: RailPeriod, month: string): boolean {
  *  rail's own layer cannot hold it under the tab bar; on a computer it stays
  *  beside the button it drops from. */
 function inPlaceOrOnTop(node: React.ReactNode) {
-  return isPhone() ? createPortal(node, document.body) : node;
+  return isPhone() ? floatingPortal(node) : node;
 }
 
 function IconBtn({ onClick, label, disabled, children, pressed }: { onClick: () => void; label: string; disabled?: boolean; children: React.ReactNode; pressed?: boolean }) {

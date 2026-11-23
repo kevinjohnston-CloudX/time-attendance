@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useOutsidePress } from "@/components/ui/floating-layer";
 import { CreditCard, FileText, IdCard, KeyRound, Printer, UserRound, X } from "lucide-react";
 import { Banner, Button, Input, Switch } from "@/components/ui";
 import { Overlay } from "@/components/ui/overlay";
@@ -89,14 +90,8 @@ export function ProfileWindow({ onClose }: { onClose: () => void }) {
     };
   }, []);
 
-  useEffect(() => {
-    if (!paperMenu) return;
-    const away = (ev: MouseEvent) => {
-      if (!(ev.target as HTMLElement).closest?.("[data-paper-menu]")) setPaperMenu(false);
-    };
-    document.addEventListener("mousedown", away);
-    return () => document.removeEventListener("mousedown", away);
-  }, [paperMenu]);
+  const paperMenuRef = useRef<HTMLSpanElement>(null);
+  useOutsidePress({ open: paperMenu, inside: [paperMenuRef], onOutside: () => setPaperMenu(false) });
 
   useEffect(() => {
     if (view === "password") document.getElementById("profile-current-password")?.focus();
@@ -345,7 +340,7 @@ export function ProfileWindow({ onClose }: { onClose: () => void }) {
                   {p?.badge?.active ? "Hold the code up to the scanner." : p?.badge ? "This badge does not open doors." : ""}
                 </p>
                 {p?.badge && (
-                  <span className={styles.printAnchor} data-paper-menu>
+                  <span ref={paperMenuRef} className={styles.printAnchor} data-paper-menu>
                     <Button
                       hierarchy="secondary"
                       size="sm"

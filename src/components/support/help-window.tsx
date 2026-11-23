@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { floatingPortal } from "@/components/ui/floating-layer";
 import { usePathname } from "next/navigation";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -901,7 +901,7 @@ function Shell({
   // selection that ends outside the window doesn't.
   const pressedBackdrop = useRef(false);
 
-  return createPortal(
+  return floatingPortal(
     <div
       className={`${styles.scrim} ta-sheet-scrim`}
       onMouseDown={(e) => (pressedBackdrop.current = e.target === e.currentTarget)}
@@ -938,7 +938,6 @@ function Shell({
         <div className={`ta-scroll ${styles.body}`}>{children}</div>
         <footer className={styles.foot}>{foot}</footer>
       </div>
-    </div>,
-    document.body,
+    </div>
   );
 }

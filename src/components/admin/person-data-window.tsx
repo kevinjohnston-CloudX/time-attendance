@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { floatingPortal } from "@/components/ui/floating-layer";
 import {
   AlertTriangle,
   Ban,
@@ -247,7 +247,7 @@ export function Shell({ title, subtitle, foot, onClose, children, glyph }: { tit
     };
   }, []);
 
-  return createPortal(
+  return floatingPortal(
     <div className={`${styles.scrim} ta-sheet-scrim`} onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="person-data-title" className={`${styles.window} ta-sheet`}>
         <header className={styles.head}>
@@ -267,7 +267,6 @@ export function Shell({ title, subtitle, foot, onClose, children, glyph }: { tit
         <div className={`ta-scroll ${styles.body}`}>{children}</div>
         <footer className={styles.foot}>{foot}</footer>
       </div>
-    </div>,
-    document.body,
+    </div>
   );
 }

@@ -79,7 +79,7 @@ const DESCRIPTIONS: Record<string, string> = {
   HOURS_TO_DATE:     "Each employee's hours in the dates beside their hours this year, with the average a week and a day they worked.",
   WEEKLY_OVERTIME:   "Each employee's overtime by week, with their pay rate and the OBBB amount: half the rate for each overtime hour.",
   ATTENDANCE_SUMMARY: "Each employee's month: days worked, days late, absences with and without a reason, missed punches and time off taken.",
-  HOURS_AND_PAY:     "Each employee's paid hours by kind (salary, regular, overtime, holiday, paid time off), their rate and their total pay, for payroll backup.",
+  HOURS_AND_PAY:     "Each employee's paid hours by kind (salary, regular, overtime, holiday, paid time off), their rate and their total pay, for payroll.",
 };
 
 const ICONS: Record<string, ElementType> = {
