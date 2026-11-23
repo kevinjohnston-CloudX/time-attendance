@@ -17,6 +17,7 @@ export { Badge, statusTone, exceptionTone, leaveTone, punchTone, payPeriodTone, 
 export { Card } from "./card";
 export { Select, SearchInput } from "./field";
 export { Input, Textarea, Checkbox, Switch, type InputProps } from "./input";
+export { PasswordInput } from "./password-input";
 export { PageHeader, PinnedBar, EmptyState } from "./page-header";
 export { Table, THead, TBody, TFoot, TR, TH, TD, TableFooter } from "./table";
 export { SegmentedControl, SegmentedLinks, type SegmentItem } from "./segmented";

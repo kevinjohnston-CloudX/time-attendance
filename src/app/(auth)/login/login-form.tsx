@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
-import { Banner, Button, Checkbox, Input } from "@/components/ui";
+import { Banner, Button, Checkbox, Input, PasswordInput } from "@/components/ui";
 import { BrandLockup } from "@/components/layout/brand-mark";
 import { rememberedEmailStore, useRememberedEmail } from "@/lib/remembered-email";
 import { inPhoneApp, onAppSigninReturn, startAppSignin } from "@/lib/native-app";
@@ -253,10 +253,10 @@ export function LoginForm({ microsoft }: { microsoft: boolean }) {
               </datalist>
             )}
 
-            <Input
+            {/* An eye at the end shows what was typed (Juan, 11/23); see PasswordInput. */}
+            <PasswordInput
               id="password"
               name="password"
-              type="password"
               label="Password"
               autoComplete="current-password"
               value={password}
