@@ -8,6 +8,8 @@ import { writeAuditLog } from "@/lib/audit/logger";
 import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { createCorrectionPunch } from "@/lib/utils/punch-correction";
 import { assertEditable, punchInScope, reachesCompany, timesheetInScope } from "@/lib/rbac/scope";
+import { siteLimit } from "@/lib/rbac/site-limit";
+import type { Permission } from "@/lib/rbac/permissions";
 import { computeRoundedTime } from "@/lib/utils/date";
 import {
   resolveExceptionSchema,
@@ -35,6 +37,50 @@ import { withoutVisitors } from "@/lib/utils/client-badge";
 // from Payroll Admin, reaches what Payroll Admin does. A super admin only
 // reaches these with a company: their own, as their employee record there
 // (see auth.ts).
+
+/** Narrows the employees a team screen reads: by person, by site, or neither. */
+type TeamFilter = { id?: { in: string[] }; siteId?: { in: string[] } };
+
+/**
+ * Whose rows a team screen shows. Someone reaching the company (above) sees
+ * everyone in it, or only the people at the sites on their record when Site
+ * access names some: a Payroll Admin for Brampton saw Bergen's exceptions,
+ * leave and punches here while Timecards and Employees held them to Brampton.
+ * Anyone else sees the people under them. Null when that is nobody.
+ */
+async function teamFilter(
+  ctx: { employeeId: string; role: string; tenantId: string | null },
+  companyWide: Permission,
+): Promise<TeamFilter | null> {
+  if (await reachesCompany(ctx, companyWide)) {
+    const sites = await siteLimit(ctx);
+    return sites ? { siteId: { in: sites } } : {};
+  }
+  const ids = await getSubordinateIds(ctx.employeeId, ctx.tenantId);
+  return ids.length > 0 ? { id: { in: ids } } : null;
+}
+
+/**
+ * The employees whose leave the leave queues list, with the screen's site,
+ * department and shift pickers, which only someone reaching the company is
+ * offered. The picked site is added to the sites they are held to, never put
+ * in its place, so picking another building finds nobody. Null when nobody.
+ */
+async function leaveEmployees(
+  ctx: { employeeId: string; role: string; tenantId: string | null },
+  picked: { siteId?: string; departmentId?: string; shiftId?: string },
+): Promise<Prisma.EmployeeWhereInput | null> {
+  const t = ownCompany(ctx.tenantId);
+  const reach = await teamFilter(ctx, "LEAVE_APPROVE_ANY");
+  if (!reach) return null;
+  if (reach.id) return { id: reach.id, tenantId: t };
+  return {
+    tenantId: t,
+    ...(picked.departmentId ? { departmentId: picked.departmentId } : {}),
+    ...(picked.shiftId ? { shiftId: picked.shiftId } : {}),
+    AND: [reach.siteId ? { siteId: reach.siteId } : {}, picked.siteId ? { siteId: picked.siteId } : {}],
+  };
+}
 
 /** Pay periods are stored at UTC midnight, so one day is that whole UTC day. */
 
@@ -69,15 +115,9 @@ export const getTeamExceptions = withRBAC(
       payPeriodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     }).parse(input ?? {});
 
-    const isPayroll = await reachesCompany({ employeeId, role, tenantId }, "TIMESHEET_APPROVE_ANY");
     const t = ownCompany(tenantId);
-
-    let idFilter: { id?: { in: string[] } } = {};
-    if (!isPayroll) {
-      const subordinateIds = await getSubordinateIds(employeeId, tenantId);
-      if (subordinateIds.length === 0) return [];
-      idFilter = { id: { in: subordinateIds } };
-    }
+    const idFilter = await teamFilter({ employeeId, role, tenantId }, "TIMESHEET_APPROVE_ANY");
+    if (!idFilter) return [];
     return readOpenExceptions({ t, idFilter, siteId, departmentId, shiftId, exceptionType, payPeriodStart });
   }
 );
@@ -103,14 +143,8 @@ export const getExceptionTypeCounts = withRBAC(
       payPeriodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     }).parse(input ?? {});
 
-    const isPayroll = await reachesCompany({ employeeId, role, tenantId }, "TIMESHEET_APPROVE_ANY");
-
-    let idFilter: { id?: { in: string[] } } = {};
-    if (!isPayroll) {
-      const subordinateIds = await getSubordinateIds(employeeId, tenantId);
-      if (subordinateIds.length === 0) return {};
-      idFilter = { id: { in: subordinateIds } };
-    }
+    const idFilter = await teamFilter({ employeeId, role, tenantId }, "TIMESHEET_APPROVE_ANY");
+    if (!idFilter) return {};
 
     const grouped = await db.exception.groupBy({
       by: ["exceptionType"],
@@ -120,7 +154,8 @@ export const getExceptionTypeCounts = withRBAC(
           ...(payPeriodStart ? { payPeriod: { startDate: dayRange(payPeriodStart) } } : {}),
           employee: {
             tenantId: ownCompany(tenantId),
-            ...idFilter,
+            // In AND, so the picked site below narrows their sites, not replaces them.
+            AND: [idFilter],
             ...(siteId ? { siteId } : {}),
             ...(departmentId ? { departmentId } : {}),
             ...(shiftId ? { shiftId } : {}),
@@ -148,14 +183,8 @@ export const getExceptionPunches = withRBAC(
   "TIMESHEET_APPROVE_TEAM",
   async ({ employeeId, role, tenantId }, input: unknown) => {
     const { timesheetId } = z.object({ timesheetId: z.string() }).parse(input);
-    const isPayroll = await reachesCompany({ employeeId, role, tenantId }, "TIMESHEET_APPROVE_ANY");
-
-    let idFilter: { id?: { in: string[] } } = {};
-    if (!isPayroll) {
-      const subordinateIds = await getSubordinateIds(employeeId, tenantId);
-      if (subordinateIds.length === 0) return null;
-      idFilter = { id: { in: subordinateIds } };
-    }
+    const idFilter = await teamFilter({ employeeId, role, tenantId }, "TIMESHEET_APPROVE_ANY");
+    if (!idFilter) return null;
 
     const timesheet = await db.timesheet.findFirst({
       where: {
@@ -463,22 +492,8 @@ export const getTeamLeaveRequests = withRBAC(
       shiftId: z.string().optional(),
     }).parse(input ?? {});
 
-    const isPayroll = await reachesCompany({ employeeId, role, tenantId }, "LEAVE_APPROVE_ANY");
-    const t = ownCompany(tenantId);
-
-    let employeeFilter;
-    if (isPayroll) {
-      employeeFilter = {
-        tenantId: t,
-        ...(siteId ? { siteId } : {}),
-        ...(departmentId ? { departmentId } : {}),
-        ...(shiftId ? { shiftId } : {}),
-      };
-    } else {
-      const subordinateIds = await getSubordinateIds(employeeId, tenantId);
-      if (subordinateIds.length === 0) return [];
-      employeeFilter = { id: { in: subordinateIds }, tenantId: t };
-    }
+    const employeeFilter = await leaveEmployees({ employeeId, role, tenantId }, { siteId, departmentId, shiftId });
+    if (!employeeFilter) return [];
 
     return db.leaveRequest.findMany({
       where: { status: "PENDING", employee: employeeFilter },
@@ -523,22 +538,8 @@ export const getTeamHeadcount = withRBAC(
       shiftId: z.string().optional(),
     }).parse(input ?? {});
 
-    const isPayroll = await reachesCompany({ employeeId, role, tenantId }, "LEAVE_APPROVE_ANY");
-    const t = ownCompany(tenantId);
-
-    let employeeFilter;
-    if (isPayroll) {
-      employeeFilter = {
-        tenantId: t,
-        ...(siteId ? { siteId } : {}),
-        ...(departmentId ? { departmentId } : {}),
-        ...(shiftId ? { shiftId } : {}),
-      };
-    } else {
-      const subordinateIds = await getSubordinateIds(employeeId, tenantId);
-      if (subordinateIds.length === 0) return { total: 0, byDepartment: [] };
-      employeeFilter = { id: { in: subordinateIds }, tenantId: t };
-    }
+    const employeeFilter = await leaveEmployees({ employeeId, role, tenantId }, { siteId, departmentId, shiftId });
+    if (!employeeFilter) return { total: 0, byDepartment: [] };
 
     // By department at each site: a department is the same one at every
     // site, and who covers the work is the people in it in the same building.
@@ -583,22 +584,8 @@ export const getHrPendingLeave = withRBAC(
       shiftId: z.string().optional(),
     }).parse(input ?? {});
 
-    const isPayroll = await reachesCompany({ employeeId, role, tenantId }, "LEAVE_APPROVE_ANY");
-    const t = ownCompany(tenantId);
-
-    let employeeFilter;
-    if (isPayroll) {
-      employeeFilter = {
-        tenantId: t,
-        ...(siteId ? { siteId } : {}),
-        ...(departmentId ? { departmentId } : {}),
-        ...(shiftId ? { shiftId } : {}),
-      };
-    } else {
-      const subordinateIds = await getSubordinateIds(employeeId, tenantId);
-      if (subordinateIds.length === 0) return [];
-      employeeFilter = { id: { in: subordinateIds }, tenantId: t };
-    }
+    const employeeFilter = await leaveEmployees({ employeeId, role, tenantId }, { siteId, departmentId, shiftId });
+    if (!employeeFilter) return [];
 
     return db.leaveRequest.findMany({
       where: { status: "PENDING_HR", employee: employeeFilter },
@@ -634,24 +621,10 @@ export const getUpcomingTeamLeave = withRBAC(
       shiftId: z.string().optional(),
     }).parse(input ?? {});
 
-    const isPayroll = await reachesCompany({ employeeId, role, tenantId }, "LEAVE_APPROVE_ANY");
-    const t = ownCompany(tenantId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
-    let employeeFilter;
-    if (isPayroll) {
-      employeeFilter = {
-        tenantId: t,
-        ...(siteId ? { siteId } : {}),
-        ...(departmentId ? { departmentId } : {}),
-        ...(shiftId ? { shiftId } : {}),
-      };
-    } else {
-      const subordinateIds = await getSubordinateIds(employeeId, tenantId);
-      if (subordinateIds.length === 0) return [];
-      employeeFilter = { id: { in: subordinateIds }, tenantId: t };
-    }
+    const employeeFilter = await leaveEmployees({ employeeId, role, tenantId }, { siteId, departmentId, shiftId });
+    if (!employeeFilter) return [];
 
     return db.leaveRequest.findMany({
       where: {

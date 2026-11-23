@@ -328,6 +328,7 @@ async function buildPresenceBoard(tenantId: string, siteId: string): Promise<Pre
           payType: true,
           department: { select: { id: true, name: true } },
           shift: { select: { id: true, name: true, ...SHIFT_HOURS_SELECT } },
+          agencyRef: { select: { id: true, description: true } },
         },
       })
     : [];
@@ -419,6 +420,8 @@ async function buildPresenceBoard(tenantId: string, siteId: string): Promise<Pre
       jobTitle: emp.jobTitle?.trim() || null,
       shiftId: emp.shift?.id ?? null,
       shift: emp.shift?.name ?? null,
+      agencyId: emp.agencyRef?.id ?? null,
+      agency: emp.agencyRef?.description ?? null,
       photoUrl: photos.get(emp.id) ?? null,
       salaried: emp.payType === "SALARY",
       visitor,

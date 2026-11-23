@@ -179,6 +179,29 @@
   min-width: 0;
 }
 
+/* A 3 × 4 in lanyard badge: the same card, standing 3 wide by 4 tall. The
+   code shrinks to the room left, so nothing else moves. */
+.badge[data-shape="3x4"] {
+  display: flex;
+  flex-direction: column;
+  aspect-ratio: 3 / 4;
+}
+
+.badge[data-shape="3x4"] .plate {
+  display: grid;
+  flex: 1 1 0;
+  min-height: 0;
+  place-items: center;
+  padding: 16px;
+}
+
+.badge[data-shape="3x4"] .qr {
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+  aspect-ratio: 1;
+}
+
 @media (max-width: 380px) {
   .band { padding-inline: 20px; }
   .identity { padding-inline: 20px; }

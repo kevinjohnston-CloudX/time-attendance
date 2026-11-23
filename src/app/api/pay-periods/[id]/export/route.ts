@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
+import { siteLimit } from "@/lib/rbac/site-limit";
 import { csvCell } from "@/lib/csv-cell";
 import { db } from "@/lib/db";
 import { format } from "date-fns";
@@ -50,6 +51,10 @@ export async function GET(
   if (session.user.role === "SUPER_ADMIN") tenantId = (await cookies()).get(SUPER_ADMIN_TENANT_COOKIE)?.value ?? null;
   if (payPeriod.tenantId !== ownCompany(tenantId)) return new NextResponse("Not found", { status: 404 });
 
+  // Held to some sites (Site access), their sites' people only, as on the screen.
+  const sites = await siteLimit({ employeeId: session.user.employeeId ?? "", role: session.user.role });
+  const atSites = sites ? { employee: { siteId: { in: sites } } } : {};
+
   const periodLabel = `${format(parseUtcDate(payPeriod.startDate), "yyyy-MM-dd")}_to_${format(parseUtcDate(payPeriod.endDate), "yyyy-MM-dd")}`;
 
   let csv = "";
@@ -57,7 +62,7 @@ export async function GET(
 
   if (exportFormat === "summary") {
     const timesheets = await db.timesheet.findMany({
-      where: { payPeriodId: id },
+      where: { payPeriodId: id, ...atSites },
       include: {
         employee: {
           include: {
@@ -96,7 +101,7 @@ export async function GET(
 
   } else if (exportFormat === "punches") {
     const punches = await db.punch.findMany({
-      where: { timesheet: { payPeriodId: id }, correctedById: null, isRejected: false },
+      where: { timesheet: { payPeriodId: id, ...atSites }, correctedById: null, isRejected: false },
       include: {
         employee: { include: { user: { select: { name: true } }, site: { select: { timezone: true } } } },
       },
@@ -129,7 +134,7 @@ export async function GET(
 
   } else if (exportFormat === "exceptions") {
     const exceptions = await db.exception.findMany({
-      where: { timesheet: { payPeriodId: id } },
+      where: { timesheet: { payPeriodId: id, ...atSites } },
       include: {
         timesheet: {
           include: {

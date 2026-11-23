@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { SESSION_ENDED_HREF } from "@/lib/auth.config";
 import { auth } from "@/lib/auth";
 import { userHasPermission } from "@/lib/rbac/check-permission";
+import { siteLimit } from "@/lib/rbac/site-limit";
 import { getTeamExceptions, getExceptionTypeCounts } from "@/actions/supervisor.actions";
 import { ExceptionsScreen, type ExceptionRow } from "@/components/supervisor/exceptions-screen";
 import { db } from "@/lib/db";
@@ -73,13 +74,16 @@ export default async function ExceptionsPage({
     if (linked) payPeriodStart = dayKey(parseUtcDate(linked.startDate));
   }
 
+  // Only the sites on their record (Site access) in the site picker, when it names some.
+  const heldTo = await siteLimit({ employeeId: session.user.employeeId ?? "", role: session.user.role });
+
   const [result, counts, sites, departments, shifts, reasonCodes, rawPayPeriods] = await Promise.all([
     getTeamExceptions({ siteId, departmentId, shiftId, exceptionType, payPeriodStart }),
     // Taken without the type filter on purpose, so the type control can say
     // what picking a different one would get you.
     getExceptionTypeCounts({ siteId, departmentId, shiftId, payPeriodStart }),
     db.site.findMany({
-      where: { tenantId, isActive: true },
+      where: { tenantId, isActive: true, ...(heldTo ? { id: { in: heldTo } } : {}) },
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),

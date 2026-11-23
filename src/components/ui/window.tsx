@@ -44,6 +44,7 @@ export function Window({
   closeOnScrim = true,
   dismissible = true,
   alert = false,
+  raised = false,
   side = false,
   onSubmit,
   initialFocus,
@@ -75,6 +76,9 @@ export function Window({
   dismissible?: boolean;
   /** A confirmation: read out as an alert, and always above whatever opened it. */
   alert?: boolean;
+  /** Opened from a sheet that is not a window (a phone's Filters sheet), so
+   *  it must sit above it as a window over a window does. */
+  raised?: boolean;
   /** A panel down the right edge, full height, for looking through a list
    *  one entry at a time while the list stays in view. A sheet on a phone. */
   side?: boolean;
@@ -104,7 +108,7 @@ export function Window({
   useEffect(() => {
     stack.push(id);
     // Counted once, on open: a window opened over another sits above it.
-    setDepth(alert || stack.length > 1 ? 2 : 1);
+    setDepth(alert || raised || stack.length > 1 ? 2 : 1);
     const opener = document.activeElement as HTMLElement | null;
     const start = initialFocus?.current;
     const field = start && !start.matches("input, textarea, select") ? start.querySelector<HTMLElement>("input, textarea, select") : start;

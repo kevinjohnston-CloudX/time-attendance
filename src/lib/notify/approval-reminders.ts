@@ -5,7 +5,7 @@ import type { PushMessage } from "@/lib/push/types";
 import { hasPermissionByLegacy } from "@/lib/rbac/permission-resolver";
 import { countMissedPunchRequests } from "@/lib/team/team-overview";
 import { emailUsers, leaveDays, leaveHours, type ApprovalEmail } from "./approval-email";
-import { hrApprovers } from "./approvers";
+import { coversSite, hrApprovers, type HrApprover } from "./approvers";
 
 /**
  * The two reminders about approvals left waiting, chosen over a daily nag
@@ -67,6 +67,7 @@ export async function remindTimeOffStartingSoon(now: Date, { send }: { send: boo
         select: {
           id: true,
           tenantId: true,
+          siteId: true,
           user: { select: { name: true } },
           supervisor: { select: { userId: true, isActive: true } },
         },
@@ -74,7 +75,7 @@ export async function remindTimeOffStartingSoon(now: Date, { send }: { send: boo
     },
   });
 
-  const hrByCompany = new Map<string, Awaited<ReturnType<typeof hrApprovers>>>();
+  const hrByCompany = new Map<string, HrApprover[]>();
   const plan: Planned[] = [];
   for (const r of requests) {
     const name = fullName(r.employee.user?.name);
@@ -97,7 +98,9 @@ export async function remindTimeOffStartingSoon(now: Date, { send }: { send: boo
     } else {
       const tenantId = r.employee.tenantId;
       if (!hrByCompany.has(tenantId)) hrByCompany.set(tenantId, await hrApprovers(tenantId));
-      userIds = hrByCompany.get(tenantId)!.filter((a) => a.employeeId !== r.employee.id).map((a) => a.userId);
+      userIds = hrByCompany.get(tenantId)!
+        .filter((a) => a.employeeId !== r.employee.id && coversSite(a, r.employee.siteId))
+        .map((a) => a.userId);
       waitingFor = "HR approval";
       href = "/approvals?view=leave&tab=hr-pending";
     }
@@ -179,13 +182,14 @@ export async function weeklyApprovalSummary({ send }: { send: boolean }): Promis
   // HR: every request waiting on HR in their company, except their own.
   const hrWaiting = await db.leaveRequest.findMany({
     where: { status: "PENDING_HR", employee: { isActive: true } },
-    select: { employee: { select: { id: true, tenantId: true } } },
+    select: { employee: { select: { id: true, tenantId: true, siteId: true } } },
   });
-  const byCompany = new Map<string, string[]>();
-  for (const r of hrWaiting) byCompany.set(r.employee.tenantId, [...(byCompany.get(r.employee.tenantId) ?? []), r.employee.id]);
+  const byCompany = new Map<string, { id: string; siteId: string }[]>();
+  for (const r of hrWaiting) byCompany.set(r.employee.tenantId, [...(byCompany.get(r.employee.tenantId) ?? []), r.employee]);
   for (const [tenantId, owners] of byCompany) {
     for (const a of await hrApprovers(tenantId)) {
-      const timeOffHr = owners.filter((o) => o !== a.employeeId).length;
+      // At their own sites only, as Approvals lists them.
+      const timeOffHr = owners.filter((o) => o.id !== a.employeeId && coversSite(a, o.siteId)).length;
       if (timeOffHr) add(a.userId, { timeOffHr });
     }
   }

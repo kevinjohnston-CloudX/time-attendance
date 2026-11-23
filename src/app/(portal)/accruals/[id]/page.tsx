@@ -11,6 +11,8 @@ import { Card, LinkButton, PageHeader } from "@/components/ui";
 import { db } from "@/lib/db";
 import { format, differenceInMonths, differenceInDays, addMonths } from "date-fns";
 import { parseUtcDate } from "@/lib/utils/date";
+import { NOVATIME_IMPORT_NOTE } from "@/lib/engines/novatime-import-leave";
+import { WAIT_RELEASE_NOTE } from "@/lib/engines/accrual-engine";
 
 /**
  * One employee's accruals, on the design's doc template: the policies that
@@ -104,8 +106,10 @@ export default async function EmployeeAccrualsPage({
         where: { employeeId: id, status: { in: ["APPROVED", "PENDING", "PENDING_HR"] }, startDate: { gte: yearStart, lt: yearEnd } },
         select: { leaveTypeId: true, durationSeconds: true, status: true },
       }),
+      // This year's, as Accrued beside it: every year's was counted, so leave
+      // taken last year made Booked larger than anything this year's balance shows.
       db.leaveRequest.findMany({
-        where: { employeeId: id, status: "POSTED" },
+        where: { employeeId: id, status: "POSTED", startDate: { gte: yearStart, lt: yearEnd } },
         select: { leaveTypeId: true, durationSeconds: true },
       }),
       db.leaveBalance.findMany({
@@ -123,6 +127,14 @@ export default async function EmployeeAccrualsPage({
   const timecardRequestIds = new Set(
     timecardDeductionEntries.map((e) => e.leaveRequestId).filter(Boolean)
   );
+  // NovaTime's charge given back when its imported day was entered again here
+  // (replaceNovaTimeImports) undoes a charge Booked never counted, so it is no
+  // adjustment of the balance either.
+  const importGiveBacks = await db.leaveAccrualLedger.findMany({
+    where: { employeeId: id, action: "ADJUSTMENT", leaveRequest: { note: NOVATIME_IMPORT_NOTE } },
+    select: { leaveRequestId: true },
+  });
+  for (const e of importGiveBacks) if (e.leaveRequestId) timecardRequestIds.add(e.leaveRequestId);
   const adjustmentSums = await db.leaveAccrualLedger.groupBy({
     by: ["leaveTypeId"],
     where: {
@@ -132,6 +144,10 @@ export default async function EmployeeAccrualsPage({
       leaveRequestId: timecardRequestIds.size > 0
         ? { notIn: [...timecardRequestIds] as string[] }
         : undefined,
+      // A new hire's release after the waiting period makes balance of hours
+      // Accrued already shows (accrual-engine, WAIT_RELEASE_NOTE): no adjustment.
+      // Spelled with the empty note kept: NOT on its own drops rows with none.
+      OR: [{ note: null }, { NOT: { note: { startsWith: WAIT_RELEASE_NOTE } } }],
     },
     _sum: { deltaSeconds: true },
   });

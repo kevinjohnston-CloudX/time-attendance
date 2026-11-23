@@ -61,6 +61,9 @@ export interface PresencePerson {
   jobTitle: string | null;
   shiftId: string | null;
   shift: string | null;
+  /** Their agency (Bergen for the company's own people), or null for none: the Agency filter. */
+  agencyId: string | null;
+  agency: string | null;
   /**
    * A signed link to the tablet photo (see photos.ts), or null. The board
    * draws initials in the same frame, which show when there is no photo.
@@ -247,6 +250,8 @@ export interface ScanLogQuery {
   visitors?: boolean;
   departmentId: string | null;
   shiftId: string | null;
+  /** The Agency filter (lib/agency-filter); empty or missing for everybody. */
+  agencyIds?: string[] | null;
   q: string | null;
   /**
    * People picked in the search box. With them the log shows those people,
@@ -370,6 +375,9 @@ export interface DayPerson {
   jobTitle: string | null;
   shiftId: string | null;
   shift: string | null;
+  /** Their agency, or null for none: the Agency filter (PresencePerson.agencyId). */
+  agencyId: string | null;
+  agency: string | null;
   /** A signed link to the tablet photo, or null. */
   photoUrl: string | null;
   /** Paid a salary, so not expected to use the time clock. */

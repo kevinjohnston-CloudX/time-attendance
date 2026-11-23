@@ -32,6 +32,7 @@ export default async function OnSitePage({
     status?: string;
     dept?: string;
     shift?: string;
+    agency?: string;
     view?: string;
     sort?: string;
     group?: string;
@@ -108,6 +109,7 @@ export default async function OnSitePage({
         status: params.status ?? null,
         dept: params.dept ?? null,
         shift: params.shift ?? null,
+        agency: params.agency ?? null,
         view: params.view === "list" ? "list" : params.view === "compact" ? "compact" : "photos",
         sort: params.sort ?? null,
         group: params.group ?? null,

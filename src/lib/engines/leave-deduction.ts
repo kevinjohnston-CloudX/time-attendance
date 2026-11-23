@@ -2,6 +2,7 @@ import { getYear } from "date-fns";
 import { db } from "@/lib/db";
 import type { LeaveCategory, PayBucket } from "@prisma/client";
 import { CATEGORY_TO_BUCKET } from "@/lib/engines/leave-segment-builder";
+import { replaceNovaTimeImports } from "@/lib/engines/novatime-import-leave";
 
 function categoryToPayBucket(category: LeaveCategory): PayBucket | null {
   const map: Partial<Record<LeaveCategory, PayBucket>> = {
@@ -34,6 +35,14 @@ async function debitBalance(
   accrualYear: number,
   actorId?: string | null
 ): Promise<void> {
+  // NovaTime's own booking of this day, charged already, steps aside (a PTO
+  // punch on a day loaded from NovaTime was charged twice: David Hernandez, 9/14).
+  const request = await db.leaveRequest.findUnique({
+    where: { id: leaveRequestId },
+    select: { id: true, employeeId: true, leaveTypeId: true, startDate: true, endDate: true, note: true, selectedDays: true },
+  });
+  if (request) await replaceNovaTimeImports(db, request, actorId);
+
   const balance = await db.leaveBalance.upsert({
     where: { employeeId_leaveTypeId_accrualYear: { employeeId, leaveTypeId, accrualYear } },
     update: {},

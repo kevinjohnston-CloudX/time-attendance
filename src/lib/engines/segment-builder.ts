@@ -592,7 +592,7 @@ async function applyAutoPayCredits(
   shift: { startTime: string; endTime: string; workDays: number[] } | null,
   creditsFrom?: Date,
   chosenCodes: Map<string, ChosenCode> = new Map(),
-): Promise<void> {
+): Promise<Set<string>> {
   // Normalize to the last inclusive calendar day.
   // Midnight endDate = exclusive next-day boundary (weekly/biweekly + new semi/monthly periods).
   // Non-midnight endDate = end-of-day inclusive (legacy semi-monthly/monthly periods).
@@ -634,7 +634,7 @@ async function applyAutoPayCredits(
     const startMins = sh * 60 + sm;
     if (endMins <= startMins) endMins += 1440;
     const dailyMinutes = endMins - startMins;
-    if (dailyMinutes <= 0) return;
+    if (dailyMinutes <= 0) return new Set();
 
     for (const d of allDays) {
       if (creditsFrom && format(d, "yyyy-MM-dd") < format(creditsFrom, "yyyy-MM-dd")) continue;
@@ -695,8 +695,23 @@ async function applyAutoPayCredits(
     }
   }
 
-  if (toCreate.length === 0) return;
+  if (toCreate.length === 0) return new Set();
   await db.workSegment.createMany({ data: toCreate });
+  return autoPaidDays(toCreate, chosenCodes);
+}
+
+/**
+ * The days given salary hours automatically ("yyyy-MM-dd"), leaving out a day
+ * whose hours carry a code picked for it. A paid holiday takes the place of
+ * these hours (syncHolidayCredits): a salaried person was paid 8 regular hours
+ * and 8 holiday hours on Labor Day, 9/7.
+ */
+export function autoPaidDays(created: SegmentInput[], chosenCodes: Map<string, ChosenCode>): Set<string> {
+  return new Set(
+    created
+      .map((s) => s.segmentDate.toISOString().slice(0, 10))
+      .filter((day) => !chosenCodes.has(day)),
+  );
 }
 
 /**
@@ -718,14 +733,14 @@ async function ensureSalarySegments(
   defaultPayCodeId?: string | null,
   creditsFrom?: Date,
   chosenCodes: Map<string, ChosenCode> = new Map(),
-): Promise<void> {
+): Promise<Set<string>> {
   const isExclusiveEnd = periodEnd.getUTCHours() === 0 && periodEnd.getUTCMinutes() === 0 && periodEnd.getUTCSeconds() === 0;
   const periodEndInclusive = isExclusiveEnd ? addDays(periodEnd, -1) : periodEnd;
 
   const workDays = eachDayOfInterval({ start: periodStart, end: periodEndInclusive }).filter(
     (d) => !isWeekend(d)
   );
-  if (workDays.length === 0) return;
+  if (workDays.length === 0) return new Set();
 
   // Find dates that already have a WORK segment from real punches.
   const existing = await db.workSegment.findMany({
@@ -775,6 +790,7 @@ async function ensureSalarySegments(
   if (toCreate.length > 0) {
     await db.workSegment.createMany({ data: toCreate });
   }
+  return autoPaidDays(toCreate, chosenCodes);
 }
 
 /**
@@ -1431,10 +1447,11 @@ export async function rebuildSegments(
   const lastDay = endedOn(timesheet.employee);
   const afterLastDay = lastDay ? new Date(Date.parse(lastDay + "T00:00:00Z") + 86_400_000) : null;
   const creditsEnd = afterLastDay && afterLastDay < dates.endExclusive ? afterLastDay : dates.endExclusive;
+  let salaryAutoPaidDays = new Set<string>();
   if (creditsEnd <= dates.start) {
     // Gone before the period began: no salary hours at all.
   } else if (ruleSet.autoPayEnabled && isSalary) {
-    await applyAutoPayCredits(
+    salaryAutoPaidDays = await applyAutoPayCredits(
       timesheetId,
       dates.start,
       creditsEnd,
@@ -1444,7 +1461,7 @@ export async function rebuildSegments(
       chosenCodes,
     );
   } else if (isSalary) {
-    await ensureSalarySegments(
+    salaryAutoPaidDays = await ensureSalarySegments(
       timesheetId,
       dates.start,
       creditsEnd,
@@ -1475,7 +1492,7 @@ export async function rebuildSegments(
   if (timesheet.employee.holidayRule && tenantId) {
     const _hr = timesheet.employee.holidayRule;
     // First and last day, both inclusive, as the holiday code reads them.
-    await syncHolidayCredits(
+    const holidayPaidDays = await syncHolidayCredits(
       timesheetId,
       timezone,
       dates.start,
@@ -1498,8 +1515,26 @@ export async function rebuildSegments(
         adjustedHireDate: timesheet.employee.adjustedHireDate,
         dateOfBirth:     timesheet.employee.dateOfBirth,
       },
-      ruleSet.weekStartDay
+      ruleSet.weekStartDay,
+      salaryAutoPaidDays,
     );
+    // A paid holiday takes the place of the day's salary hours: the day was
+    // paid twice, 8 regular and 8 holiday hours (every salaried person on
+    // Labor Day, 9/7). Those hours are gone once the holiday is credited, so
+    // overtime is worked out again without them; it counts work lines only, so
+    // the holiday hours change nothing there.
+    const replaced = [...holidayPaidDays].filter((day) => salaryAutoPaidDays.has(day));
+    if (replaced.length > 0) {
+      await db.workSegment.deleteMany({
+        where: {
+          timesheetId,
+          segmentType: "WORK",
+          leaveRequestId: null,
+          segmentDate: { in: replaced.map((day) => new Date(day + "T00:00:00.000Z")) },
+        },
+      });
+      await applyOvertime(timesheetId, ruleSet, timesheet.employee.shift ?? null, timezone);
+    }
     if (timesheet.employee.holidayRule.countTowardOt) {
       await applyHolidayOtAdjustment(timesheetId, ruleSet);
     }
@@ -1874,9 +1909,10 @@ async function syncMissingPunchExceptions(
  *  - A premium segment for any hours actually worked on the holiday (workingPremium - 100)/100 × worked
  *
  * Called after applyOvertime() so HOLIDAY segments are not touched by the OT engine,
- * and after the HOLIDAY OvertimeBucket has been cleared by the caller.
+ * and after the HOLIDAY OvertimeBucket has been cleared by the caller. Returns
+ * the holidays it credited with hours. Exported for its test.
  */
-async function syncHolidayCredits(
+export async function syncHolidayCredits(
   timesheetId: string,
   timezone: string,
   payPeriodStart: Date,
@@ -1937,8 +1973,14 @@ async function syncHolidayCredits(
     adjustedHireDate: Date | null;
     dateOfBirth: Date | null;
   },
-  weekStartDay: number
-): Promise<void> {
+  weekStartDay: number,
+  // Days given salary hours automatically: hours nobody clocked, so not work
+  // on the holiday.
+  salaryAutoPaidDays: Set<string> = new Set(),
+): Promise<Set<string>> {
+  // The holidays credited with hours ("yyyy-MM-dd"), returned to the caller.
+  const paidDays = new Set<string>();
+
   // If the rule has specific holidays assigned, only credit those.
   // Otherwise fall back to all active tenant holidays (backward-compatible for unconfigured rules).
   const assignedCount = await db.holidayRuleHoliday.count({ where: { holidayRuleId: rule.id } });
@@ -1984,7 +2026,7 @@ async function syncHolidayCredits(
     }
   }
 
-  if (holidayBypassAfter.size === 0) return;
+  if (holidayBypassAfter.size === 0) return paidDays;
   const holidayDates = new Set(holidayBypassAfter.keys());
 
   // Paid WORK segments — include payBucket to separate REG from OT for prorate
@@ -2004,7 +2046,7 @@ async function syncHolidayCredits(
 
   // Minimum period check
   const totalWorkedMins = [...workedMinsByDay.values()].reduce((a, b) => a + b, 0);
-  if (rule.minPeriodMinutes > 0 && totalWorkedMins < rule.minPeriodMinutes) return;
+  if (rule.minPeriodMinutes > 0 && totalWorkedMins < rule.minPeriodMinutes) return paidDays;
 
   // Days with any activity (for requireDayBefore/After checks)
   const punchedDays  = new Set(punches.map((p) => localDateOf(p.roundedTime)));
@@ -2035,11 +2077,27 @@ async function syncHolidayCredits(
     return "";
   }
 
+  // The work day before or after a holiday can fall in the previous or next
+  // pay period: New Year's Day 2027 is the Friday that ends one, and the
+  // Monday after it starts the next, so its day after was never seen and
+  // nobody got the holiday. Read those days from the other timecards.
+  const minsOutsidePeriod = await workOutsidePeriod(
+    employee.id,
+    timesheetId,
+    [...holidayDates]
+      .filter((ds) => ds >= periodStartStr && ds <= periodEndStr && ds < todayStr && !salaryAutoPaidDays.has(ds))
+      .flatMap((ds) => [adjacentWorkDay(ds, -1), adjacentWorkDay(ds, 1)])
+      .filter((day) => day && (day < periodStartStr || day > periodEndStr) && day < todayStr),
+    localDateOf,
+  );
+  for (const day of minsOutsidePeriod.keys()) activityDays.add(day);
+
   // Returns true if the employee worked at least requireScheduledHoursPctValue% of their
   // scheduled hours on the given day.
   function meetsScheduledHoursPct(ds: string): boolean {
     if (!rule.requireScheduledHoursPct || shiftDurationMins <= 0) return true;
-    return (workedMinsByDay.get(ds) ?? 0) / shiftDurationMins >= rule.requireScheduledHoursPctValue / 100;
+    const worked = workedMinsByDay.get(ds) ?? minsOutsidePeriod.get(ds) ?? 0;
+    return worked / shiftDurationMins >= rule.requireScheduledHoursPctValue / 100;
   }
 
   // Returns true if the employee worked at least requireDaysWorkedCount qualifying days
@@ -2165,10 +2223,16 @@ async function syncHolidayCredits(
   const accrualMins: { ds: string; mins: number }[] = [];
 
   for (const ds of holidayDates) {
-    if (ds < periodStartStr || ds >= periodEndStr) continue;
-    if (ds >= todayStr) continue;
+    // Both days inclusive: a holiday on the period's last day was left out.
+    if (ds < periodStartStr || ds > periodEndStr) continue;
+    // A day given salary hours automatically is paid as the holiday from the
+    // start, as the rest of the period is paid ahead. The days around it would
+    // only change the code its hours carry, regular or holiday, so they are
+    // not waited for or checked.
+    const salaryDay = salaryAutoPaidDays.has(ds);
+    if (!salaryDay && ds >= todayStr) continue;
 
-    const workedMinsOnHoliday = workedMinsByDay.get(ds) ?? 0;
+    const workedMinsOnHoliday = salaryDay ? 0 : (workedMinsByDay.get(ds) ?? 0);
 
     // mustNotWorkOnHoliday: if employee worked any hours on the holiday, skip entirely
     if (rule.mustNotWorkOnHoliday && workedMinsOnHoliday > 0) continue;
@@ -2186,7 +2250,9 @@ async function syncHolidayCredits(
     const bypassAfter = rule.bypassAfterEligibility && (holidayBypassAfter.get(ds) ?? false);
 
     // Day-before / day-after eligibility
-    if (rule.requireDayBeforeOrAfter) {
+    if (salaryDay) {
+      // Not checked: see above.
+    } else if (rule.requireDayBeforeOrAfter) {
       const prev = adjacentWorkDay(ds, -1);
       const prevOk = !!prev && activityDays.has(prev) && meetsScheduledHoursPct(prev);
       let afterOk = bypassAfter;
@@ -2235,6 +2301,7 @@ async function syncHolidayCredits(
 
     // payNonWorkingHolidayOnly: only post credit segment if employee did NOT work the holiday
     if ((!rule.payNonWorkingHolidayOnly || workedMinsOnHoliday === 0) && creditMins > 0) {
+      paidDays.add(ds);
       toCreate.push({
         timesheetId,
         segmentType: "HOLIDAY",
@@ -2350,6 +2417,59 @@ async function syncHolidayCredits(
       ]);
     }
   }
+  return paidDays;
+}
+
+/**
+ * Minutes worked on each of these days ("yyyy-MM-dd", the site's calendar) on
+ * the person's other timecards, for a holiday whose day before or after falls
+ * in another pay period. A day with a clock punch counts even before its hours
+ * are worked out, as punches do on the holiday's own timecard.
+ */
+async function workOutsidePeriod(
+  employeeId: string,
+  timesheetId: string,
+  days: string[],
+  localDateOf: (d: Date) => string,
+): Promise<Map<string, number>> {
+  const wanted = new Set(days);
+  const mins = new Map<string, number>();
+  if (wanted.size === 0) return mins;
+  const sorted = [...wanted].sort();
+  // A day either side, for the site's time zone.
+  const from = new Date(Date.parse(sorted[0] + "T00:00:00.000Z") - 86_400_000);
+  const to = new Date(Date.parse(sorted[sorted.length - 1] + "T00:00:00.000Z") + 2 * 86_400_000);
+  const [segments, punches] = await Promise.all([
+    db.workSegment.findMany({
+      where: {
+        timesheet: { employeeId },
+        timesheetId: { not: timesheetId },
+        segmentType: "WORK",
+        isPaid: true,
+        segmentDate: { in: sorted.map((day) => new Date(day + "T00:00:00.000Z")) },
+      },
+      select: { segmentDate: true, durationMinutes: true },
+    }),
+    db.punch.findMany({
+      where: {
+        employeeId,
+        isApproved: true,
+        correctedById: null,
+        timesheetId: { not: timesheetId },
+        roundedTime: { gte: from, lt: to },
+      },
+      select: { roundedTime: true },
+    }),
+  ]);
+  for (const s of segments) {
+    const day = s.segmentDate.toISOString().slice(0, 10);
+    mins.set(day, (mins.get(day) ?? 0) + s.durationMinutes);
+  }
+  for (const p of punches) {
+    const day = localDateOf(p.roundedTime);
+    if (wanted.has(day) && !mins.has(day)) mins.set(day, 0);
+  }
+  return mins;
 }
 
 /**

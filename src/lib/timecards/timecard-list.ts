@@ -21,8 +21,9 @@ import { withoutVisitors } from "@/lib/utils/client-badge";
  *
  * <p>Active people are always listed. Inactive people are listed when they
  * have a timecard in those days (a last paycheck, a timecard still open), for
- * the "Active employees only" filter to bring back; before, the list held
- * active people only, so that filter did nothing.
+ * the Employment filter's Inactive to bring back; before, the list held
+ * active people only, so that filter did nothing. Active people on leave
+ * are marked, for its On leave.
  */
 export async function timecardList(scope: Prisma.EmployeeWhereInput, tenantId: string | null | undefined, payPeriodId: string | null) {
   let days: { firstDay: string; lastDay: string } | null = null;
@@ -78,6 +79,7 @@ export async function timecardList(scope: Prisma.EmployeeWhereInput, tenantId: s
       employeeCode: true,
       wmsId: true,
       isActive: true,
+      onLeave: true,
       payType: true,
       hireDate: true,
       adjustedHireDate: true,
@@ -101,6 +103,9 @@ export async function timecardList(scope: Prisma.EmployeeWhereInput, tenantId: s
       siteId: emp.site?.id ?? null,
       siteName: emp.site?.name ?? null,
       isActive: emp.isActive,
+      // Active but away (Status "On leave" on their record): the list's
+      // Employment filter tells them apart.
+      onLeave: emp.isActive && emp.onLeave,
       payType: emp.payType ?? null,
       startedOn: startedOn(emp),
       endedOn: endedOn(emp),

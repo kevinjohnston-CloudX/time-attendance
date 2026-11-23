@@ -12,7 +12,8 @@ import {
 import { writeAuditLog } from "@/lib/audit/logger";
 import { nextTenantPeriod } from "@/lib/pay-period-utils";
 import { lockPeriod } from "@/lib/payroll/lock-period";
-import type { PayFrequency } from "@prisma/client";
+import type { PayFrequency, Prisma } from "@prisma/client";
+import { siteLimit } from "@/lib/rbac/site-limit";
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -21,15 +22,17 @@ import type { PayFrequency } from "@prisma/client";
  * each one holds and how many of them are locked: both counted in the database
  * rather than loading every timesheet the company has ever had.
  */
-export const getPayPeriodRail = withRBAC("PAY_PERIOD_MANAGE", async ({ tenantId }, _input: void) => {
+export const getPayPeriodRail = withRBAC("PAY_PERIOD_MANAGE", async ({ tenantId, employeeId, role }, _input: void) => {
   // With no company, tenantId undefined would match every company's periods.
   if (!tenantId) throw new Error("Tenant context required");
+  const sites = await siteLimit({ employeeId, role });
+  const atSites = sites ? { employee: { siteId: { in: sites } } } : {};
   const [periods, locked] = await Promise.all([
     db.payPeriod.findMany({
-      where: { tenantId },
+      where: { tenantId, ...periodsAtSites(sites) },
       orderBy: { startDate: "desc" },
       include: {
-        _count: { select: { timesheets: true } },
+        _count: { select: { timesheets: { where: atSites } } },
         ruleSet: {
           select: { id: true, name: true, payFrequency: true },
         },
@@ -37,7 +40,7 @@ export const getPayPeriodRail = withRBAC("PAY_PERIOD_MANAGE", async ({ tenantId 
     }),
     db.timesheet.groupBy({
       by: ["payPeriodId"],
-      where: { status: "LOCKED", payPeriod: { tenantId } },
+      where: { status: "LOCKED", payPeriod: { tenantId }, ...atSites },
       _count: { _all: true },
     }),
   ]);
@@ -48,16 +51,18 @@ export const getPayPeriodRail = withRBAC("PAY_PERIOD_MANAGE", async ({ tenantId 
 export const getPayPeriodDetail = withRBAC(
   "PAY_PERIOD_MANAGE",
   async (
-    { tenantId },
+    { tenantId, employeeId, role },
     input: { payPeriodId: string }
   ) => {
     const { payPeriodId } = payPeriodIdSchema.parse(input);
 
     // Scoped to the caller's company in the query itself: an id from another
-    // tenant finds nothing, the same as an id that does not exist.
+    // tenant finds nothing, the same as an id that does not exist. Held to
+    // some sites, only a period of theirs, and only their sites' people on it.
     if (!tenantId) throw new Error("This pay period isn't available. Reload the page and try again.");
+    const sites = await siteLimit({ employeeId, role });
     const inScope = await db.payPeriod.findFirst({
-      where: { id: payPeriodId, tenantId },
+      where: { id: payPeriodId, tenantId, ...periodsAtSites(sites) },
       select: { id: true },
     });
     if (!inScope) throw new Error("This pay period isn't available. Reload the page and try again.");
@@ -70,6 +75,7 @@ export const getPayPeriodDetail = withRBAC(
           // open exceptions. The whole user row (password hash included) and
           // every exception's text used to come along for nothing.
           timesheets: {
+            ...(sites ? { where: { employee: { siteId: { in: sites } } } } : {}),
             include: {
               employee: {
                 select: {
@@ -85,7 +91,7 @@ export const getPayPeriodDetail = withRBAC(
           },
         },
       }),
-      validatePayPeriod(payPeriodId),
+      validatePayPeriod(payPeriodId, sites),
     ]);
 
     return { payPeriod, validation };
@@ -107,6 +113,38 @@ async function findPeriodInScope(payPeriodId: string, tenantId: string | null) {
 }
 
 /**
+ * Held to some sites (Site access), the periods with someone of theirs on
+ * them, or on a rule set someone of theirs is on, so a period not yet started
+ * still shows. A Payroll Admin for Brampton saw every rule set's periods and
+ * everyone's hours on them. Nothing extra for anyone else.
+ */
+function periodsAtSites(sites: string[] | null): Prisma.PayPeriodWhereInput {
+  if (!sites) return {};
+  return {
+    OR: [
+      { timesheets: { some: { employee: { siteId: { in: sites } } } } },
+      { ruleSet: { employees: { some: { siteId: { in: sites }, isActive: true } } } },
+    ],
+  };
+}
+
+/**
+ * Locking or reopening a period changes every timecard on it. Held to some
+ * sites, only a period whose people are all at those sites: one that also
+ * holds another site's people is locked by someone who sees that site too.
+ */
+async function assertWholePeriodInReach(actor: { employeeId: string; role: string }, payPeriodId: string): Promise<void> {
+  const sites = await siteLimit(actor);
+  if (!sites) return;
+  const elsewhere = await db.timesheet.count({ where: { payPeriodId, employee: { siteId: { notIn: sites } } } });
+  if (elsewhere > 0) {
+    throw new Error(
+      `This pay period also has ${elsewhere.toLocaleString()} ${elsewhere === 1 ? "timecard" : "timecards"} at sites you can't see, so it can't be locked or reopened from your login. Ask HR or a System Admin.`,
+    );
+  }
+}
+
+/**
  * OPEN → LOCKED. There are no approval steps: every timecard in the period is
  * open until this locks it. Also posts per-period accruals and auto-posts any
  * APPROVED leave requests that overlap this pay period.
@@ -115,6 +153,8 @@ export const lockPayPeriod = withRBAC(
   "PAYROLL_RUN",
   async (actor, input: { payPeriodId: string }) => {
     const { payPeriodId } = payPeriodIdSchema.parse(input);
+    await findPeriodInScope(payPeriodId, actor.tenantId);
+    await assertWholePeriodInReach(actor, payPeriodId);
     await lockPeriod(payPeriodId, actor);
 
     revalidatePath("/payroll/pay-periods");
@@ -132,6 +172,7 @@ export const reopenPayPeriod = withRBAC(
     const { payPeriodId, reason } = reopenPayPeriodSchema.parse(input);
 
     const payPeriod = await findPeriodInScope(payPeriodId, actor.tenantId);
+    await assertWholePeriodInReach(actor, payPeriodId);
 
     const transition = validatePayPeriodTransition(payPeriod.status, "REOPEN");
     if (!transition.valid) throw new Error(transition.error);

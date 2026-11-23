@@ -86,4 +86,17 @@ describe("New Employee", () => {
     expect(warned).toBe(false);
     expect(field("Hire Date").disabled).toBe(true);
   });
+
+  it("draws Create employee as a new button, not Continue turned into a submit (Tony, 11/19)", () => {
+    render(<CreateEmployeeForm {...props} />);
+    fireEvent.click(screen.getByText("Add Employee"));
+    const continueButton = screen.getByRole("button", { name: "Continue" });
+    expect(continueButton.getAttribute("type")).toBe("button");
+    // To the last step: the same <button> with its type switched to submit
+    // finished the click on Continue as a submit, and created the person.
+    fireEvent.click(screen.getByText("Personal details"));
+    const create = screen.getByRole("button", { name: "Create employee" });
+    expect(create).not.toBe(continueButton);
+    expect(continueButton.isConnected).toBe(false);
+  });
 });

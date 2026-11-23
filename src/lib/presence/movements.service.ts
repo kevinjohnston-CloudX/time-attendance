@@ -274,6 +274,7 @@ export async function getSiteDay(
           payType: true,
           department: { select: { id: true, name: true } },
           shift: { select: { id: true, name: true } },
+          agencyRef: { select: { id: true, description: true } },
         },
       })
     : [];
@@ -293,6 +294,8 @@ export async function getSiteDay(
       jobTitle: e.jobTitle?.trim() || null,
       shiftId: e.shift?.id ?? null,
       shift: e.shift?.name ?? null,
+      agencyId: e.agencyRef?.id ?? null,
+      agency: e.agencyRef?.description ?? null,
       photoUrl: photos.get(e.id) ?? null,
       salaried: e.payType === "SALARY",
       visitor,

@@ -9,6 +9,7 @@ import { directReportsOf } from "@/lib/get-subordinate-ids";
 import { endedOn, startedOn } from "@/lib/engines/segment-builder";
 import { ownCompany } from "@/lib/rbac/company";
 import { checkPermission } from "@/lib/rbac/check-permission";
+import { agencyWhere } from "@/lib/agency-filter";
 
 // ─── Employee list (employee-centric timecard) ───────────────────────────────
 
@@ -16,14 +17,16 @@ const listInputSchema = z.object({
   siteId: z.string().nullish(),
   departmentId: z.string().nullish(),
   payPeriodId: z.string().nullish(),
+  /** The Agency filter (lib/agency-filter): empty or missing for everybody. */
+  agencyIds: z.array(z.string()).nullish(),
 });
-type ListInput = { siteId?: string | null; departmentId?: string | null; payPeriodId?: string | null };
+type ListInput = { siteId?: string | null; departmentId?: string | null; payPeriodId?: string | null; agencyIds?: string[] | null };
 
 export const getActiveEmployeesForTimecards = withRBAC(
   ["TIMECARD_VIEW_ANY", "TIMECARD_EDIT_ANY"],
   async (ctx, input: ListInput) => {
     const { tenantId } = ctx;
-    const { siteId, departmentId, payPeriodId } = listInputSchema.parse(input);
+    const { siteId, departmentId, payPeriodId, agencyIds } = listInputSchema.parse(input);
     // A Payroll Admin held to some sites is offered the people at those sites
     // only; a site picked outside them finds nobody.
     const sites = await siteLimit(ctx);
@@ -31,9 +34,14 @@ export const getActiveEmployeesForTimecards = withRBAC(
     // the employee table across tenants.
     return timecardList(
       {
-        tenantId: ownCompany(tenantId),
-        ...(sites ? { siteId: { in: siteId ? sites.filter((s) => s === siteId) : sites } } : siteId ? { siteId } : {}),
-        ...(departmentId ? { departmentId } : {}),
+        AND: [
+          {
+            tenantId: ownCompany(tenantId),
+            ...(sites ? { siteId: { in: siteId ? sites.filter((s) => s === siteId) : sites } } : siteId ? { siteId } : {}),
+            ...(departmentId ? { departmentId } : {}),
+          },
+          agencyWhere(agencyIds ?? []),
+        ],
       },
       tenantId,
       payPeriodId ?? null,
@@ -47,13 +55,18 @@ export const getActiveEmployeesForTimecards = withRBAC(
 export const getTeamEmployeesForTimecards = withRBAC(
   ["TIMECARD_VIEW_TEAM", "TIMECARD_EDIT_TEAM"],
   async ({ employeeId, tenantId }, input: ListInput) => {
-    const { siteId, departmentId, payPeriodId } = listInputSchema.parse(input ?? {});
+    const { siteId, departmentId, payPeriodId, agencyIds } = listInputSchema.parse(input ?? {});
     return timecardList(
       {
-        ...directReportsOf(employeeId),
-        tenantId: ownCompany(tenantId),
-        ...(siteId ? { siteId } : {}),
-        ...(departmentId ? { departmentId } : {}),
+        AND: [
+          {
+            ...directReportsOf(employeeId),
+            tenantId: ownCompany(tenantId),
+            ...(siteId ? { siteId } : {}),
+            ...(departmentId ? { departmentId } : {}),
+          },
+          agencyWhere(agencyIds ?? []),
+        ],
       },
       tenantId,
       payPeriodId ?? null,

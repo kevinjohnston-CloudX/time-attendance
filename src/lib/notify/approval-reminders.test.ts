@@ -12,10 +12,13 @@ vi.mock("@/lib/db", () => ({
     },
   },
 }));
-vi.mock("./approvers", () => ({
+vi.mock("./approvers", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./approvers")>()),
   hrApprovers: async () => [
-    { employeeId: "e-hr", userId: "u-hr" },
-    { employeeId: "e-maria", userId: "u-maria" },
+    { employeeId: "e-hr", userId: "u-hr", sites: null },
+    { employeeId: "e-maria", userId: "u-maria", sites: null },
+    // HR held to another site (Site access) does not see the request.
+    { employeeId: "e-hr-ga", userId: "u-hr-ga", sites: ["site-ga"] },
   ],
 }));
 const pushed: string[][] = [];
@@ -34,7 +37,7 @@ const request = (status: string, supervisor: { userId: string; isActive: boolean
   endDate: new Date("2026-11-19T00:00:00Z"),
   durationSeconds: 16 * 3600,
   leaveType: { name: "Vacation" },
-  employee: { id: "e-maria", tenantId: "t1", user: { name: "Maria Lopez" }, supervisor },
+  employee: { id: "e-maria", tenantId: "t1", siteId: "site-nj", user: { name: "Maria Lopez" }, supervisor },
 });
 
 describe("time off about to start", () => {
@@ -50,7 +53,7 @@ describe("time off about to start", () => {
     expect(asked.startDate?.toISOString()).toBe("2026-11-17T00:00:00.000Z");
   });
 
-  it("reminds the supervisor while pending, and HR (never the requester) once with HR", async () => {
+  it("reminds the supervisor while pending, and HR at her site (never the requester) once with HR", async () => {
     requests = [request("PENDING"), request("PENDING_HR")];
     const plan = await remindTimeOffStartingSoon(new Date("2026-11-16T13:00:00Z"), { send: true });
     expect(plan.map((p) => p.userIds)).toEqual([["u-sup"], ["u-hr"]]);

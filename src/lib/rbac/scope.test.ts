@@ -60,10 +60,15 @@ describe("a Payroll Admin held to some sites", () => {
     expect(await employeeScope({ ...ctx, employeeId: "other" }, TIMECARD_EDITORS_COMPANY)).toEqual({ tenantId: "t" });
   });
 
-  it("keeps the whole company for leave approval, payroll, and the exception screens' punch fixes", async () => {
-    expect(await employeeScope(ctx, "LEAVE_APPROVE_ANY")).toEqual({ tenantId: "t" });
+  it("reaches the exceptions, punch fixes and leave of people at those sites only", async () => {
+    const atSites = { tenantId: "t", siteId: { in: ["rutherford"] } };
+    expect(await employeeScope(ctx, "TIMESHEET_APPROVE_ANY")).toEqual(atSites);
+    expect(await employeeScope(ctx, "PUNCH_EDIT_ANY")).toEqual(atSites);
+    expect(await employeeScope(ctx, "LEAVE_APPROVE_ANY")).toEqual(atSites);
+  });
+
+  it("keeps the whole company for payroll runs", async () => {
     expect(await employeeScope(ctx, "PAYROLL_RUN")).toEqual({ tenantId: "t" });
-    expect(await employeeScope(ctx, "PUNCH_EDIT_ANY")).toEqual({ tenantId: "t" });
   });
 
   it("never holds a System Admin to sites", async () => {

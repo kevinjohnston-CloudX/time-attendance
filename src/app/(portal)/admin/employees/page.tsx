@@ -12,6 +12,9 @@ import { EmployeesTable } from "@/components/admin/employees-table";
 import { LIST_COOKIE } from "@/components/admin/employees-list-cookie";
 import { LIST_KEYS, MISSING_OPTIONS, PAY_OPTIONS, PERIOD_OPTIONS, PUNCH_OPTIONS, SORT_OPTIONS, STATUS_OPTIONS, pick } from "@/components/admin/employees-list-options";
 import { ArrowLeft, RefreshCw } from "lucide-react";
+import { agencyOptions } from "@/lib/agency-options";
+import { siteLimit } from "@/lib/rbac/site-limit";
+import { ownCompany } from "@/lib/rbac/company";
 
 /**
  * Employees, on the portal design's list template.
@@ -57,6 +60,7 @@ export default async function EmployeesPage({
   const q    = sp?.q    ?? "";
   const site = sp?.site ?? "";
   const dept = sp?.dept ?? "";
+  const agency = sp?.agency ?? "";
   const role = sp?.role ?? "";
   const shift = sp?.shift ?? "";
   const status = pick(STATUS_OPTIONS, sp?.status);
@@ -68,14 +72,19 @@ export default async function EmployeesPage({
 
   const copyFromId = sp?.copyFrom ?? "";
 
-  const [employeesResult, refDataResult, copySourceResult] = await Promise.all([
+  // The agencies of the people this login can list (Site access), and "No agency".
+  const tenantId = ownCompany(session.user.tenantId);
+  const heldTo = await siteLimit({ employeeId: session.user.employeeId ?? "", role: session.user.role });
+
+  const [employeesResult, refDataResult, copySourceResult, agencyChoices] = await Promise.all([
     getEmployees({
-      page, q: q || undefined, site: site || undefined, dept: dept || undefined, role: role || undefined,
+      page, q: q || undefined, site: site || undefined, dept: dept || undefined, agency: agency || undefined, role: role || undefined,
       status, shift: shift || undefined, pay, period, punch, missing, sort,
     }),
     // The supervisor list is left out: the Create window asks when it opens.
     getAdminRefData({ withEmployees: false }),
     copyFromId ? getEmployeeById({ employeeId: copyFromId }) : Promise.resolve(null),
+    tenantId ? agencyOptions(tenantId, heldTo ? { siteId: { in: heldTo } } : {}) : Promise.resolve([]),
   ]);
 
   if (!employeesResult.success || !refDataResult.success) redirect("/admin");
@@ -146,7 +155,8 @@ export default async function EmployeesPage({
         // a query change.
         shifts={shifts}
         roles={allRoles.map((r) => ({ id: r.id, name: r.name }))}
-        currentFilters={{ q, site, dept, role, status, shift, pay, period, punch, missing, sort }}
+        agencies={agencyChoices}
+        currentFilters={{ q, site, dept, agency, role, status, shift, pay, period, punch, missing, sort }}
       />
     </div>
   );

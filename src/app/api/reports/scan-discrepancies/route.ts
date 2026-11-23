@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { userHasPermission } from "@/lib/rbac/check-permission";
 import { currentIdentity } from "@/lib/rbac/current";
 import { employeeScope, reachesCompany } from "@/lib/rbac/scope";
+import { siteLimit } from "@/lib/rbac/site-limit";
 
 /**
  * Ad-hoc view of tablet-vs-timecard discrepancies, for IT and payroll to query
@@ -71,7 +72,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const me = await currentIdentity();
   if (!me || !me.isActive) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const ctx = { employeeId: me.employeeId ?? "", tenantId: employee.tenantId, role: me.role };
-  const rows = (await reachesCompany(ctx, "TIMESHEET_APPROVE_ANY"))
+  // Someone held to some sites (Site access) gets those sites' rows only.
+  const rows = (await reachesCompany(ctx, "TIMESHEET_APPROVE_ANY")) && !(await siteLimit(ctx))
     ? all
     : await (async () => {
         const team = await db.employee.findMany({ where: await employeeScope(ctx, "TIMESHEET_APPROVE_ANY"), select: { id: true } });

@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { reachesCompany } from "@/lib/rbac/scope";
+import { siteLimit } from "@/lib/rbac/site-limit";
 import { directReportsOf } from "@/lib/get-subordinate-ids";
 import { NOT_VISITOR } from "@/lib/utils/client-badge";
 
@@ -53,8 +54,11 @@ export async function loadTeamMembers(viewer: Viewer, params: TeamMembersParams)
 
   const ctx = { employeeId: viewer.employeeId ?? "", tenantId: viewer.tenantId ?? null, role: viewer.role };
   const company: Prisma.EmployeeWhereInput = { tenantId: ctx.tenantId ?? "__no_company__" };
+  // Company wide, held to the sites on their record (Site access) when it
+  // names some, as the Employees list is.
+  const sites = await siteLimit(ctx);
   const scope: Prisma.EmployeeWhereInput = (await reachesCompany(ctx, "EMPLOYEE_MANAGE"))
-    ? company
+    ? sites ? { ...company, siteId: { in: sites } } : company
     : { AND: [company, directReportsOf(ctx.employeeId || "__none__")] };
   const where: Prisma.EmployeeWhereInput = {
     AND: [

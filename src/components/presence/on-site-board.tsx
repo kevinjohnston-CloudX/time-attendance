@@ -21,6 +21,8 @@ import {
   ToolsBar,
   useToast,
 } from "@/components/ui";
+import { FilterMultiChip } from "@/components/ui/filter-multi-chip";
+import { NO_AGENCY, NO_AGENCY_NAME, agencyParam, agencySummary, inAgencies, parseAgencyIds } from "@/lib/agency-filter";
 import { findOnSitePeople } from "@/actions/presence.actions";
 import { getOnSiteBoard } from "@/lib/presence/reads";
 import type { PickablePerson } from "@/lib/presence/people-search.service";
@@ -177,6 +179,8 @@ export function OnSiteBoard({
     status: string | null;
     dept: string | null;
     shift: string | null;
+    /** The Agency filter, a comma list (lib/agency-filter). */
+    agency?: string | null;
     view: View;
     sort: string | null;
     group: string | null;
@@ -233,6 +237,9 @@ export function OnSiteBoard({
   const [status, setStatus] = useState<StatusFilter>(parseStatus(initialFilters.status));
   const [dept, setDept] = useState(initialFilters.dept ?? "");
   const [shift, setShift] = useState(initialFilters.shift ?? "");
+  // Several at once: Bergen alone, or everyone but Bergen (the temps). Kept
+  // when the building changes, since the same agencies work at each.
+  const [agencyIds, setAgencyIds] = useState<string[]>(() => parseAgencyIds(initialFilters.agency));
   const [view, setView] = useState<View>(initialFilters.view);
   const [query, setQuery] = useState("");
   // People picked in the search box. With any picked, every tab shows only
@@ -338,6 +345,7 @@ export function OnSiteBoard({
     if (status !== "all") qs.set("status", status);
     if (dept) qs.set("dept", dept);
     if (shift) qs.set("shift", shift);
+    if (agencyIds.length) qs.set("agency", agencyParam(agencyIds));
     if (view !== "photos") qs.set("view", view);
     const sortParam = serializeSort(sort);
     if (sortParam) qs.set("sort", sortParam);
@@ -353,7 +361,7 @@ export function OnSiteBoard({
     if (next !== `${window.location.pathname}${window.location.search}`) {
       window.history.replaceState(window.history.state, "", next);
     }
-  }, [siteId, status, dept, shift, view, sort, byDept, tab, counter, logDay, mvFlag, mvSort, mvAllOpen, pickedKey]);
+  }, [siteId, status, dept, shift, agencyIds, view, sort, byDept, tab, counter, logDay, mvFlag, mvSort, mvAllOpen, pickedKey]);
 
   // ── Remember who was where, to mark who just moved ──────────────────────
   const absorb = useCallback((next: PresenceBoard, sameSite: boolean) => {
@@ -482,13 +490,29 @@ export function OnSiteBoard({
 
   const departments = useMemo(() => distinct(people, "departmentId", "department"), [people]);
   const shifts = useMemo(() => distinct(people, "shiftId", "shift"), [people]);
+  // The agencies of the people at this building, and "No agency" when anyone
+  // has none (visitors among them).
+  const agencies = useMemo(() => {
+    const named = distinct(people, "agencyId", "agency");
+    return people.some((p) => !p.agencyId) ? [...named, { id: NO_AGENCY, name: NO_AGENCY_NAME }] : named;
+  }, [people]);
+  // Any of the filters that narrow who is counted.
+  const peopleFiltered = !!dept || !!shift || agencyIds.length > 0;
+  const clearPeopleFilters = () => {
+    setDept("");
+    setShift("");
+    setAgencyIds([]);
+  };
 
-  // Department and shift narrow the counts as well as the faces: "how many of
-  // Receiving are inside" is a question this page is asked. The search does
-  // not, because it is for finding one person, not for counting.
+  // Department, shift and agency narrow the counts as well as the faces: "how
+  // many of Receiving are inside" is a question this page is asked. The search
+  // does not, because it is for finding one person, not for counting.
   const scoped = useMemo(
-    () => people.filter((p) => (!dept || p.departmentId === dept) && (!shift || p.shiftId === shift)),
-    [people, dept, shift],
+    () =>
+      people.filter(
+        (p) => (!dept || p.departmentId === dept) && (!shift || p.shiftId === shift) && inAgencies(agencyIds, p.agencyId),
+      ),
+    [people, dept, shift, agencyIds],
   );
 
   const counts = useMemo(() => {
@@ -549,6 +573,7 @@ export function OnSiteBoard({
     counter,
     departmentId: dept,
     shiftId: shift,
+    agencyIds,
     q: query,
     ids: pickedList,
     pulse: pulse?.scans,
@@ -571,11 +596,17 @@ export function OnSiteBoard({
     () => (siteDay.data ? buildSiteDay(siteDay.data, now) : []),
     [siteDay.data, now],
   );
-  // Department and shift narrow the counts as well as the table, as on the
-  // board; the search is for finding one person and narrows only the table.
+  // Department, shift and agency narrow the counts as well as the table, as on
+  // the board; the search is for finding one person and narrows only the table.
   const mvScoped = useMemo(
-    () => dayViews.filter((v) => (!dept || v.person.departmentId === dept) && (!shift || v.person.shiftId === shift)),
-    [dayViews, dept, shift],
+    () =>
+      dayViews.filter(
+        (v) =>
+          (!dept || v.person.departmentId === dept) &&
+          (!shift || v.person.shiftId === shift) &&
+          inAgencies(agencyIds, v.person.agencyId),
+      ),
+    [dayViews, dept, shift, agencyIds],
   );
   const mvCounts = useMemo(() => countFlags(mvScoped), [mvScoped]);
   const mvTotals = useMemo(() => scanTotals(mvScoped), [mvScoped]);
@@ -607,7 +638,7 @@ export function OnSiteBoard({
   // moves under the reader. What changed meanwhile waits behind the "new
   // movements" pill; picking anything (a sort, a filter, a day) or the pill
   // itself sets the order again. Orders a refresh cannot change stay live.
-  const mvOrderKey = [siteId, logDayShown, mvSort, mvFlagShown, dept, shift, query.trim(), pickedKey].join("|");
+  const mvOrderKey = [siteId, logDayShown, mvSort, mvFlagShown, dept, shift, agencyParam(agencyIds), query.trim(), pickedKey].join("|");
   const [mvFrozen, setMvFrozen] = useState<(HeldOrder & { key: string }) | null>(null);
   const mvHolds = MV_SORTS_THAT_MOVE.includes(mvSort);
   const mvHeld = mvHolds && mvFrozen?.key === mvOrderKey ? mvFrozen : null;
@@ -652,7 +683,7 @@ export function OnSiteBoard({
   }
 
   const selected = selectedId ? people.find((p) => p.id === selectedId) ?? null : null;
-  const isFiltered = !!dept || !!shift || !!needle || picked.length > 0;
+  const isFiltered = peopleFiltered || !!needle || picked.length > 0;
   const siteName = board?.site.name ?? sites.find((s) => s.id === siteId)?.name ?? "";
   /** What the building total card is called, so the header chip can name it the same way. */
   const heroLabel = board?.site.hasGateData === false ? "On the clock" : "In the building";
@@ -1085,8 +1116,7 @@ export function OnSiteBoard({
                       onClick={() => {
                         setQuery("");
                         setPicked([]);
-                        setDept("");
-                        setShift("");
+                        clearPeopleFilters();
                         if (tab === "movements") setMvFlag(null);
                       }}
                     >
@@ -1160,6 +1190,15 @@ export function OnSiteBoard({
               <FilterSelectChip label="Department" value={dept} options={departments} onChange={setDept} />
             )}
             {ready && shifts.length > 0 && <FilterSelectChip label="Shift" value={shift} options={shifts} onChange={setShift} />}
+            {ready && (agencies.length > 1 || agencyIds.length > 0) && (
+              <FilterMultiChip
+                label="Agency"
+                value={agencyIds}
+                options={agencies}
+                summary={(ids) => agencySummary(ids, agencies)}
+                onChange={setAgencyIds}
+              />
+            )}
             {ready && tab !== "people" && today && (
               <DayChip
                 day={logDayShown}
@@ -1244,12 +1283,11 @@ export function OnSiteBoard({
           <Card padding={0}>
             <MovementsEmpty
               when={when}
-              filtered={!!dept || !!shift || !!query.trim() || picked.length > 0 || !!mvFlagShown}
+              filtered={peopleFiltered || !!query.trim() || picked.length > 0 || !!mvFlagShown}
               onClear={() => {
                 setQuery("");
                 setPicked([]);
-                setDept("");
-                setShift("");
+                clearPeopleFilters();
                 setMvFlag(null);
               }}
             />
@@ -1396,7 +1434,7 @@ export function OnSiteBoard({
                 tz={tz}
                 when={when}
                 query={query}
-                peopleFiltered={!!dept || !!shift}
+                peopleFiltered={peopleFiltered}
                 onRetry={unknown.retry}
               />
             ) : log.rows.length === 0 ? (
@@ -1404,15 +1442,14 @@ export function OnSiteBoard({
                 <ScanLogEmpty
                   counter={counter}
                   searching={log.searching}
-                  filtered={!!dept || !!shift}
+                  filtered={peopleFiltered}
                   hasGateData={board.site.hasGateData}
                   when={when}
                   onClear={() => {
                     setCounter(null);
                     setQuery("");
                     setPicked([]);
-                    setDept("");
-                    setShift("");
+                    clearPeopleFilters();
                   }}
                 />
               </Card>
@@ -1526,7 +1563,7 @@ export function OnSiteBoard({
                 status={status}
                 needle={query.trim()}
                 pickedNames={picked.map((p) => p.name)}
-                filtered={!!dept || !!shift}
+                filtered={peopleFiltered}
                 siteName={siteName}
                 onClearSearch={() => {
                   setQuery("");
@@ -2507,8 +2544,8 @@ function BoardSkeleton() {
  */
 function distinct(
   people: PresencePerson[],
-  idKey: "departmentId" | "shiftId",
-  nameKey: "department" | "shift",
+  idKey: "departmentId" | "shiftId" | "agencyId",
+  nameKey: "department" | "shift" | "agency",
 ): { id: string; name: string }[] {
   const seen = new Map<string, string>();
   for (const p of people) {

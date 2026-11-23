@@ -113,6 +113,7 @@ export function useScanLog({
   counter,
   departmentId,
   shiftId,
+  agencyIds = NO_IDS,
   q,
   ids = NO_IDS,
   pulse,
@@ -124,6 +125,8 @@ export function useScanLog({
   counter: LogCounter | null;
   departmentId: string;
   shiftId: string;
+  /** The Agency filter (lib/agency-filter); empty for everybody. */
+  agencyIds?: readonly string[];
   q: string;
   /** People picked in the search box; the log shows them plus any match for `q`. */
   ids?: readonly string[];
@@ -147,10 +150,11 @@ export function useScanLog({
       ...counterQuery(counter),
       departmentId: departmentId || null,
       shiftId: shiftId || null,
+      agencyIds: agencyIds.length ? [...agencyIds].sort() : null,
       q: needle || null,
       ids: ids.length ? [...ids].sort() : null,
     }),
-    [day, counter, departmentId, shiftId, needle, ids],
+    [day, counter, departmentId, shiftId, agencyIds, needle, ids],
   );
   const key = `${siteId}|${JSON.stringify(query)}`;
 

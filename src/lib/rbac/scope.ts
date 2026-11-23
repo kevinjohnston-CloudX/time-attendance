@@ -97,13 +97,15 @@ export async function assertBalanceChangeAllowed(
 }
 
 /**
- * Timecard access a site limit narrows: a Payroll Admin held to some sites
- * sees and changes the timecards of people at those sites only, and an id
- * from anywhere else answers "not found", as the list never offers it. The
- * screens that check punch editing alone (exceptions, missed punches) list
- * every site still, so their actions are not narrowed either.
+ * Access a site limit narrows: a Payroll Admin held to some sites sees and
+ * changes the timecards, exceptions, punch fixes and leave of people at those
+ * sites only, and an id from anywhere else answers "not found", as the lists
+ * never offer it. Exceptions, Team Punch History and the leave queues listed
+ * every site until 11/18 (a Payroll Admin for Brampton saw Bergen there), so
+ * their actions were left company wide with them. Payroll runs and locking
+ * keep the company.
  */
-const SITE_LIMITED: Permission[] = ["TIMECARD_VIEW_ANY", "TIMECARD_EDIT_ANY"];
+const SITE_LIMITED: Permission[] = ["TIMECARD_VIEW_ANY", "TIMECARD_EDIT_ANY", "TIMESHEET_APPROVE_ANY", "PUNCH_EDIT_ANY", "LEAVE_APPROVE_ANY"];
 
 export async function employeeScope(ctx: Ctx, companyWide: Wide): Promise<Prisma.EmployeeWhereInput> {
   const company: Prisma.EmployeeWhereInput = { tenantId: ctx.tenantId ?? "__no_company__" };

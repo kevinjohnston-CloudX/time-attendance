@@ -18,10 +18,12 @@ export interface ValidationResult {
  * locking, not required to be cleared.
  */
 export async function validatePayPeriod(
-  payPeriodId: string
+  payPeriodId: string,
+  /** Only people at these sites (a viewer held to some by Site access); null for everyone. */
+  sites: string[] | null = null,
 ): Promise<ValidationResult> {
   const timesheets = await db.timesheet.findMany({
-    where: { payPeriodId },
+    where: { payPeriodId, ...(sites ? { employee: { siteId: { in: sites } } } : {}) },
     include: {
       employee: { include: { user: true } },
       exceptions: { where: { resolvedAt: null } },

@@ -13,17 +13,28 @@ export async function generateXlsx(
 
   const sheet = workbook.addWorksheet(title.slice(0, 31)); // Excel max 31 chars
 
+  // A report that asks for it opens with its name and dates, then a blank
+  // line, above the headings (a payroll backup is filed as it is).
+  const titled = result.titleRows && result.period ? result.period : null;
+
   // Header row
   // Hours as real numbers with two decimals, so a column can be summed.
   sheet.columns = result.columns.map((col) => ({
-    header: col.exportLabel ?? col.label,
+    header: titled ? undefined : col.exportLabel ?? col.label,
     key: col.id,
     width: col.type === "number" ? 12 : 20,
     ...(isHoursColumn(col) ? { style: { numFmt: "0.00" } } : isMoneyColumn(col) ? { style: { numFmt: '"$"#,##0.00' } } : {}),
   }));
+  let headerAt = 1;
+  if (titled) {
+    sheet.addRow([title]).font = { bold: true, size: 13 };
+    sheet.addRow([titled.label]).font = { size: 11 };
+    sheet.addRow([]);
+    headerAt = sheet.addRow(result.columns.map((col) => col.exportLabel ?? col.label)).number;
+  }
 
   // Style header row
-  const headerRow = sheet.getRow(1);
+  const headerRow = sheet.getRow(headerAt);
   headerRow.font = { bold: true, size: 10 };
   headerRow.fill = {
     type: "pattern",
@@ -103,8 +114,8 @@ export async function generateXlsx(
   // grouped sheet would be sorted in among the rows they sum.
   if (result.rows.length > 0 && !groups?.lines.some((l) => l.kind !== "row")) {
     sheet.autoFilter = {
-      from: { row: 1, column: 1 },
-      to: { row: result.rows.length + 1, column: result.columns.length },
+      from: { row: headerAt, column: 1 },
+      to: { row: result.rows.length + headerAt, column: result.columns.length },
     };
   }
 
