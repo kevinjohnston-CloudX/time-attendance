@@ -79,6 +79,7 @@ export async function readOpenExceptions({
       timesheetId: string;
       employeeId: string;
       shiftId: string | null;
+      isActive: boolean;
       userName: string | null;
       siteName: string;
       departmentName: string;
@@ -94,7 +95,7 @@ export async function readOpenExceptions({
     }[]
   >`
     SELECT ex.id, ex."exceptionType"::text AS "exceptionType", ex.description, ex."occurredAt", ex."timesheetId",
-           ts."employeeId", emp."shiftId", u.name AS "userName", s.name AS "siteName",
+           ts."employeeId", emp."shiftId", emp."isActive", u.name AS "userName", s.name AS "siteName",
            emp."timeZone" AS "personZone", s.timezone AS "siteZone", d.name AS "departmentName",
            pp.id AS "payPeriodId", pp."startDate", pp."endDate",
            rs.id AS "ruleSetId", rs."payFrequency"::text AS "ruleSetFrequency", tn."payFrequency"::text AS "tenantFrequency",
@@ -128,6 +129,7 @@ export async function readOpenExceptions({
       employeeId: r.employeeId,
       employee: {
         shiftId: r.shiftId,
+        isActive: r.isActive,
         user: { name: r.userName },
         site: { name: r.siteName },
         department: { name: r.departmentName },

@@ -40,6 +40,8 @@ export type ExceptionRow = {
   timesheetId: string;
   employeeId: string;
   employeeName: string;
+  /** Off for someone who no longer works here: their exceptions can be closed with a note, nothing else. */
+  employeeActive: boolean;
   siteName: string | null;
   departmentName: string | null;
   /** "Sep 1 to Sep 14, 2026", the period's real last day. */

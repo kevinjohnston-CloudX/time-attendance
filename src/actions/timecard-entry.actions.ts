@@ -807,7 +807,7 @@ export const addManualHoursEntry = withRBAC(
           ? (await db.payCode.findUnique({ where: { id: placed.entry.payCodeId }, select: { label: true } }))?.label
           : null;
         const had = Math.round((placed.entry.end.getTime() - placed.entry.start.getTime()) / 36_000) / 100;
-        throw new Error(`${dayLabel} already has ${had} hours entered${code ? ` as ${code}` : ""}. Change that entry instead of adding another.`);
+        throw new Error(`${dayLabel} already has ${had} hours entered${code ? ` as ${code}` : ""}. To change them, delete that entry with the bin at the end of its row and save, then add the new hours.`);
       }
       const inDate = placed.start;
       const outDate = placed.end;

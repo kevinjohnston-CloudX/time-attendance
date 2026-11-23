@@ -12,6 +12,17 @@
   box-shadow: var(--ta-menu-shadow);
 }
 
+/* A menu drawn at the end of the page (MenuPopover), placed by its button:
+   over the windows and the top bar, like the dropdown lists. */
+.popover {
+  position: fixed;
+  z-index: 90;
+  max-width: calc(100vw - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  outline: none;
+}
+
 .head {
   display: flex;
   min-width: 0;

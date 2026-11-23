@@ -1,9 +1,48 @@
 "use client";
 
-import { useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Check, ChevronDown } from "lucide-react";
+import { floatingPortal, useOwnPresses } from "./floating-layer";
 import { menuStyles } from "./menu";
 import { LANGUAGES, languageName } from "@/lib/languages";
+
+const GAP = 4;
+const EDGE = 8;
+const MAX_HEIGHT = 260;
+const MIN_HEIGHT = 120;
+
+/**
+ * The list under the field and as wide as it, or over it when there is no
+ * room below and more above, and never past an edge of the window. `side`
+ * keeps the side already taken, so the list does not jump while the names
+ * narrow; null decides it again. Returns the side.
+ */
+function placeList(list: HTMLElement, field: HTMLElement, side: boolean | null): boolean {
+  const r = field.getBoundingClientRect();
+  list.style.width = `${r.width}px`;
+  list.style.left = `${r.left}px`;
+  list.style.maxHeight = `${MAX_HEIGHT}px`;
+  const height = list.offsetHeight;
+  const below = window.innerHeight - r.bottom - GAP - EDGE;
+  const above = r.top - GAP - EDGE;
+  const up = side ?? (height > below && above > below);
+  const room = Math.max(Math.min(up ? above : below, MAX_HEIGHT), MIN_HEIGHT);
+  list.style.maxHeight = `${room}px`;
+  list.style.top = `${up ? r.top - GAP - Math.min(height, room) : r.bottom + GAP}px`;
+  return up;
+}
+
+/** Whether any of the field still shows inside every box that scrolls it. */
+function inSight(field: HTMLElement): boolean {
+  const r = field.getBoundingClientRect();
+  if (r.bottom <= 0 || r.top >= window.innerHeight) return false;
+  for (let p = field.parentElement; p && p !== document.body; p = p.parentElement) {
+    if (getComputedStyle(p).overflowY === "visible") continue;
+    const b = p.getBoundingClientRect();
+    if (r.bottom <= b.top || r.top >= b.bottom) return false;
+  }
+  return true;
+}
 
 /**
  * Pick a language by typing: the list narrows to the languages whose name
@@ -38,6 +77,8 @@ export function LanguagePicker({
 }) {
   const listId = `lang-${useId().replace(/:/g, "")}`;
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const sideRef = useRef<boolean | null>(null);
   const [open, setOpen] = useState(false);
   const [text, setText] = useState<string | null>(null); // null while not typing
   const [active, setActive] = useState(0);
@@ -93,6 +134,48 @@ export function LanguagePicker({
   }
 
   const shown = text ?? (value ? languageName(value) : "");
+  const listOpen = open && !disabled;
+
+  // A press on the list is the list's alone, and the field keeps the focus
+  // and the keys (see floating-layer.tsx).
+  useOwnPresses(listRef);
+
+  // Placed before it is painted, and again as the names narrow.
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const field = inputRef.current;
+    if (!listOpen || !list || !field) {
+      sideRef.current = null;
+      return;
+    }
+    sideRef.current = placeList(list, field, sideRef.current);
+  }, [listOpen, options]);
+
+  // The list follows its field when the page or a window scrolls, and closes
+  // once the field has scrolled out of sight. It opens as the field takes the
+  // focus, and the browser may scroll a window to bring that field into view,
+  // so closing on any scroll would close it as it opens.
+  useEffect(() => {
+    if (!listOpen) return;
+    const follow = (e: Event) => {
+      const list = listRef.current;
+      const field = inputRef.current;
+      // A resize comes from the window itself, which is not on the page.
+      if (!list || !field || (e.target instanceof Node && list.contains(e.target))) return;
+      if (e.type === "scroll" && !inSight(field)) {
+        setOpen(false);
+        return;
+      }
+      // The field has moved, so the side is decided again.
+      sideRef.current = placeList(list, field, null);
+    };
+    window.addEventListener("scroll", follow, true);
+    window.addEventListener("resize", follow);
+    return () => {
+      window.removeEventListener("scroll", follow, true);
+      window.removeEventListener("resize", follow);
+    };
+  }, [listOpen]);
 
   return (
     <div className="relative w-full min-w-0">
@@ -140,39 +223,40 @@ export function LanguagePicker({
         style={{ color: "var(--icon-tertiary)" }}
       />
       {name && <input type="hidden" name={name} value={value} />}
-      {open && !disabled && (
-        <ul
-          id={listId}
-          role="listbox"
-          aria-label="Languages"
-          className={`ta-scroll absolute left-0 right-0 top-full z-50 m-0 mt-1 max-h-[260px] list-none overflow-y-auto ${menuStyles.panel}`}
-        >
-          {options.length === 0 ? (
-            <li className={menuStyles.empty}>No language matches &ldquo;{text}&rdquo;.</li>
-          ) : (
-            options.map((o, i) => (
-              <li
-                key={o.code || "none"}
-                id={`${listId}-${o.code || "none"}`}
-                role="option"
-                aria-selected={i === active}
-                onMouseEnter={() => setActive(i)}
-                // Picked before the input loses focus, which would close the list first.
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  pick(o.code);
-                }}
-                data-chosen={(o.code === value && value !== "") || undefined}
-                className={menuStyles.option}
-                style={o.code ? undefined : { color: "var(--text-tertiary)" }}
-              >
-                <span className="min-w-0 truncate">{o.name}</span>
-                {o.code === value && value !== "" && <Check className={menuStyles.optionCheck} aria-label="Selected" />}
-              </li>
-            ))
-          )}
-        </ul>
-      )}
+      {/* Drawn at the end of the page, so a window's scroll never clips it. */}
+      {listOpen &&
+        floatingPortal(
+          <ul
+            ref={listRef}
+            id={listId}
+            role="listbox"
+            aria-label="Languages"
+            className={`ta-scroll m-0 list-none ${menuStyles.panel} ${menuStyles.popover}`}
+          >
+            {options.length === 0 ? (
+              <li className={menuStyles.empty}>No language matches &ldquo;{text}&rdquo;.</li>
+            ) : (
+              options.map((o, i) => (
+                <li
+                  key={o.code || "none"}
+                  id={`${listId}-${o.code || "none"}`}
+                  role="option"
+                  aria-selected={i === active}
+                  onMouseEnter={() => setActive(i)}
+                  // The press itself is held back (useOwnPresses), so the field
+                  // keeps the focus and the list stays open until the click.
+                  onClick={() => pick(o.code)}
+                  data-chosen={(o.code === value && value !== "") || undefined}
+                  className={menuStyles.option}
+                  style={o.code ? undefined : { color: "var(--text-tertiary)" }}
+                >
+                  <span className="min-w-0 truncate">{o.name}</span>
+                  {o.code === value && value !== "" && <Check className={menuStyles.optionCheck} aria-label="Selected" />}
+                </li>
+              ))
+            )}
+          </ul>,
+        )}
     </div>
   );
 }

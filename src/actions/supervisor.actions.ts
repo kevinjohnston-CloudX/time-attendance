@@ -216,7 +216,11 @@ export const resolveException = withRBAC(
       where: { id: exceptionId },
     });
     // Only on a timesheet of someone the caller manages, and not their own.
-    const sheet = await timesheetInScope(ctx, exception.timesheetId, "TIMESHEET_APPROVE_ANY");
+    // Someone who no longer works here too (allowInactive): this only closes
+    // the flag with a note and never touches punches, hours or pay, which
+    // stay refused for them everywhere else. Without it, a leaver's open
+    // absences could only be cleared by reactivating them.
+    const sheet = await timesheetInScope(ctx, exception.timesheetId, "TIMESHEET_APPROVE_ANY", { allowInactive: true });
     if (sheet.employeeId === employeeId) throw new Error("You can't resolve your own exceptions");
 
     const updated = await db.exception.update({
