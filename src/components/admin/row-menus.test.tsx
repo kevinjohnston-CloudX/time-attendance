@@ -49,6 +49,45 @@ describe("Key actions", () => {
     expect(screen.queryByRole("menu")).toBeNull();
     expect(document.activeElement).toBe(trigger);
   });
+
+  it("is drawn at the end of the page, outside the table's scroll, and the keys move through it", () => {
+    const { container } = render(<ApiKeysManager apiKeys={[key]} filter="all" createOpen={false} onCreateOpenChange={() => {}} />);
+    const trigger = screen.getByRole("button", { name: "Key actions" });
+    fireEvent.click(trigger);
+    const menu = screen.getByRole("menu", { name: "Key actions" });
+    // Not inside the list, whose sideways scroll cut off Regenerate and Revoke.
+    expect(container.contains(menu)).toBe(false);
+    expect(menu.closest("[data-floating-layer]")?.parentElement).toBe(document.body);
+    // The menu takes the focus, then the arrows walk the choices and wrap.
+    expect(document.activeElement).toBe(menu);
+    const names = () => (document.activeElement as HTMLElement).textContent;
+    fireEvent.keyDown(menu, { key: "ArrowDown" });
+    expect(names()).toBe("Allow time off requests");
+    fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" });
+    expect(names()).toBe("Revoke");
+    fireEvent.keyDown(document.activeElement!, { key: "Home" });
+    expect(names()).toBe("Allow time off requests");
+    fireEvent.keyDown(document.activeElement!, { key: "End" });
+    expect(names()).toBe("Revoke");
+    // A press on a choice is not a press outside.
+    fireEvent.pointerDown(within(menu).getByRole("menuitem", { name: "Regenerate" }));
+    expect(screen.getByRole("menu", { name: "Key actions" })).toBeTruthy();
+    // Tab leaves the menu from its button.
+    fireEvent.keyDown(document.activeElement!, { key: "Tab" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("opened from the keys, starts on its first choice", () => {
+    render(<ApiKeysManager apiKeys={[key]} filter="all" createOpen={false} onCreateOpenChange={() => {}} />);
+    const trigger = screen.getByRole("button", { name: "Key actions" });
+    trigger.focus();
+    // Enter on a button: the key, then the click it makes.
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    fireEvent.click(trigger, { detail: 0 });
+    const menu = screen.getByRole("menu", { name: "Key actions" });
+    expect(document.activeElement).toBe(within(menu).getByRole("menuitem", { name: "Allow time off requests" }));
+  });
 });
 
 describe("Webhook actions", () => {

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, useTransition, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Check, CircleCheck, CircleX, EllipsisVertical, KeyRound, ListChecks, Pause, Play, Send, Trash2, UserCheck, UserX, Webhook, X } from "lucide-react";
-import { MenuDivider, MenuItem, MenuPanel, useMenuDismiss } from "@/components/ui/menu";
+import { MenuDivider, MenuItem, MenuPopover } from "@/components/ui/menu";
 import { format, isToday } from "date-fns";
 import {
   createWebhook,
@@ -381,7 +381,6 @@ function RowMenu({
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLSpanElement>(null);
   const close = useCallback(() => setOpen(false), []);
-  useMenuDismiss(open, close, wrapRef);
   const items: { label: string; icon: ReactNode; run: () => void }[] = [
     { label: "Send test", icon: <Send />, run: onTest },
     { label: "Deliveries", icon: <ListChecks />, run: onDeliveries },
@@ -389,7 +388,7 @@ function RowMenu({
     { label: "New secret", icon: <KeyRound />, run: onSecret },
   ];
   return (
-    <span ref={wrapRef} className="relative flex justify-end">
+    <span ref={wrapRef} className="flex justify-end">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -403,8 +402,9 @@ function RowMenu({
       >
         <EllipsisVertical className="h-4 w-4" />
       </button>
+      {/* Drawn at the end of the page, so the table's scroll never clips it. */}
       {open && (
-        <MenuPanel role="menu" aria-label="Webhook actions" className="absolute right-0 top-[calc(100%+4px)] z-50 w-[210px]">
+        <MenuPopover anchor={wrapRef} onClose={close} aria-label="Webhook actions" className="w-[210px]">
           {items.map((it) => (
             <MenuItem
               key={it.label}
@@ -428,7 +428,7 @@ function RowMenu({
           >
             Remove
           </MenuItem>
-        </MenuPanel>
+        </MenuPopover>
       )}
     </span>
   );

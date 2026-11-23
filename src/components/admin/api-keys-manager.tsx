@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState, useTransition, type CSSProperties, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Ban, CalendarClock, CalendarX, Check, Copy, EllipsisVertical, KeyRound, RefreshCw, Users, UserX } from "lucide-react";
-import { MenuDivider, MenuItem, MenuPanel, useMenuDismiss } from "@/components/ui/menu";
+import { MenuDivider, MenuItem, MenuPopover } from "@/components/ui/menu";
 import { format } from "date-fns";
 import { createApiKey, revokeApiKey, regenerateApiKey, setApiKeyScopes } from "@/actions/api-key.actions";
 import { SCOPE_LABEL } from "@/lib/api/scopes";
@@ -83,9 +83,8 @@ function RowMenu({
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLSpanElement>(null);
   const close = useCallback(() => setOpen(false), []);
-  useMenuDismiss(open, close, wrapRef);
   return (
-    <span ref={wrapRef} className="relative flex justify-end">
+    <span ref={wrapRef} className="flex justify-end">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -99,8 +98,9 @@ function RowMenu({
       >
         <EllipsisVertical className="h-4 w-4" />
       </button>
+      {/* Drawn at the end of the page, so the table's scroll never clips it. */}
       {open && (
-        <MenuPanel role="menu" aria-label="Key actions" className={`absolute right-0 top-[calc(100%+4px)] z-50 w-[250px] ${styles.menu}`}>
+        <MenuPopover anchor={wrapRef} onClose={close} aria-label="Key actions" className={`w-[250px] ${styles.menu}`}>
           <MenuItem
             icon={timeOff ? <CalendarX /> : <CalendarClock />}
             onClick={() => { setOpen(false); onTimeOff(); }}
@@ -117,7 +117,7 @@ function RowMenu({
           <MenuItem icon={<Ban />} tone="danger" onClick={() => { setOpen(false); onRevoke(); }}>
             Revoke
           </MenuItem>
-        </MenuPanel>
+        </MenuPopover>
       )}
     </span>
   );
