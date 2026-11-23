@@ -67,7 +67,7 @@ export interface ReportResult {
   period?: { start: string; end: string; label: string };
   /**
    * The report's name and its dates as the first lines of an Excel file,
-   * above the headings: a payroll backup is filed and printed as it is.
+   * above the headings: a payroll report is filed and printed as it is.
    */
   titleRows?: boolean;
   /** The rows in their groups, with totals; `rows` are already in group order. */

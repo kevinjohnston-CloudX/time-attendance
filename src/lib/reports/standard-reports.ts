@@ -582,14 +582,15 @@ export const STANDARD_REPORTS: StandardReport[] = [
     dates: "previousWeek",
   },
   {
-    // Bergen Canada's payroll backups (Tony Deroy, through John, Nov 18):
+    // Bergen Canada's payroll reports (Tony Deroy, through John, Nov 18), named as
+    // in NovaTime at Juan's ask (Nov 23); the ids keep their first names:
     // NovaTime's Weekly Payroll Report for an agency's people, and its BW
     // Payroll Report for the company's own, hourly and salaried together.
     // Run apart, by agency, with holiday as its own column and the pay
     // period at the top of the file.
     id: "agency-payroll-backup",
     folder: "Payroll",
-    name: "Agency payroll backup",
+    name: "Weekly payroll report",
     novaTimeName: "Weekly Payroll Report",
     description: "Last week's hours and pay for an agency's people: regular, overtime and holiday hours, total hours, total pay and rate, with totals. Pick the agency and the site.",
     source: "HOURS_AND_PAY",
@@ -605,7 +606,7 @@ export const STANDARD_REPORTS: StandardReport[] = [
   {
     id: "fte-payroll-backup",
     folder: "Payroll",
-    name: "FTE payroll backup",
+    name: "Biweekly payroll report",
     novaTimeName: "BW Payroll Report",
     description: "The last pay period's hours and pay for the company's own people, hourly and salaried together: salary, regular, overtime, holiday and paid time off hours, total hours, total pay and rate, with totals. Pick the agency and the site.",
     source: "HOURS_AND_PAY",

@@ -14,7 +14,7 @@ export async function generateXlsx(
   const sheet = workbook.addWorksheet(title.slice(0, 31)); // Excel max 31 chars
 
   // A report that asks for it opens with its name and dates, then a blank
-  // line, above the headings (a payroll backup is filed as it is).
+  // line, above the headings (a payroll report is filed as it is).
   const titled = result.titleRows && result.period ? result.period : null;
 
   // Header row
