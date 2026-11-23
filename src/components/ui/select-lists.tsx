@@ -26,6 +26,13 @@ import styles from "./select-lists.module.css";
  * select has focus. The arrows move, Enter or a click picks, typing jumps to
  * the option that starts with the letters, and Escape closes it without
  * closing a window underneath. Scrolling the page or resizing it closes it.
+ *
+ * <p>The list is drawn at the edge of the page, outside whatever panel the
+ * select sits in. A press on it is the list's alone: it never reaches the
+ * page, so a panel that closes on a click outside it (Timecards' Filters,
+ * Live Attendance's view options) does not take the press on an option for
+ * one and close, select and all, before the pick lands. That was ticket
+ * 79224: picking a filter did nothing (Abby, Nov 22).
  */
 
 type Row =
@@ -219,12 +226,23 @@ export function SelectLists() {
       if (state.current.sel && !listRef.current?.contains(e.target as Node)) close(false);
     };
     const onResize = () => close(false);
+    // On the window, ahead of every listener on the page, panels' included.
+    const keepPress = (e: Event) => {
+      if (!state.current.sel || !listRef.current?.contains(e.target as Node)) return;
+      // The select keeps the focus, so the keys stay with it.
+      if (e.type === "mousedown") e.preventDefault();
+      e.stopPropagation();
+    };
+    window.addEventListener("pointerdown", keepPress, true);
+    window.addEventListener("mousedown", keepPress, true);
     document.addEventListener("pointerdown", onPointer, true);
     document.addEventListener("mousedown", onMouseDown, true);
     window.addEventListener("keydown", onKey, true);
     window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", onResize);
     return () => {
+      window.removeEventListener("pointerdown", keepPress, true);
+      window.removeEventListener("mousedown", keepPress, true);
       document.removeEventListener("pointerdown", onPointer, true);
       document.removeEventListener("mousedown", onMouseDown, true);
       window.removeEventListener("keydown", onKey, true);
