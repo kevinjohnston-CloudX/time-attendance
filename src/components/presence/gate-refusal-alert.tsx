@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { floatingPortal } from "@/components/ui/floating-layer";
 import { AlertTriangle, CalendarPlus, RefreshCw, UserX } from "lucide-react";
 import { Button, ConfirmDialog } from "@/components/ui";
 import { dismissOnSiteGateRefusals } from "@/actions/gate-refusals.actions";
@@ -527,7 +527,7 @@ export function GateRefusalAlert({
  * inside the board's class so the page's status colours still apply.
  */
 function onTop(node: ReactNode) {
-  return createPortal(<div className={styles.board}>{node}</div>, document.body);
+  return floatingPortal(<div className={styles.board}>{node}</div>);
 }
 
 /** The time left before the card steps aside, as a small ring that empties beside the words. */

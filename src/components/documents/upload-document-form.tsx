@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect, useTransition } from "react";
+import { useState, useRef, useTransition } from "react";
+import { useOutsidePress } from "@/components/ui/floating-layer";
 import { useRouter } from "next/navigation";
 import { Search, Upload } from "lucide-react";
 import { uploadDocument } from "@/actions/document.actions";
@@ -56,15 +57,7 @@ export function UploadDocumentForm({ employees }: Props) {
   // Close the typeahead on an outside click. The whole picker is the boundary
   // — the input, its label and the list — so a click on the field's own label
   // does not count as leaving it.
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
-        setShowDropdown(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
+  useOutsidePress({ open: showDropdown, inside: [pickerRef], onOutside: () => setShowDropdown(false) });
 
   function selectEmployee(emp: Employee) {
     setSelectedEmployee(emp);

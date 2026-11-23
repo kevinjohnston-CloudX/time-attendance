@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { floatingPortal, useOwnPresses } from "./floating-layer";
 import { Check } from "lucide-react";
 import { isPhone } from "@/lib/phone";
 import menu from "./menu.module.css";
@@ -226,23 +226,12 @@ export function SelectLists() {
       if (state.current.sel && !listRef.current?.contains(e.target as Node)) close(false);
     };
     const onResize = () => close(false);
-    // On the window, ahead of every listener on the page, panels' included.
-    const keepPress = (e: Event) => {
-      if (!state.current.sel || !listRef.current?.contains(e.target as Node)) return;
-      // The select keeps the focus, so the keys stay with it.
-      if (e.type === "mousedown") e.preventDefault();
-      e.stopPropagation();
-    };
-    window.addEventListener("pointerdown", keepPress, true);
-    window.addEventListener("mousedown", keepPress, true);
     document.addEventListener("pointerdown", onPointer, true);
     document.addEventListener("mousedown", onMouseDown, true);
     window.addEventListener("keydown", onKey, true);
     window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", onResize);
     return () => {
-      window.removeEventListener("pointerdown", keepPress, true);
-      window.removeEventListener("mousedown", keepPress, true);
       document.removeEventListener("pointerdown", onPointer, true);
       document.removeEventListener("mousedown", onMouseDown, true);
       window.removeEventListener("keydown", onKey, true);
@@ -250,6 +239,9 @@ export function SelectLists() {
       window.removeEventListener("resize", onResize);
     };
   }, [open, close, pick]);
+
+  // A press on the list is the list's alone (see floating-layer.tsx).
+  useOwnPresses(listRef);
 
   // Kept inside the window once its width is known, with the chosen option in view.
   useLayoutEffect(() => {
@@ -271,7 +263,7 @@ export function SelectLists() {
   if (!sel || !place) return null;
   const chosen = sel.selectedIndex;
 
-  return createPortal(
+  return floatingPortal(
     <div
       ref={listRef}
       id={listId}
@@ -305,7 +297,6 @@ export function SelectLists() {
           </div>
         ),
       )}
-    </div>,
-    document.body,
+    </div>
   );
 }

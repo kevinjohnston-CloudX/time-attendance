@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { floatingPortal } from "@/components/ui/floating-layer";
 import { usePathname } from "next/navigation";
 import { RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -120,7 +120,7 @@ export function NewVersionBanner() {
     }, LEAVE_MS);
   };
 
-  return createPortal(
+  return floatingPortal(
     <div
       role="status"
       aria-live="polite"
@@ -144,7 +144,6 @@ export function NewVersionBanner() {
           <X aria-hidden="true" />
         </button>
       </span>
-    </div>,
-    document.body,
+    </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
+import { useOutsidePress } from "@/components/ui/floating-layer";
 import { Search, X } from "lucide-react";
 import { findOnSitePeople } from "@/actions/presence.actions";
 import type { PickablePerson } from "@/lib/presence/people-search.service";
@@ -91,14 +92,7 @@ export function PeopleSearch({
   }, [needle, siteId]);
 
   // A click anywhere else closes the list.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
+  useOutsidePress({ open, inside: [wrapRef], onOutside: () => setOpen(false) });
 
   // Only the answer for what is typed now counts; until it lands, it is loading.
   const loading = !!needle && found.for !== needle;

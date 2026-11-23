@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { floatingPortal, useOwnPresses } from "./floating-layer";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { isPhone } from "@/lib/phone";
 import menu from "./menu.module.css";
@@ -86,6 +86,9 @@ export function DateCalendars() {
   /** The day the arrows are on, once the keys are driving. */
   const [cursor, setCursor] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  // A press on the calendar is the calendar's alone: never taken for a press
+  // outside the panel its date field sits in (see floating-layer.tsx).
+  useOwnPresses(panelRef);
   const lastPointer = useRef("mouse");
   const state = useRef({ field, cursor, month });
   useEffect(() => {
@@ -239,7 +242,7 @@ export function DateCalendars() {
   };
   const label = field.getAttribute("aria-label") ?? field.labels?.[0]?.textContent ?? "Date";
 
-  return createPortal(
+  return floatingPortal(
     <div
       ref={panelRef}
       role="dialog"
@@ -303,8 +306,7 @@ export function DateCalendars() {
           </button>
         )}
       </div>
-    </div>,
-    document.body,
+    </div>
   );
 }
 

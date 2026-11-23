@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useTransition, useEffect, useLayoutEffect, useRef } from "react";
-import { createPortal } from "react-dom";
+import { floatingPortal, useOutsidePress } from "@/components/ui/floating-layer";
 import { useSearchParams } from "next/navigation";
 import { useNavigationTarget, useRouter } from "@/components/layout/navigation-progress";
 import {
@@ -777,7 +777,7 @@ function InlinePunchEdit({
         <span style={{ font: "var(--type-caption1)", color: "var(--text-error)" }}>{error}</span>
       )}
       {askingDelete && onDelete &&
-        createPortal(
+        floatingPortal(
           <ConfirmDialog
             title="Remove this punch?"
             confirmLabel="Remove punch"
@@ -803,8 +803,7 @@ function InlinePunchEdit({
               placeholder="For example: badge scanned twice"
               hint="Kept with the punch history."
             />
-          </ConfirmDialog>,
-          document.body
+          </ConfirmDialog>
         )}
     </div>
   );
@@ -1018,38 +1017,14 @@ export function TimecardViewer({
   const filtersRef = useRef<HTMLDivElement>(null);
   // On a phone the panel is a sheet drawn at the page root, outside filtersRef.
   const filterPanelRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!showFilters) return;
-    function onDown(e: MouseEvent) {
-      const t = e.target as Node;
-      // A window opened from the sheet (the Agency list) is drawn at the page
-      // root; working in it must not close the sheet under it.
-      if ((t as Element).closest?.('[aria-modal="true"]')) return;
-      if (filtersRef.current && !filtersRef.current.contains(t) && !filterPanelRef.current?.contains(t)) setShowFilters(false);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setShowFilters(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [showFilters]);
+  // A press on a dropdown's list, or in a window opened from the sheet (the
+  // Agency list on a phone), is not outside it: those are drawn at the page
+  // root, and taking them for outside made every filter pick do nothing
+  // (ticket 79224). See floating-layer.tsx.
+  useOutsidePress({ open: showFilters, inside: [filtersRef, filterPanelRef], onOutside: () => setShowFilters(false), escape: true });
 
   // Close calendar when clicking outside
-  useEffect(() => {
-    if (!showCalendar) return;
-    function handleClick(e: MouseEvent) {
-      const t = e.target as Node;
-      if (calendarRef.current && !calendarRef.current.contains(t) && !monthSheetRef.current?.contains(t)) {
-        setShowCalendar(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [showCalendar]);
+  useOutsidePress({ open: showCalendar, inside: [calendarRef, monthSheetRef], onOutside: () => setShowCalendar(false) });
 
   // Expandable rows
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { floatingPortal } from "@/components/ui/floating-layer";
 import { X, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui";
 import styles from "./report-window.module.css";
@@ -68,7 +68,7 @@ export function ReportWindow({
     };
   }, []);
 
-  return createPortal(
+  return floatingPortal(
     <div
       className={`${styles.scrim} ta-sheet-scrim`}
       onClick={(e) => e.target === e.currentTarget && !closeDisabled && onClose()}
@@ -104,8 +104,7 @@ export function ReportWindow({
           {actions}
         </footer>
       </div>
-    </div>,
-    document.body
+    </div>
   );
 }
 
