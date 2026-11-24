@@ -227,23 +227,55 @@ export function ReportBuilder({
   const stale = previewResult !== null && previewedWith !== configKey;
   const canPreview = selectedColumns.length > 0 && isRangeReady(dateRange);
 
+  /**
+   * One preview at a time, always of the latest settings. A change while one
+   * runs asks for one more run when it ends, however many changes came in,
+   * and the answer for settings already changed is never shown. Each change
+   * used to send a run of its own, and the browser sends them one after
+   * another, so picking an agency, a site and a layout queued four runs and
+   * the last one waited for all the others.
+   */
+  const latest = useRef({ dataSource, config, configKey, canPreview });
+  useEffect(() => {
+    latest.current = { dataSource, config, configKey, canPreview };
+  });
+  const previewRunning = useRef(false);
+  const previewWanted = useRef(false);
+
   async function handleRunPreview(fromButton: boolean) {
-    if (!canPreview) return;
-    setIsRunning(true);
-    setPreviewError(null);
     // Stacked on a narrow window, the preview is under the settings.
     if (fromButton && !window.matchMedia(SIDE_BY_SIDE).matches) {
       previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-
-    const result = await runReport({ dataSource, config: { ...config, limit: PREVIEW_ROWS } });
-    if (result.success) {
-      setPreviewResult(result.data);
-      setPreviewedWith(configKey);
-    } else {
-      setPreviewError(result.error);
+    if (previewRunning.current) {
+      previewWanted.current = true;
+      return;
     }
-    setIsRunning(false);
+    previewRunning.current = true;
+    setIsRunning(true);
+    setPreviewError(null);
+    try {
+      do {
+        previewWanted.current = false;
+        const now = latest.current;
+        if (!now.canPreview) break;
+        const result = await runReport({ dataSource: now.dataSource, config: { ...now.config, limit: PREVIEW_ROWS } });
+        if (previewWanted.current) continue;
+        if (result.success) {
+          setPreviewResult(result.data);
+          setPreviewedWith(now.configKey);
+          setPreviewError(null);
+        } else {
+          setPreviewError(result.error);
+        }
+      } while (previewWanted.current);
+    } catch {
+      // Lost on the way (a dropped connection, a server cut off mid run).
+      setPreviewError("The preview did not come back. Check the connection, then press Run again.");
+    } finally {
+      previewRunning.current = false;
+      setIsRunning(false);
+    }
   }
 
   // The preview runs by itself: at once on open and on a new type, so the
