@@ -290,7 +290,7 @@ describe("a supervisor whose changes go to HR", { timeout: 20_000 }, () => {
     const { correctPunch } = await import("@/actions/punch.actions");
     (correctPunch as unknown as { mockClear: () => void }).mockClear();
     renderSup();
-    expect(screen.getByText("Changes need approval")).not.toBeNull();
+    expect(screen.getByText("Your edits need approval")).not.toBeNull();
     // No reason code or pay code offered anywhere.
     expect([...document.querySelectorAll("tr select:not([disabled])")].length).toBe(0);
     const type = (button: HTMLElement, value: string) => {
@@ -442,7 +442,7 @@ describe("a supervisor whose changes go to HR", { timeout: 20_000 }, () => {
     expect(screen.getByText("Read only")).not.toBeNull();
     cleanup();
     renderSup({ timecard: null });
-    expect(screen.getByText("Changes need approval")).not.toBeNull();
+    expect(screen.getByText("Your edits need approval")).not.toBeNull();
     const wednesday = () => row(/Wed, Oct 14/);
     const type = (value: string) => {
       fireEvent.click([...wednesday().querySelectorAll("button")].filter((b) => b.textContent === "—")[0]!);

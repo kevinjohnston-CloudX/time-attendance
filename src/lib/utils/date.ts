@@ -1,4 +1,5 @@
 import { startOfDay } from "date-fns";
+import { dateFormat } from "./date-format";
 
 /**
  * Round a Date to the nearest interval of `roundingMinutes`.
@@ -32,7 +33,7 @@ export function snapToLocalTime(hhmm: string, localDateStr: string, timezone: st
   const [y, m, d] = localDateStr.split("-").map(Number);
   const [hh, mm] = hhmm.split(":").map(Number);
   const asIfUtc = new Date(Date.UTC(y, m - 1, d, hh, mm, 0));
-  const parts = new Intl.DateTimeFormat("en-US", {
+  const parts = dateFormat("en-US", {
     timeZone: timezone,
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", second: "2-digit",
@@ -94,11 +95,11 @@ export function computeRoundedTime(
 
   // Shift-aware rounding: only applies to CLOCK_IN / CLOCK_OUT on workdays
   if (ruleSet.shiftRoundingEnabled && shift && (isIn || isOut)) {
-    const localDateStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(time);
+    const localDateStr = dateFormat("en-CA", { timeZone: timezone }).format(time);
     const dow = new Date(localDateStr + "T12:00:00.000Z").getUTCDay();
 
     if (shift.workDays.includes(dow)) {
-      const timeParts = new Intl.DateTimeFormat("en-US", {
+      const timeParts = dateFormat("en-US", {
         timeZone: timezone, hour: "2-digit", minute: "2-digit", hour12: false,
       }).formatToParts(time);
       const lh = parseInt(timeParts.find((p) => p.type === "hour")?.value ?? "0", 10);
@@ -157,11 +158,11 @@ export function parseUtcDate(d: Date | string): Date {
  *          → local date is 2026-09-14 → local midnight = 2026-09-14T07:00:00Z
  */
 export function startOfDayInTz(utcDate: Date, timezone: string): Date {
-  const localDateStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(utcDate);
+  const localDateStr = dateFormat("en-CA", { timeZone: timezone }).format(utcDate);
   const [y, m, d] = localDateStr.split("-").map(Number);
   const asIfUtc = new Date(Date.UTC(y, m - 1, d));
 
-  const parts = new Intl.DateTimeFormat("en-US", {
+  const parts = dateFormat("en-US", {
     timeZone: timezone,
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", second: "2-digit",
@@ -238,7 +239,7 @@ export function endOfDayInTz(dateStr: string, timezone: string): Date {
   const [y, m, d] = dateStr.split("-").map(Number);
   const asIfUtc = new Date(Date.UTC(y, m - 1, d, 23, 59, 59));
 
-  const parts = new Intl.DateTimeFormat("en-US", {
+  const parts = dateFormat("en-US", {
     timeZone: timezone,
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", second: "2-digit",
@@ -256,12 +257,12 @@ export function endOfDayInTz(dateStr: string, timezone: string): Date {
 }
 
 export function nextMidnightInTz(utcDate: Date, timezone: string): Date {
-  const localDateStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(utcDate);
+  const localDateStr = dateFormat("en-CA", { timeZone: timezone }).format(utcDate);
   const [y, m, d] = localDateStr.split("-").map(Number);
   const nextDayAsIfUtc = new Date(Date.UTC(y, m - 1, d + 1));
 
   // Use formatToParts for reliable structured output (no locale string parsing).
-  const parts = new Intl.DateTimeFormat("en-US", {
+  const parts = dateFormat("en-US", {
     timeZone: timezone,
     year: "numeric",
     month: "2-digit",
@@ -304,7 +305,7 @@ export function nextMidnightInTz(utcDate: Date, timezone: string): Date {
  * saved.
  */
 export function toSiteClock(instant: Date, timezone: string): Date {
-  const parts = new Intl.DateTimeFormat("en-US", {
+  const parts = dateFormat("en-US", {
     timeZone: timezone,
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", second: "2-digit",
@@ -333,7 +334,7 @@ export function fromSiteClock(clock: Date, timezone: string): Date {
 /** "PDT", "EST": the zone's short name at that moment, for labelling site times. */
 export function timeZoneAbbrev(timezone: string, at: Date = new Date()): string {
   return (
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone, timeZoneName: "short" })
+    dateFormat("en-US", { timeZone: timezone, timeZoneName: "short" })
       .formatToParts(at)
       .find((p) => p.type === "timeZoneName")?.value ?? timezone
   );

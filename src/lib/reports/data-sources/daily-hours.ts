@@ -13,6 +13,7 @@ import { readable } from "../readable";
 import { snapToLocalTime } from "@/lib/utils/date";
 import { codePaidUnder, overtimeCodesOf } from "../overtime-pay-code";
 import { rateInEffect } from "@/lib/pay-rates";
+import { dateFormat } from "@/lib/utils/date-format";
 
 const fieldMap: FieldMap = {
   employeeName:  { prismaPath: "timesheet.employee.user.name",       type: "string" },
@@ -253,45 +254,22 @@ export const dailyHoursSource: DataSourceDefinition = {
       }
     }
 
+    const weekStart = await tenantWeekStart(tenantId);
+    keepOnlyShownDays(dayMap, config, weekStart);
+
     await fillClockTimes(dayMap);
     const money = await fillMoney(dayMap);
-    const weekStart = await tenantWeekStart(tenantId);
     const attendance = await fillAttendance(dayMap);
 
     const rows = Array.from(dayMap.values()).map((day) => ({
-      employeeName:  day.employeeName,
-      employeeCode:  day.employeeCode,
-      department:    day.department,
-      site:          day.site,
-      date:          day.date,
-      ...weekOf(day.date, weekStart),
+      ...dayLine(day, weekStart),
       clockIn:       day.clockIn ? siteClock(day.clockIn, day.timezone) : null,
       clockOut:      day.clockOut ? siteClock(day.clockOut, day.timezone) : null,
       punchPairs:    day.punchPairs ?? null,
-      regMinutes:    day.regMinutes,
-      otMinutes:     day.otMinutes,
-      dtMinutes:     day.dtMinutes,
-      timeOffMinutes: (day.leaveMinutes ?? 0) - (day.unpaidLeaveMinutes ?? 0),
-      holidayMinutes: day.holidayMinutes ?? 0,
-      unpaidMinutes: day.unpaidLeaveMinutes ?? 0,
-      totalMinutes:  day.paidMinutes,
-      premiumMinutes: day.premiumMinutes,
-      payType:       day.payType,
-      payCodes:      day.payCodeSet.size > 0 ? Array.from(day.payCodeSet).join(", ") : null,
-      reasonCode:    day.reasonCode,
       ...attendance.get(`${day.employeeId}|${day.date}`),
       ...money.get(`${day.employeeId}|${day.date}`),
     }));
-
-    // By date and then name unless the report says otherwise. Every column is
-    // worked out here rather than read from one table, so the sort is too.
-    rows.sort((a, b) => a.date.localeCompare(b.date) || a.employeeName.localeCompare(b.employeeName));
-    const sortedRows = sortRowsInMemory(
-      // Filters on what is worked out here: the day type, minutes late, 7 days worked.
-      filterRowsInMemory(textFilter(rows, config.filters, ["dayType"]), config.filters.filter((f) => f.field !== "dayType"), fieldMap),
-      config.sortBy,
-      {}
-    );
+    const sortedRows = inReportOrder(rows, config);
 
     // Apply row limit after collapsing
     const limitedRows = config.limit ? sortedRows.slice(0, config.limit) : sortedRows;
@@ -307,6 +285,79 @@ export const dailyHoursSource: DataSourceDefinition = {
     };
   },
 };
+
+/**
+ * What a day line says before its clock times, rates and attendance are read:
+ * everything the report knows from the hour lines alone. The finished line
+ * starts from this, so a sort on any of these fields orders the days the
+ * same whether it runs before those reads or after.
+ */
+function dayLine(day: DayRow, weekStart: number) {
+  return {
+    employeeName:  day.employeeName,
+    employeeCode:  day.employeeCode,
+    department:    day.department,
+    site:          day.site,
+    date:          day.date,
+    ...weekOf(day.date, weekStart),
+    regMinutes:    day.regMinutes,
+    otMinutes:     day.otMinutes,
+    dtMinutes:     day.dtMinutes,
+    timeOffMinutes: (day.leaveMinutes ?? 0) - (day.unpaidLeaveMinutes ?? 0),
+    holidayMinutes: day.holidayMinutes ?? 0,
+    unpaidMinutes: day.unpaidLeaveMinutes ?? 0,
+    totalMinutes:  day.paidMinutes,
+    premiumMinutes: day.premiumMinutes,
+    payType:       day.payType,
+    payCodes:      day.payCodeSet.size > 0 ? Array.from(day.payCodeSet).join(", ") : null,
+    reasonCode:    day.reasonCode,
+  };
+}
+
+/** The fields dayLine fills in, which a sort can use before the reads. */
+const KNOWN_BEFORE_READS = new Set(Object.keys(dayLine({
+  employeeId: "", timezone: "UTC", isSalary: false, employeeName: "", employeeCode: "", department: "", site: "",
+  date: "2026-01-01", clockIn: null, clockOut: null, regMinutes: 0, otMinutes: 0, dtMinutes: 0, paidMinutes: 0,
+  premiumMinutes: 0, payType: "", payCodeSet: new Set(), reasonCode: null,
+}, 0)));
+
+/**
+ * The lines in the order the report shows them, after the filters on what is
+ * worked out here (the day type, minutes late, 7 days worked). By date and
+ * then name unless the report says otherwise; every column is worked out
+ * here rather than read from one table, so the sort is too.
+ */
+function inReportOrder<T extends { date: string; employeeName: string }>(rows: T[], config: ReportConfig): T[] {
+  rows.sort((a, b) => a.date.localeCompare(b.date) || a.employeeName.localeCompare(b.employeeName));
+  return sortRowsInMemory(
+    filterRowsInMemory(textFilter(rows, config.filters, ["dayType"]), config.filters.filter((f) => f.field !== "dayType"), fieldMap),
+    config.sortBy,
+    {},
+  ) as T[];
+}
+
+/**
+ * A run that shows only its first lines (a preview's 100) reads clock times,
+ * rates and attendance for those lines alone. Every one of those reads is
+ * per day, so the lines it keeps come out exactly as they would from the
+ * whole run, and in the same order: the order is worked out here, the same
+ * way, from the same fields.
+ *
+ * <p>Only when the order and the filters need nothing those reads fill in.
+ * A sort on clock in or agency, or a filter on the day type, minutes late or
+ * 7 days worked, reads every day first, as before. Without this a preview of
+ * 100 lines with no site or agency picked read the whole company's week:
+ * 57,000 date formatters and about 900 MB, past the live server's 5 minute
+ * limit (Nov 24, 2026).
+ */
+function keepOnlyShownDays(dayMap: Map<string, DayRow>, config: ReportConfig, weekStart: number) {
+  if (!config.limit || dayMap.size <= config.limit) return;
+  if (config.sortBy.some((s) => !KNOWN_BEFORE_READS.has(s.field))) return;
+  if (config.filters.some((f) => f.field === "dayType" || !fieldMap[f.field])) return;
+  const lines = [...dayMap.entries()].map(([key, day]) => ({ key, ...dayLine(day, weekStart) }));
+  const shown = new Set(inReportOrder(lines, config).slice(0, config.limit).map((l) => l.key));
+  for (const key of [...dayMap.keys()]) if (!shown.has(key)) dayMap.delete(key);
+}
 
 const cents = (n: number) => Math.round(n * 100) / 100;
 
@@ -368,11 +419,11 @@ function weekOf(day: string, weekStart: number): { week: string; weekStart: stri
   const back = (new Date(at).getUTCDay() - weekStart + 7) % 7;
   const first = new Date(at - back * 86_400_000);
   const last = new Date(first.getTime() + 6 * 86_400_000);
-  const short = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  const short = (d: Date) => dateFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(d);
   return {
     week: `${short(first)} – ${short(last)}, ${last.getUTCFullYear()}`,
     weekStart: first.toISOString().slice(0, 10),
-    weekday: new Date(at).toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" }),
+    weekday: dateFormat("en-US", { weekday: "short", timeZone: "UTC" }).format(new Date(at)),
     // The company's first day of the week first.
     weekdayOrder: back,
   };
@@ -466,12 +517,42 @@ async function addDaysWithoutHours(
   const days = await reportDays(dateRange, tenantId);
   if (!days) return;
 
+  // The people the report covers, as a filter on the punch or absence rather
+  // than a list read first: the whole company's people (every one ever, about
+  // 7,400) used to be read and sent back as a list of ids, for a week in
+  // which a few thousand clocked in.
+  const inScope = {
+    tenantId,
+    ...employeeFilter,
+    ...(days.timesheetWhere ? { timesheets: { some: days.timesheetWhere } } : {}),
+  } as Prisma.EmployeeWhereInput;
+
+  const [clockIns, absences] = await Promise.all([
+    // Clock ins, by the day they fall on at the site. Salaried people have no clock times.
+    db.punch.findMany({
+      where: {
+        ...CLOCK_PUNCH_WHERE,
+        punchType: "CLOCK_IN",
+        employee: { AND: [inScope, { OR: [{ payType: null }, { payType: { not: "SALARY" } }] }] },
+        roundedTime: { gte: new Date(nextDayStr(days.firstDay, -1) + "T00:00:00Z"), lt: new Date(nextDayStr(days.lastDay, 2) + "T00:00:00Z") },
+      },
+      select: { employeeId: true, roundedTime: true },
+    }),
+    // Absences. They are stamped at noon UTC on their day, so the UTC date is the day.
+    db.exception.findMany({
+      where: {
+        exceptionType: "ABSENT",
+        occurredAt: { gte: new Date(days.firstDay + "T00:00:00Z"), lt: new Date(nextDayStr(days.lastDay) + "T00:00:00Z") },
+        timesheet: { employee: inScope, ...(days.timesheetWhere ?? {}) },
+      },
+      select: { occurredAt: true, timesheet: { select: { employeeId: true } } },
+    }),
+  ]);
+  if (clockIns.length === 0 && absences.length === 0) return;
+
+  // Only the people with such a day, for their name, site and clock.
   const employees = await db.employee.findMany({
-    where: {
-      tenantId,
-      ...employeeFilter,
-      ...(days.timesheetWhere ? { timesheets: { some: days.timesheetWhere } } : {}),
-    } as Prisma.EmployeeWhereInput,
+    where: { id: { in: [...new Set([...clockIns.map((p) => p.employeeId), ...absences.map((a) => a.timesheet.employeeId)])] } },
     select: {
       id: true, wmsId: true, employeeCode: true, payType: true,
       user: { select: { name: true } },
@@ -480,7 +561,6 @@ async function addDaysWithoutHours(
       site: { select: { name: true, timezone: true } },
     },
   });
-  if (employees.length === 0) return;
   const byId = new Map(employees.map((e) => [e.id, e]));
 
   const found = new Map<string, { employeeId: string; date: string }>();
@@ -488,28 +568,7 @@ async function addDaysWithoutHours(
     const key = `${employeeId}|${date}`;
     if (date >= days.firstDay && date <= days.lastDay && !dayMap.has(key)) found.set(key, { employeeId, date });
   };
-
-  // Clock ins, by the day they fall on at the site. Salaried people have no clock times.
-  const clockIns = await db.punch.findMany({
-    where: {
-      ...CLOCK_PUNCH_WHERE,
-      punchType: "CLOCK_IN",
-      employeeId: { in: employees.filter((e) => e.payType !== "SALARY").map((e) => e.id) },
-      roundedTime: { gte: new Date(nextDayStr(days.firstDay, -1) + "T00:00:00Z"), lt: new Date(nextDayStr(days.lastDay, 2) + "T00:00:00Z") },
-    },
-    select: { employeeId: true, roundedTime: true },
-  });
   for (const p of clockIns) add(p.employeeId, siteDay(p.roundedTime, personTimeZone(byId.get(p.employeeId))));
-
-  // Absences. They are stamped at noon UTC on their day, so the UTC date is the day.
-  const absences = await db.exception.findMany({
-    where: {
-      exceptionType: "ABSENT",
-      occurredAt: { gte: new Date(days.firstDay + "T00:00:00Z"), lt: new Date(nextDayStr(days.lastDay) + "T00:00:00Z") },
-      timesheet: { employeeId: { in: employees.map((e) => e.id) }, ...(days.timesheetWhere ?? {}) },
-    },
-    select: { occurredAt: true, timesheet: { select: { employeeId: true } } },
-  });
   for (const a of absences) add(a.timesheet.employeeId, a.occurredAt.toISOString().slice(0, 10));
 
   if (found.size === 0) return;
@@ -549,12 +608,12 @@ async function addDaysWithoutHours(
 
 /** A time on the site's clock, the way the timecard shows it: "7:58 AM". */
 function siteClock(instant: Date, timezone: string): string {
-  return new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", minute: "2-digit", hour12: true }).format(instant);
+  return dateFormat("en-US", { timeZone: timezone, hour: "numeric", minute: "2-digit", hour12: true }).format(instant);
 }
 
 /** The calendar day an instant falls on at the site, as YYYY-MM-DD. */
 function siteDay(instant: Date, timezone: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(instant);
+  return dateFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(instant);
 }
 
 /**

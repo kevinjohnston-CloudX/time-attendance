@@ -2806,10 +2806,14 @@ export function TimecardViewer({
                       <Badge>No punches yet</Badge>
                     )}
                     {/* Said beside the status rather than in a line over the
-                        grid: it is a fact about this timecard, like its status. */}
+                        grid. It is about the viewer, not this timecard, so it
+                        says "Your": "Changes need approval" stayed on every
+                        timecard and read as changes still waiting after HR had
+                        approved them (CXT 80091). Waiting changes are marked
+                        on their own rows. */}
                     {!canEdit && (canSend ? (
                       <span title="Your changes on rows of regular hours go to a manager or HR for approval, and nothing on the timecard changes until they're approved. Pay codes, reason codes, leave and meal premiums are for managers, HR and payroll.">
-                        <Badge>Changes need approval</Badge>
+                        <Badge>Your edits need approval</Badge>
                       </span>
                     ) : (
                       <span title={supervisorEditsOff ? "Supervisors can't change this person's timecard: their site doesn't allow it yet, they're salaried, or they rank above you. Ask HR or payroll." : "These hours cannot be changed from here."}>
