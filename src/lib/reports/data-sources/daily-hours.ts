@@ -125,12 +125,26 @@ export const dailyHoursSource: DataSourceDefinition = {
 
     const segments = await db.workSegment.findMany({
       where,
-      include: {
+      // Only the fields the day lines use. Every column of each person, user
+      // and department with a month of the company's 50,000 lines took 3.7 s
+      // of the 5 the Monthly attendance summary spent; these take 1.3 s
+      // (Nov 24, 2026).
+      select: {
+        segmentDate: true, durationMinutes: true, segmentType: true,
+        payBucket: true, payBucketOverride: true, isPaid: true,
         payCode: { select: { code: true, label: true, payBucket: true } },
         timesheet: {
-          include: {
-            employee: { include: { user: true, department: true, site: { select: { name: true, timezone: true } } } },
-            dayReasons: { include: { reasonCode: { select: { code: true, label: true } } } },
+          select: {
+            employeeId: true,
+            employee: {
+              select: {
+                employeeCode: true, wmsId: true, payType: true, timeZone: true,
+                user: { select: { name: true } },
+                department: { select: { name: true } },
+                site: { select: { name: true, timezone: true } },
+              },
+            },
+            dayReasons: { select: { segmentDate: true, reasonCode: { select: { code: true, label: true } } } },
           },
         },
       },
