@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * A note on the day someone changed on a timecard: what they added, changed
@@ -45,12 +46,12 @@ export async function noteTimecardChange(o: {
 
 /** A moment as the clock at the site showed it, "8:06 AM". */
 export function clockAt(d: Date, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit" }).format(d);
+  return dateFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit" }).format(d);
 }
 
 /** A moment's calendar day at the site, "yyyy-MM-dd". */
 export function dayAt(d: Date, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone }).format(d);
+  return dateFormat("en-CA", { timeZone }).format(d);
 }
 
 /** Hours to two places, "8.00 h". */
