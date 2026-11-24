@@ -358,7 +358,12 @@ export function ReportBuilder({
       ? "Updating with your changes"
       : previewResult
         ? previewResult.rows.length >= PREVIEW_ROWS
-          ? `The first ${PREVIEW_ROWS} rows. The saved report returns up to ${savedLimit(dataSource).toLocaleString("en-US")}.`
+          ? // Totals are left out of a cut preview, and the note saying so sat
+            // under 100 rows: a payroll user read it as a report without
+            // totals (agency 63, Georgia). Said here, where it is read.
+            previewResult.groups && previewResult.groups.totalColumns.length > 0 && !previewResult.groups.totalsShown
+            ? `The first ${PREVIEW_ROWS} rows. Totals show on the saved report.`
+            : `The first ${PREVIEW_ROWS} rows. The saved report returns up to ${savedLimit(dataSource).toLocaleString("en-US")}.`
           : "Every row these settings return."
         : `The first ${PREVIEW_ROWS} rows these settings return.`;
 
