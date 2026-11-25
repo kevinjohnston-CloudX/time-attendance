@@ -21,7 +21,7 @@ import { periodLastDay } from "@/lib/pay-period-display";
 import type { PayFrequency } from "@prisma/client";
 import { minutesToHoursDecimal } from "@/lib/utils/duration";
 import { agencyParam, agencySummary } from "@/lib/agency-filter";
-import { PAID_LEAVE_BUCKETS, missedPunchDays as missedPunchDaysOf, timecardHours } from "@/lib/payroll/timecard-hours";
+import { PAID_LEAVE_BUCKETS, dayHours, effectiveBucket, missedPunchDays as missedPunchDaysOf, timecardHours } from "@/lib/payroll/timecard-hours";
 import { FilterMultiChip } from "@/components/ui/filter-multi-chip";
 
 /** No agency picked: everybody. One array, so a default does not change on every render. */
@@ -246,11 +246,6 @@ type LeaveTypeOption = {
   isPaid: boolean;
 };
 
-type TimecardBucket = {
-  bucket: string;
-  totalMinutes: number;
-};
-
 type TimecardException = {
   id: string;
   exceptionType: string;
@@ -278,7 +273,6 @@ type TimecardDetail = {
   };
   punches: TimecardPunch[];
   segments: TimecardSegment[];
-  overtimeBuckets: TimecardBucket[];
   mealWaivers: { id: string; segmentDate: string; reason: string | null }[];
   mealPremiumWaivers: { id: string; segmentDate: string; segmentStart: string }[];
   notes: TimesheetNoteItem[];
@@ -2173,9 +2167,10 @@ export function TimecardViewer({
     timecard &&
       timecard.employee.ruleSet.overtimeRequiresAuth &&
       !timecard.otAuthorized &&
-      timecard.overtimeBuckets.some(
-        (b) => (b.bucket === "OT" || b.bucket === "DT") && b.totalMinutes > 0,
-      ),
+      timecard.segments.some((seg) => {
+        const eb = effectiveBucket(seg);
+        return (eb === "OT" || eb === "DT") && seg.durationMinutes > 0;
+      }),
   );
   // Not offered on a read-only timecard: the server refuses it there anyway.
   const canAuthorizeOt =
@@ -3022,25 +3017,9 @@ export function TimecardViewer({
                       const startsWeek = multiWeek && offset % 7 === 0;
                       const weekEnd = new Date(Math.min(addDays(day, 6).getTime(), lastPeriodDay.getTime()));
 
-                      const buckets: Record<string, number> = {};
-                      for (const seg of daySegments) {
-                        // A meal premium has its own line below the day; it is not hours worked.
-                        if (seg.segmentType === "MEAL_PREMIUM") continue;
-                        // REG/OT/DT overrides are display-only tags; use engine payBucket for column math
-                        const eb = (seg.payBucketOverride && !["REG", "OT", "DT"].includes(seg.payBucketOverride))
-                          ? seg.payBucketOverride
-                          : seg.payBucket;
-                        // Holiday and leave credit under the REG column
-                        const displayBucket = (seg.segmentType === "HOLIDAY" || seg.segmentType === "LEAVE") ? "REG" : eb;
-                        buckets[displayBucket] = (buckets[displayBucket] ?? 0) + seg.durationMinutes;
-                      }
-
-                      const reg = buckets["REG"] ?? 0;
-                      const ot = buckets["OT"] ?? 0;
-                      const dt = buckets["DT"] ?? 0;
-                      const dailyTotal = daySegments
-                        .filter((s) => s.isPaid && s.segmentType !== "MEAL_PREMIUM")
-                        .reduce((a, s) => a + s.durationMinutes, 0);
+                      // The day rule every timecard grid shares (lib/payroll/timecard-hours):
+                      // leave and holiday under Regular, meal premium on its own line.
+                      const { reg, ot, dt, total: dailyTotal } = dayHours(daySegments);
 
                       const pairs = buildPunchPairs(dayPunches);
                       const firstIn = pairs[0]?.inPunch ?? undefined;
@@ -4385,14 +4364,6 @@ export function TimecardViewer({
                       </THead>
                       <tbody>
                         {(() => {
-                          const bucketMap: Record<string, number> =
-                            Object.fromEntries(
-                              (timecard?.overtimeBuckets ?? []).map((b) => [
-                                b.bucket,
-                                b.totalMinutes,
-                              ])
-                            );
-
                           // Days with a missed punch are left out of every grouping.
                           const missingPunchDates = missedPunchDays;
 

@@ -12,6 +12,8 @@ import {
   findOpenPayPeriod,
 } from "@/lib/utils/punch-helpers";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { hoursForTimesheets } from "@/lib/payroll/timecard-hours.server";
+import { NO_HOURS } from "@/lib/payroll/timecard-hours";
 
 export async function GET(req: NextRequest) {
   try {
@@ -59,25 +61,18 @@ export async function GET(req: NextRequest) {
           employeeId: actor.employeeId,
           payPeriodId: payPeriod.id,
         },
-        include: {
-          overtimeBuckets: { select: { bucket: true, totalMinutes: true } },
-        },
+        select: { id: true, status: true },
       });
       if (ts) {
-        const buckets = ts.overtimeBuckets;
-        const regMinutes =
-          buckets.find((b) => b.bucket === "REG")?.totalMinutes ?? 0;
-        const otMinutes =
-          buckets.find((b) => b.bucket === "OT")?.totalMinutes ?? 0;
-        const dtMinutes =
-          buckets.find((b) => b.bucket === "DT")?.totalMinutes ?? 0;
+        // As the timecard shows them, counted from its lines.
+        const h = (await hoursForTimesheets([ts.id])).get(ts.id) ?? NO_HOURS;
         timesheet = {
           id: ts.id,
           status: ts.status,
-          totalMinutes: regMinutes + otMinutes + dtMinutes,
-          regMinutes,
-          otMinutes,
-          dtMinutes,
+          totalMinutes: h.total,
+          regMinutes: h.reg,
+          otMinutes: h.ot,
+          dtMinutes: h.dt,
         };
       }
     }

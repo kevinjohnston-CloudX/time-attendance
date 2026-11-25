@@ -42,6 +42,7 @@ export type HoursLine = {
   /** The pay code's own Not paid setting, when the line carries a code. */
   payCodeIsPaid?: boolean | null;
   segmentDate: Date | string;
+  /** Exact minutes, from the seconds column (leave holds hundredths of an hour). */
   durationMinutes: number;
 };
 
@@ -59,9 +60,21 @@ export type TimecardHours = {
   notPaid: number;
   /** Meal premium hours: pay owed, not hours worked. Outside Total. */
   premium: number;
+  /** Total split by the code each hour is paid under (REG, OT, PTO, FMLA...). */
+  byBucket: Record<string, number>;
+  /** The part of each code's hours under a code set to Not paid. */
+  notPaidByBucket: Record<string, number>;
+  /**
+   * Leave lines marked unpaid (Unpaid Time Off), by code. Outside Total, as
+   * the timecard's Summary shows them in their own Unpaid column.
+   */
+  unpaidLeaveByBucket: Record<string, number>;
 };
 
-export const NO_HOURS: TimecardHours = { reg: 0, ot: 0, dt: 0, total: 0, leave: 0, notPaid: 0, premium: 0 };
+export const NO_HOURS: TimecardHours = {
+  reg: 0, ot: 0, dt: 0, total: 0, leave: 0, notPaid: 0, premium: 0,
+  byBucket: {}, notPaidByBucket: {}, unpaidLeaveByBucket: {},
+};
 
 /** A line's day, as the timecard grid files it. */
 export function lineDay(segmentDate: Date | string): string {
@@ -92,15 +105,26 @@ export function effectiveBucket(line: Pick<HoursLine, "payBucket" | "payBucketOv
 /** A timecard's hours from its lines. */
 export function timecardHours(lines: Iterable<HoursLine>, skipDays: ReadonlySet<string>): TimecardHours {
   const byBucket: Record<string, number> = {};
+  const notPaidByBucket: Record<string, number> = {};
+  const unpaidLeaveByBucket: Record<string, number> = {};
   let premium = 0;
   let notPaid = 0;
   for (const s of lines) {
-    if (!s.isPaid) continue;
     if (skipDays.size > 0 && skipDays.has(lineDay(s.segmentDate))) continue;
+    if (!s.isPaid) {
+      if ((s.segmentType === "LEAVE" || s.segmentType === "HOLIDAY") && s.durationMinutes > 0) {
+        const ub = effectiveBucket(s);
+        unpaidLeaveByBucket[ub] = (unpaidLeaveByBucket[ub] ?? 0) + s.durationMinutes;
+      }
+      continue;
+    }
     if (s.segmentType === "MEAL_PREMIUM") { premium += s.durationMinutes; continue; }
     const eb = effectiveBucket(s);
     byBucket[eb] = (byBucket[eb] ?? 0) + s.durationMinutes;
-    if (s.payCodeIsPaid === false) notPaid += s.durationMinutes;
+    if (s.payCodeIsPaid === false) {
+      notPaid += s.durationMinutes;
+      notPaidByBucket[eb] = (notPaidByBucket[eb] ?? 0) + s.durationMinutes;
+    }
   }
   let leave = 0;
   for (const [k, v] of Object.entries(byBucket)) if (PAID_LEAVE_BUCKETS.has(k)) leave += v;
@@ -112,5 +136,29 @@ export function timecardHours(lines: Iterable<HoursLine>, skipDays: ReadonlySet<
     leave,
     notPaid,
     premium,
+    byBucket,
+    notPaidByBucket,
+    unpaidLeaveByBucket,
   };
+}
+
+/** One day of a timecard grid, in minutes. */
+export type DayHours = { reg: number; ot: number; dt: number; total: number };
+
+/**
+ * One day's figures as every timecard grid shows them (HR's timecard and the
+ * employee's own): leave and holiday lines under Regular, a worked line
+ * recoded to a leave code (FMLA) under its code, so in Total only, and meal
+ * premium left out (it has its own line under the day).
+ */
+export function dayHours(lines: Iterable<Omit<HoursLine, "segmentDate"> & { segmentDate?: Date | string }>): DayHours {
+  const buckets: Record<string, number> = {};
+  let total = 0;
+  for (const s of lines) {
+    if (s.segmentType === "MEAL_PREMIUM") continue;
+    const shown = s.segmentType === "HOLIDAY" || s.segmentType === "LEAVE" ? "REG" : effectiveBucket(s);
+    buckets[shown] = (buckets[shown] ?? 0) + s.durationMinutes;
+    if (s.isPaid) total += s.durationMinutes;
+  }
+  return { reg: buckets["REG"] ?? 0, ot: buckets["OT"] ?? 0, dt: buckets["DT"] ?? 0, total };
 }

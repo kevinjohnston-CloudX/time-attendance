@@ -10,6 +10,7 @@ import { endedOn, startedOn } from "@/lib/engines/segment-builder";
 import { ownCompany } from "@/lib/rbac/company";
 import { checkPermission } from "@/lib/rbac/check-permission";
 import { agencyWhere } from "@/lib/agency-filter";
+import { hoursForTimesheets } from "@/lib/payroll/timecard-hours.server";
 
 // ─── Employee list (employee-centric timecard) ───────────────────────────────
 
@@ -211,7 +212,6 @@ export const getTimecardByEmployeeAndPeriod = withRBAC(
             payCode: { select: { id: true, code: true, label: true, isPaid: true } },
           },
         },
-        overtimeBuckets: true,
         exceptions: {
           where: { resolvedAt: null },
           select: { id: true, exceptionType: true, occurredAt: true, description: true },
@@ -314,7 +314,6 @@ export const getTimecardEmployeeList = withRBAC(
             site: { select: { id: true, name: true } },
           },
         },
-        overtimeBuckets: true,
         exceptions: {
           where: { resolvedAt: null },
           select: { exceptionType: true },
@@ -323,6 +322,8 @@ export const getTimecardEmployeeList = withRBAC(
       orderBy: { employee: { user: { name: "asc" } } },
     });
 
+    // Hours as each timecard shows them, counted from its lines.
+    const hours = await hoursForTimesheets(timesheets.map((ts) => ts.id));
     return timesheets.map((ts) => ({
       timesheetId: ts.id,
       employeeId: ts.employeeId,
@@ -333,10 +334,7 @@ export const getTimecardEmployeeList = withRBAC(
       siteName: ts.employee.site?.name ?? null,
       status: ts.status,
       isActive: ts.employee.isActive,
-      totalMinutes: ts.overtimeBuckets.reduce(
-        (sum, b) => sum + b.totalMinutes,
-        0
-      ),
+      totalMinutes: hours.get(ts.id)?.total ?? 0,
       exceptionTypes: [
         ...new Set(ts.exceptions.map((e) => e.exceptionType)),
       ],
@@ -409,7 +407,6 @@ export const getTimecardDetail = withRBAC(
             },
           },
         },
-        overtimeBuckets: true,
         exceptions: {
           where: { resolvedAt: null },
           select: { id: true, exceptionType: true, occurredAt: true, description: true },
