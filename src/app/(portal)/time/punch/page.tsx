@@ -147,6 +147,7 @@ export default async function PunchPage() {
         <Card title="Today's Punches" subtitle={today.since} padding={0}>
           <PunchHistoryTable
             punches={todayPunchRecords}
+            timeZone={siteZone}
             emptyTitle="Nothing punched today"
             emptyBody="Your first scan of the day will appear here."
           />
