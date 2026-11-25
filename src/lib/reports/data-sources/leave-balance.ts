@@ -80,6 +80,7 @@ export const leaveBalanceSource: DataSourceDefinition = {
       orderBy: [
         { employee: { user: { name: "asc" } } },
         { leaveType: { name: "asc" } },
+        { id: "asc" },
       ],
     });
 

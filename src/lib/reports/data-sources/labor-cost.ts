@@ -108,6 +108,8 @@ export const laborCostSource: DataSourceDefinition = {
 
     const employees = await db.employee.findMany({
       where: { tenantId, ...buildWhereClause(config.filters, fieldMap) },
+      // A fixed order, so rows that tie on the sort keep it from run to run.
+      orderBy: [{ user: { name: "asc" } }, { id: "asc" }],
       select: {
         id: true,
         wmsId: true,

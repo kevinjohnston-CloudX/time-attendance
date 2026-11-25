@@ -95,7 +95,8 @@ export const scansNotRecordedSource: DataSourceDefinition = {
           AND (
             (se.outcome::text IN ('PUNCH_REJECTED', 'ERROR') AND e.id IS NOT NULL)
             OR (se."employeeId" IS NULL AND st.id IS NOT NULL)
-          )`,
+          )
+        ORDER BY se."scanTime", se.id`,
       db.gateRefusal.findMany({
         where: {
           tenantId,
@@ -105,6 +106,7 @@ export const scansNotRecordedSource: DataSourceDefinition = {
           workDate: true, firstAt: true, reason: true, attempts: true, deviceName: true, employeeId: true,
           site: { select: { id: true, name: true, timezone: true } },
         },
+        orderBy: [{ firstAt: "asc" }, { id: "asc" }],
       }),
     ]);
 

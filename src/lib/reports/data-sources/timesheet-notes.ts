@@ -43,7 +43,7 @@ export const timesheetNotesSource: DataSourceDefinition = {
         noteDate: { gte: new Date(`${span.start}T00:00:00Z`), lte: new Date(`${span.end}T00:00:00Z`) },
       },
       select: { noteDate: true, note: true, createdByName: true, createdAt: true, timesheet: { select: { employeeId: true } } },
-      orderBy: [{ noteDate: "asc" }, { createdAt: "asc" }],
+      orderBy: [{ noteDate: "asc" }, { createdAt: "asc" }, { id: "asc" }],
     });
 
     let rows: Record<string, unknown>[] = notes.map((n) => {

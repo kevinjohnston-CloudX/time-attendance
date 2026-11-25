@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { readable } from "../readable";
 import { timesheetPayPeriodWhere } from "../date-scope";
 import type { DataSourceDefinition, ReportResult } from "./index";
-import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
+import { buildWhereClause, readOrder, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { tenantWeekStart } from "../moving-period";
@@ -139,10 +139,8 @@ export const attendanceDetailSource: DataSourceDefinition = {
       },
     } as Prisma.WorkSegmentWhereInput;
 
-    const orderBy =
-      config.sortBy.length > 0
-        ? [...buildOrderBy(config.sortBy, fieldMap), { segmentDate: "asc" as const }, { startTime: "asc" as const }]
-        : [{ segmentDate: "asc" as const }, { startTime: "asc" as const }];
+    const byDay = [{ segmentDate: "asc" as const }, { startTime: "asc" as const }];
+    const order = readOrder(config, fieldMap, { unsorted: byDay, then: byDay });
 
     // Only the fields the lines use: a month of the company is about 48,000
     // lines, and reading every column of each person, user and site with
@@ -170,8 +168,8 @@ export const attendanceDetailSource: DataSourceDefinition = {
           },
         },
       },
-      orderBy,
-      take: config.limit,
+      orderBy: order.orderBy,
+      take: order.take,
     });
 
     const weekStart = await tenantWeekStart(tenantId);
@@ -218,8 +216,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
       };
     });
 
-    // In-memory sort for computed columns (date, startTime, endTime, etc.)
-    const sortedRows = sortRowsInMemory(rows, config.sortBy, fieldMap);
+    const { rows: sortedRows, total } = order.finish(rows);
 
     const colById = Object.fromEntries(attendanceDetailSource.columns.map((c) => [c.id, c]));
     const visibleColumns = config.columns.map((id) => colById[id]).filter(Boolean);
@@ -227,7 +224,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
     return {
       columns: visibleColumns.map((c) => ({ id: c.id, label: c.label, type: c.type })),
       rows: sortedRows,
-      totalRows: sortedRows.length,
+      totalRows: total,
     };
   },
 };

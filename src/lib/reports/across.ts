@@ -1,4 +1,5 @@
 import { addsUp } from "./grouping";
+import { compareText } from "./query-builder";
 
 /**
  * A report with one field spread across the columns: a column for each day
@@ -84,7 +85,7 @@ export function spreadAcross(
   }
   const values = [...seen.keys()].sort((a, b) => {
     if (a === blank || b === blank) return a === blank ? 1 : -1;
-    return (seen.get(a) ?? a).localeCompare(seen.get(b) ?? b, "en-US", { numeric: true, sensitivity: "base" });
+    return compareText(seen.get(a) ?? a, seen.get(b) ?? b);
   });
   const columnOf = new Map(values.map((v, i) => [v, `a${i}_${value.id}`]));
   const totalId = `total_${value.id}`;

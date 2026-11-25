@@ -97,13 +97,16 @@ export const printLayoutSchema = z.object({
     .optional(),
 });
 
+/** How many rows a report shows when it sets no limit of its own. */
+export const REPORT_ROW_LIMIT = 5000;
+
 export const reportConfigSchema = z.object({
   columns: z.array(z.string().min(1)).min(1),
   filters: z.array(filterDefSchema).default([]),
   groupBy: z.array(z.string()).default([]),
   sortBy: z.array(sortDefSchema).default([]),
   dateRange: dateRangeSchema,
-  limit: z.number().int().min(1).max(50000).default(5000),
+  limit: z.number().int().min(1).max(50000).default(REPORT_ROW_LIMIT),
   layout: printLayoutSchema.optional(),
   // One field spread across the columns, each holding a number added up:
   // a column for each day of the week, date or pay code.

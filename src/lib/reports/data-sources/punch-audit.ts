@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { readable } from "../readable";
 import { dayAfter, timesheetPayPeriodWhere } from "../date-scope";
 import type { DataSourceDefinition, ReportResult } from "./index";
-import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
+import { buildWhereClause, readOrder, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { localDay } from "../scope";
@@ -84,18 +84,15 @@ export const punchAuditSource: DataSourceDefinition = {
       },
     };
 
-    const orderBy =
-      config.sortBy.length > 0
-        ? buildOrderBy(config.sortBy, fieldMap)
-        : [{ punchTime: "desc" as const }];
+    const order = readOrder(config, fieldMap, { unsorted: [{ punchTime: "desc" as const }] });
 
     const found = await db.punch.findMany({
       where,
       include: {
         employee: { include: { user: true, department: true, site: { select: { timezone: true } } } },
       },
-      orderBy,
-      take: config.limit,
+      orderBy: order.orderBy,
+      take: order.take,
     });
     // A range of days is each employee's own days: the query reads a little
     // either side of it (see resolveDateFilter) and this keeps the punches
@@ -126,8 +123,7 @@ export const punchAuditSource: DataSourceDefinition = {
       note: p.note,
     }));
 
-    // In-memory sort for computed columns (roundedTime, stateBefore, stateAfter, etc.)
-    const sortedRows = sortRowsInMemory(rows, config.sortBy, fieldMap);
+    const { rows: sortedRows, total } = order.finish(rows);
 
     const colById = Object.fromEntries(punchAuditSource.columns.map((c) => [c.id, c]));
     const visibleColumns = config.columns.map((id) => colById[id]).filter(Boolean);
@@ -135,7 +131,7 @@ export const punchAuditSource: DataSourceDefinition = {
     return {
       columns: visibleColumns.map((c) => ({ id: c.id, label: c.label, type: c.type })),
       rows: sortedRows,
-      totalRows: sortedRows.length,
+      totalRows: total,
     };
   },
 };

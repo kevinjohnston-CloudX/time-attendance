@@ -1,4 +1,5 @@
 import { isHoursColumn } from "./cell";
+import { compareText } from "./query-builder";
 
 /**
  * A report's rows in groups, with a total under each group and a grand total
@@ -189,7 +190,7 @@ export function groupRows(
         // A week is ordered by its first day, not by its name.
         const oa = g.order ? keyOf(rows[a][g.order]) : ka;
         const ob = g.order ? keyOf(rows[b][g.order]) : kb;
-        return (oa === ob ? ka : oa).localeCompare(oa === ob ? kb : ob, "en-US", { sensitivity: "base", numeric: true });
+        return compareText(oa === ob ? ka : oa, oa === ob ? kb : ob);
       }
       return a - b;
     });

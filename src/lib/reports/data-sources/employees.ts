@@ -205,7 +205,7 @@ export const employeesSource: DataSourceDefinition = {
         payTypeLookup: { select: { number: true, description: true } },
         payRates: { select: { effectiveDate: true, rate1: true, markupPct: true, chargeRate: true } },
       },
-      orderBy: { user: { name: "asc" } },
+      orderBy: [{ user: { name: "asc" } }, { id: "asc" }],
       take: afterwards ? undefined : config.limit,
     });
     const ids = employees.map((e) => e.id);

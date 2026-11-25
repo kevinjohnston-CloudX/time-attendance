@@ -141,7 +141,8 @@ export const weeklyOvertimeSource: DataSourceDefinition = {
         WHERE t."employeeId" = ANY(${ids}) AND s."segmentType" = 'WORK' AND s."isPaid"
           AND s."segmentDate" BETWEEN ${utc(span.start)}::date AND ${utc(span.end)}::date
         GROUP BY 1, 2
-        HAVING SUM(s."durationMinutes") FILTER (WHERE s."payBucket" IN ('OT', 'DT')) > 0`,
+        HAVING SUM(s."durationMinutes") FILTER (WHERE s."payBucket" IN ('OT', 'DT')) > 0
+        ORDER BY 2, 1`,
       db.employeePayRate.findMany({ where: { employeeId: { in: ids } }, select: { employeeId: true, effectiveDate: true, rate1: true } }),
     ]);
     const ratesOf = new Map<string, typeof rates>();

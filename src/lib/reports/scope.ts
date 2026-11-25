@@ -83,7 +83,8 @@ export async function peopleFor(filters: FilterDef[], tenantId: string): Promise
       department: { select: { name: true } },
       site: { select: { name: true, timezone: true } },
     },
-    orderBy: { user: { name: "asc" } },
+    // The id last, so people with the same name keep one order from run to run.
+    orderBy: [{ user: { name: "asc" } }, { id: "asc" }],
   });
   return rows.map((e) => ({
     id: e.id,

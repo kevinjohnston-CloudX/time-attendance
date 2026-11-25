@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import type { DataSourceDefinition, ReportResult } from "./index";
 import { buildWhereClause, sortRowsInMemory, type FieldMap } from "../query-builder";
 import { periodDayRange } from "@/lib/pay-period-days";
-import type { ReportConfig } from "@/lib/validators/report.schema";
+import { REPORT_ROW_LIMIT, type ReportConfig } from "@/lib/validators/report.schema";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { tenantWeekStart } from "../moving-period";
 import { timesheetPayPeriodWhere } from "../date-scope";
@@ -123,6 +123,12 @@ export const dailyHoursSource: DataSourceDefinition = {
       },
     } as Prisma.WorkSegmentWhereInput;
 
+    // The same lines whatever the row limit, at most 25 a row of the full
+    // report, so a preview is the full report's first rows and the trim
+    // below (keepOnlyShownDays) picks them. Cut at 25 lines a preview row,
+    // a preview of 100 read the first 2,500 lines by date and showed days
+    // with some of their hours missing (Nov 25, 2026).
+    const lineCap = config.limit ? Math.max(config.limit, REPORT_ROW_LIMIT) * 25 : undefined;
     const segments = await db.workSegment.findMany({
       where,
       // Only the fields the day lines use. Every column of each person, user
@@ -150,14 +156,15 @@ export const dailyHoursSource: DataSourceDefinition = {
       },
       // By person first when the report is, so the lines it keeps are whole
       // timesheets rather than the first days of everybody.
+      // The id last, so lines that tie fall the same way every run.
       orderBy: config.sortBy[0]?.field === "employeeName"
-        ? [{ timesheet: { employee: { user: { name: config.sortBy[0].direction } } } }, { segmentDate: "asc" }, { startTime: "asc" }]
-        : [{ segmentDate: "asc" }, { startTime: "asc" }],
-      take: config.limit ? config.limit * 25 : undefined, // over-fetch since we collapse to day rows
+        ? [{ timesheet: { employee: { user: { name: config.sortBy[0].direction } } } }, { segmentDate: "asc" }, { startTime: "asc" }, { id: "asc" }]
+        : [{ segmentDate: "asc" }, { startTime: "asc" }, { id: "asc" }],
+      take: lineCap,
     });
     // Stopped at the cap: the days read are short of some lines, so the
     // report says so rather than total them as if they were whole.
-    const cutShort = !!config.limit && segments.length >= config.limit * 25;
+    const cutShort = !!lineCap && segments.length >= lineCap;
     const overtimeCodes = overtimeCodesOf(
       await db.payCode.findMany({
         where: { tenantId, payBucket: { in: ["OT", "DT"] } },
