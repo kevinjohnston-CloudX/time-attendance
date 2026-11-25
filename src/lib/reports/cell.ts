@@ -8,6 +8,8 @@
  * so 8.00 on screen was 480 in the spreadsheet.
  */
 
+import { dateFormat } from "@/lib/utils/date-format";
+
 interface Column {
   id: string;
   type: string;
@@ -55,11 +57,11 @@ export function displayText(value: unknown, col: Column): string {
   if (col.type !== "date" || !/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
   const at = new Date(`${text}T12:00:00Z`);
   if (Number.isNaN(at.getTime())) return text;
-  return at.toLocaleDateString("en-US", {
+  return dateFormat("en-US", {
     ...(col.id === "date" ? { weekday: "short" as const } : {}),
     month: "short",
     day: "numeric",
     year: "numeric",
     timeZone: "UTC",
-  });
+  }).format(at);
 }

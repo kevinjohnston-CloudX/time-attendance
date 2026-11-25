@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import type { DataSourceDefinition, ExecuteContext, ReportResult } from "./index";
-import { sortRowsInMemory } from "../query-builder";
+import { sortRowsInMemory, compareText } from "../query-builder";
 import { describeSpan } from "../period";
 import { localMoment, peopleFor, PERSON_FIELDS, PERSON_FILTERS, personCells, reportSpan, textFilter, visible } from "../scope";
 import type { ReportConfig } from "@/lib/validators/report.schema";
@@ -57,7 +57,7 @@ export const timesheetNotesSource: DataSourceDefinition = {
       };
     });
     rows = textFilter(rows, config.filters, ["note"]);
-    rows.sort((a, b) => String(a.employeeName).localeCompare(String(b.employeeName)) || String(a.date).localeCompare(String(b.date)));
+    rows.sort((a, b) => compareText(String(a.employeeName), String(b.employeeName)) || compareText(String(a.date), String(b.date)));
     const sorted = sortRowsInMemory(rows, config.sortBy, {});
     const limited = config.limit ? sorted.slice(0, config.limit) : sorted;
     return { columns: cols, rows: limited, totalRows: sorted.length, period: { start: span.start, end: span.end, label: describeSpan(span) } };

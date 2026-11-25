@@ -1,5 +1,6 @@
 import type { DateRange } from "@/lib/validators/report.schema";
 import { zonedParts } from "./schedule-time";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * The calendar days a report covers, for the reports that count scans.
@@ -88,12 +89,12 @@ export function daysOf(
 
 const SHORT = (day: string, withYear: boolean) => {
   const [y, m, d] = day.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", {
+  return dateFormat("en-US", {
     month: "short",
     day: "numeric",
     ...(withYear ? { year: "numeric" } : {}),
     timeZone: "UTC",
-  });
+  }).format(new Date(Date.UTC(y, m - 1, d)));
 };
 
 /** "Oct 1, 2026" for one day, "Sep 1 to Sep 30, 2026" for several. */

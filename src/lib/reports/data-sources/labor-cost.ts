@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import type { DataSourceDefinition, ReportResult } from "./index";
-import { buildWhereClause, filterRowsInMemory, sortRowsInMemory, type FieldMap } from "../query-builder";
+import { buildWhereClause, filterRowsInMemory, sortRowsInMemory, type FieldMap, compareText } from "../query-builder";
 import { periodDayRange } from "@/lib/pay-period-days";
 import { daysOf } from "../period";
 import { rateInEffect } from "@/lib/pay-rates";
@@ -198,7 +198,7 @@ export const laborCostSource: DataSourceDefinition = {
       });
 
     // By agency, then name, unless the report says otherwise.
-    rows.sort((a, b) => (a.agency ?? "").localeCompare(b.agency ?? "") || a.employeeName.localeCompare(b.employeeName));
+    rows.sort((a, b) => compareText(a.agency ?? "", b.agency ?? "") || compareText(a.employeeName, b.employeeName));
     // Timesheet status was applied to the hours above.
     const filtered = filterRowsInMemory(rows, config.filters.filter((f) => f.field !== "status"), fieldMap);
     const sorted = sortRowsInMemory(filtered, config.sortBy, fieldMap);

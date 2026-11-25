@@ -116,7 +116,7 @@ export function fmtTime(iso: string | null, timeZone: string): string {
   if (!iso) return "";
   let f = timeFormatters.get(timeZone);
   if (!f) {
-    f = new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit", hour12: true });
+    f = dateFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit", hour12: true });
     timeFormatters.set(timeZone, f);
   }
   return f.format(new Date(iso));

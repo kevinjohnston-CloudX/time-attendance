@@ -2119,7 +2119,7 @@ export const getAuditLogs = withRBAC(
       let tz = "America/New_York";
       try {
         if (input.tz) {
-          new Intl.DateTimeFormat("en-US", { timeZone: input.tz });
+          dateFormat("en-US", { timeZone: input.tz });
           tz = input.tz;
         }
       } catch {}

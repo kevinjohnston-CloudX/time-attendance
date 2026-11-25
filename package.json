@@ -12,7 +12,8 @@
     "lint": "eslint",
     "seed": "tsx prisma/seed.ts",
     "design": "tsx scripts/render-design-kit.tsx",
-    "check:design": "tsx scripts/check-palette-ranking.ts && tsx scripts/check-nav-resolution.ts"
+    "check:design": "tsx scripts/check-palette-ranking.ts && tsx scripts/check-nav-resolution.ts",
+    "check:reports": "tsx scripts/check-reports.mts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

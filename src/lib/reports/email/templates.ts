@@ -1,3 +1,5 @@
+import { dateFormat } from "@/lib/utils/date-format";
+
 interface ReportEmailParams {
   reportName: string;
   rowCount: number;
@@ -19,11 +21,11 @@ export function generateReportEmailHtml(params: ReportEmailParams): string {
   const { reportName, rowCount, shownRows, format, generatedAt, periodLabel, timeZone } = params;
   const cut = shownRows !== undefined && shownRows < rowCount;
   // On the schedule's clock: a 9:00 AM Eastern run read 2:00 PM.
-  const dateStr = generatedAt.toLocaleString("en-US", {
+  const dateStr = dateFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
     ...(timeZone ? { timeZone } : {}),
-  });
+  }).format(generatedAt);
 
   return `
     <!DOCTYPE html>

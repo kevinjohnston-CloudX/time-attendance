@@ -21,6 +21,7 @@ import styles from "./on-site.module.css";
 import { ZoomableFace } from "./face";
 import { useOnPulseChange } from "./use-site-pulse";
 import { codeOf } from "@/lib/action-errors";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * Movements: one block per person, their photo and name on the left, and on
@@ -607,7 +608,7 @@ const hourFmt = new Map<string, Intl.DateTimeFormat>();
 function hourLabel(ms: number, tz: string): string {
   let f = hourFmt.get(tz);
   if (!f) {
-    f = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hour12: true });
+    f = dateFormat("en-US", { timeZone: tz, hour: "numeric", hour12: true });
     hourFmt.set(tz, f);
   }
   return f.format(new Date(ms));

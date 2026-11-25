@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import type { DataSourceDefinition, ReportResult } from "./index";
-import { buildWhereClause, sortRowsInMemory, type FieldMap } from "../query-builder";
+import { buildWhereClause, sortRowsInMemory, type FieldMap, compareText } from "../query-builder";
 import { periodDayRange } from "@/lib/pay-period-days";
 import { REPORT_ROW_LIMIT, type ReportConfig } from "@/lib/validators/report.schema";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
@@ -349,7 +349,7 @@ const KNOWN_BEFORE_READS = new Set(Object.keys(dayLine({
  * here rather than read from one table, so the sort is too.
  */
 function inReportOrder<T extends { date: string; employeeName: string }>(rows: T[], config: ReportConfig): T[] {
-  rows.sort((a, b) => a.date.localeCompare(b.date) || a.employeeName.localeCompare(b.employeeName));
+  rows.sort((a, b) => compareText(a.date, b.date) || compareText(a.employeeName, b.employeeName));
   return sortRowsInMemory(
     filterRowsInMemory(textFilter(rows, config.filters, ["dayType"]), config.filters.filter((f) => f.field !== "dayType"), fieldMap),
     config.sortBy,

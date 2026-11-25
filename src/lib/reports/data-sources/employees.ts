@@ -264,7 +264,7 @@ export const employeesSource: DataSourceDefinition = {
         birthDate: day(e.dateOfBirth),
         // Month and day only, for a birthday list; ordered through the year.
         birthday: e.dateOfBirth
-          ? e.dateOfBirth.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+          ? dateFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(e.dateOfBirth)
           : null,
         birthdayKey: e.dateOfBirth ? e.dateOfBirth.toISOString().slice(5, 10) : null,
         // The newest pay rate that has taken effect.

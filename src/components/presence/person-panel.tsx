@@ -34,6 +34,7 @@ import { RemovePhotoDialog } from "./remove-photo-dialog";
 import { ScheduleDayDialog } from "./schedule-day-dialog";
 import { ProfileCard } from "./profile-card";
 import { HomeSiteBadge } from "./home-site";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * One person, opened from the board or the scan log: who they are, and their
@@ -791,7 +792,7 @@ const hourLabel = new Map<string, Intl.DateTimeFormat>();
 function fmtHour(ms: number, timeZone: string): string {
   let f = hourLabel.get(timeZone);
   if (!f) {
-    f = new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", hour12: true });
+    f = dateFormat("en-US", { timeZone, hour: "numeric", hour12: true });
     hourLabel.set(timeZone, f);
   }
   return f.format(new Date(ms));

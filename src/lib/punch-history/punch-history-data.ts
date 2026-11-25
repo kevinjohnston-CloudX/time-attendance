@@ -726,9 +726,9 @@ export async function loadPunchExport(viewer: Viewer, params: PunchHistoryParams
     let c = clocks.get(tz);
     if (!c) {
       c = {
-        date: new Intl.DateTimeFormat("en-CA", { timeZone: tz }),
-        secs: new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true }),
-        mins: new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true }),
+        date: dateFormat("en-CA", { timeZone: tz }),
+        secs: dateFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true }),
+        mins: dateFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true }),
       };
       clocks.set(tz, c);
     }
