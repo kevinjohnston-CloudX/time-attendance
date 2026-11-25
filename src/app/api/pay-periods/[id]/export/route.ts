@@ -11,6 +11,8 @@ import { ownCompany } from "@/lib/rbac/company";
 import { SUPER_ADMIN_TENANT_COOKIE } from "@/lib/constants";
 import { cookies } from "next/headers";
 import { recordDownload } from "@/lib/audit/downloads";
+import { hoursForTimesheets } from "@/lib/payroll/timecard-hours.server";
+import { NO_HOURS } from "@/lib/payroll/timecard-hours";
 
 // Text that would run as a formula in Excel is made plain (see csvCell).
 const esc = csvCell;
@@ -71,30 +73,34 @@ export async function GET(
             department: { select: { name: true } },
           },
         },
-        overtimeBuckets: true,
       },
       orderBy: { employee: { user: { name: "asc" } } },
     });
 
+    // The hours each timecard shows, counted from its lines, not the saved
+    // totals: a worked day recoded as FMLA used to come out here as Regular.
+    // REG Hrs holds leave too, as the timecard and NovaTime's Reg Hrs do, and
+    // Not Paid Hrs names the part under a code payroll does not pay (FMLA),
+    // which the ADP file leaves out.
+    const hours = await hoursForTimesheets(timesheets.map((ts) => ts.id));
     const rows = timesheets.map((ts) => {
-      const reg = ts.overtimeBuckets.find((b) => b.bucket === "REG")?.totalMinutes ?? 0;
-      const ot  = ts.overtimeBuckets.find((b) => b.bucket === "OT")?.totalMinutes ?? 0;
-      const dt  = ts.overtimeBuckets.find((b) => b.bucket === "DT")?.totalMinutes ?? 0;
+      const h = hours.get(ts.id) ?? NO_HOURS;
       return [
         ts.employee.user?.name ?? "",
         ts.employee.employeeCode,
         ts.employee.site?.name ?? "",
         ts.employee.department?.name ?? "",
-        toHours(reg),
-        toHours(ot),
-        toHours(dt),
-        toHours(reg + ot + dt),
+        toHours(h.reg),
+        toHours(h.ot),
+        toHours(h.dt),
+        toHours(h.total),
+        toHours(h.notPaid),
         ts.status,
       ];
     });
 
     csv = toCsv(
-      ["Employee Name", "Employee Code", "Site", "Department", "REG Hrs", "OT Hrs", "DT Hrs", "Total Hrs", "Status"],
+      ["Employee Name", "Employee Code", "Site", "Department", "REG Hrs", "OT Hrs", "DT Hrs", "Total Hrs", "Not Paid Hrs", "Status"],
       rows
     );
     filename = `timesheet-summary_${periodLabel}.csv`;
