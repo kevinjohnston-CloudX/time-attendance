@@ -4,6 +4,8 @@
  * count "the last seven days" the same way.
  */
 
+import { dateFormat } from "@/lib/utils/date-format";
+
 /** How far back On Site lets anybody look: today and the six days before. */
 export const DAYS_BACK = 6;
 
@@ -28,7 +30,7 @@ export function dayLabel(day: string, today: string): string {
   if (day === today) return "Today";
   if (day === addDays(today, -1)) return "Yesterday";
   const [y, m, d] = day.split("-").map(Number);
-  return new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(
+  return dateFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(
     new Date(Date.UTC(y, m - 1, d)),
   );
 }

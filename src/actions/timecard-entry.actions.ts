@@ -26,6 +26,7 @@ import { postLeaveUsage, reverseLeaveUsage } from "@/lib/engines/accrual-engine"
 import { assertLeaveTypeAllowed, assertPayCodeAllowed, availabilityFor, leaveTypeAllowed } from "@/lib/pay-code-availability";
 import { splitNote, useFirstPieces } from "@/lib/engines/leave-use-first";
 import { clockAt, dayAt, hoursLabel, noteTimecardChange } from "@/lib/timecards/change-note";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /** A pay code by its name, for a change note. */
 async function payCodeLabel(payCodeId: string | null | undefined): Promise<string | null> {
@@ -149,7 +150,7 @@ export const addManualPunchPair = withRBAC(
     const tz = personTimeZone(ts.employee, "UTC");
     // A pair past midnight is the odd late evening (7:00 PM to 12:30 AM); one
     // longer than 16 hours is an AM/PM slip, not a shift.
-    const localDay = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(d);
+    const localDay = (d: Date) => dateFormat("en-CA", { timeZone: tz }).format(d);
     if (localDay(inDate) !== localDay(outDate) && outDate.getTime() - inDate.getTime() > MAX_OVERNIGHT_MS) {
       throw new Error("A shift past midnight can be up to 16 hours. Check the AM and PM.");
     }
@@ -798,7 +799,7 @@ export const addManualHoursEntry = withRBAC(
         return out ? [{ start: p.punchTime, end: out.punchTime, payCodeId: p.payCodeId ?? defaultCode }] : [];
       });
       const placed = placeEnteredHours(dayStart, minutes, payCodeId ?? defaultCode, existing);
-      const dayLabel = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${date}T12:00:00Z`));
+      const dayLabel = dateFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${date}T12:00:00Z`));
       if ("refused" in placed) {
         if (placed.refused === "over-24h") {
           throw new Error(`That would put more than 24 worked hours on ${dayLabel}. Time off over 24 hours goes in with a leave code, such as PTO payout.`);

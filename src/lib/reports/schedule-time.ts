@@ -13,12 +13,14 @@
  * show the next send on screen with the same code the server uses to decide it.
  */
 
+import { dateFormat } from "@/lib/utils/date-format";
+
 const FORMATTERS = new Map<string, Intl.DateTimeFormat>();
 
 function formatter(timeZone: string): Intl.DateTimeFormat {
   let f = FORMATTERS.get(timeZone);
   if (!f) {
-    f = new Intl.DateTimeFormat("en-US", {
+    f = dateFormat("en-US", {
       timeZone,
       hourCycle: "h23",
       year: "numeric",
@@ -182,7 +184,7 @@ export function nextRun(cronExpr: string, timeZone: string, after: Date = new Da
 /** A zone name the runtime knows, so a bad one cannot reach the calculator. */
 export function isKnownTimeZone(timeZone: string): boolean {
   try {
-    new Intl.DateTimeFormat("en-US", { timeZone });
+    dateFormat("en-US", { timeZone });
     return true;
   } catch {
     return false;

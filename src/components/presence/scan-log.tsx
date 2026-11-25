@@ -13,6 +13,7 @@ import { SummarySkeleton } from "./movements-view";
 import { useOnPulseChange } from "./use-site-pulse";
 import { VisitorTag } from "./visitor-tag";
 import { codeOf } from "@/lib/action-errors";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * The scan log: every security gate and time clock scan at the site today,
@@ -621,7 +622,7 @@ const hourFormatters = new Map<string, Intl.DateTimeFormat>();
 function hourOf(iso: string, timeZone: string): string {
   let f = hourFormatters.get(timeZone);
   if (!f) {
-    f = new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", hour12: true });
+    f = dateFormat("en-US", { timeZone, hour: "numeric", hour12: true });
     hourFormatters.set(timeZone, f);
   }
   return f.format(new Date(iso));

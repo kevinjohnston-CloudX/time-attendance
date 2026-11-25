@@ -24,6 +24,7 @@ import { PunchHistoryDatePicker, dayLabel, rangeLabel } from "./punch-history-da
 import { Face, PhotoViewer, ZoomableFace } from "@/components/presence/face";
 import { isPhone } from "@/lib/phone";
 import styles from "./punch-history.module.css";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * Team Punch History, as the Claude Design handoff lays it out: a pinned bar
@@ -171,7 +172,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
   // Clock time on the site's clock, 12 hour, always.
   const clock = useCallback(
     (iso: string, seconds: boolean) =>
-      new Intl.DateTimeFormat("en-US", {
+      dateFormat("en-US", {
         timeZone: data.timezone,
         hour: "numeric",
         minute: "2-digit",
@@ -195,7 +196,7 @@ export function PunchHistoryScreen({ data }: { data: PunchHistoryData }) {
             ? c.by ? `Added by ${c.by}` : "Added by hand"
             : c.by ? `Removed by ${c.by}` : "Removed";
       const when = c.at
-        ? `${new Intl.DateTimeFormat("en-US", { timeZone: data.timezone, month: "short", day: "numeric" }).format(new Date(c.at))} at ${clock(c.at, false)}`
+        ? `${dateFormat("en-US", { timeZone: data.timezone, month: "short", day: "numeric" }).format(new Date(c.at))} at ${clock(c.at, false)}`
         : null;
       return [who, when, c.reason].filter(Boolean).join(" · ");
     },

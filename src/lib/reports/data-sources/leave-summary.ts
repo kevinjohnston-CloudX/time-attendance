@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { readable } from "../readable";
 import { dayAfter, payPeriodSpan } from "../date-scope";
 import type { DataSourceDefinition, ReportResult } from "./index";
-import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
+import { buildWhereClause, readOrder, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
 import { format } from "date-fns";
 import { localMoment } from "../scope";
@@ -75,10 +75,7 @@ export const leaveSummarySource: DataSourceDefinition = {
       },
     };
 
-    const orderBy =
-      config.sortBy.length > 0
-        ? buildOrderBy(config.sortBy, fieldMap)
-        : [{ startDate: "desc" as const }];
+    const order = readOrder(config, fieldMap, { unsorted: [{ startDate: "desc" as const }] });
 
     const requests = await db.leaveRequest.findMany({
       where,
@@ -86,8 +83,8 @@ export const leaveSummarySource: DataSourceDefinition = {
         employee: { include: { user: true, department: true } },
         leaveType: true,
       },
-      orderBy,
-      take: config.limit,
+      orderBy: order.orderBy,
+      take: order.take,
     });
 
     // Who reviewed each request (stored as their employee id), by name.
@@ -118,8 +115,7 @@ export const leaveSummarySource: DataSourceDefinition = {
       monthKey: format(parseUtcDate(r.startDate), "yyyy-MM"),
     }));
 
-    // In-memory sort for computed columns (endDate, durationMinutes, etc.)
-    const sortedRows = sortRowsInMemory(rows, config.sortBy, fieldMap);
+    const { rows: sortedRows, total } = order.finish(rows);
 
     const colById = Object.fromEntries(leaveSummarySource.columns.map((c) => [c.id, c]));
     const visibleColumns = config.columns.map((id) => colById[id]).filter(Boolean);
@@ -127,7 +123,7 @@ export const leaveSummarySource: DataSourceDefinition = {
     return {
       columns: visibleColumns.map((c) => ({ id: c.id, label: c.label, type: c.type })),
       rows: sortedRows,
-      totalRows: sortedRows.length,
+      totalRows: total,
     };
   },
 };

@@ -1,5 +1,6 @@
 import { formatTimeOfDay } from "@/lib/utils/date";
 import type { PresencePerson, PresenceScan, PresenceStatus } from "@/lib/presence/types";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * Names, colours and wording for each status on the On Site board, in one
@@ -115,7 +116,7 @@ export function fmtTime(iso: string | null, timeZone: string): string {
   if (!iso) return "";
   let f = timeFormatters.get(timeZone);
   if (!f) {
-    f = new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit", hour12: true });
+    f = dateFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit", hour12: true });
     timeFormatters.set(timeZone, f);
   }
   return f.format(new Date(iso));
@@ -134,7 +135,7 @@ export function fmtWhen(iso: string | null, timeZone: string, nowIso: string): s
 
 /** The calendar date in the site's zone, for telling today from yesterday. */
 export function siteDate(iso: string, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone }).format(new Date(iso));
+  return dateFormat("en-CA", { timeZone }).format(new Date(iso));
 }
 
 /** "45 min", "7 hr 12 min". Never negative, never seconds. */

@@ -173,15 +173,61 @@ export function filterRowsInMemory(
   );
 }
 
+const textOrder = new Intl.Collator("en-US", { sensitivity: "base", numeric: true });
+
+/**
+ * How every report orders text: numbers inside it by their value ("136
+ * Scarborough" before "0299 Rutherford", badge 178015 before 0147256161) and
+ * capitals and accents alike. The sort that decides which rows a limit keeps
+ * and the groups that lay them out use this one order: when the sort went
+ * letter by letter and the groups by value, a preview of 100 kept other
+ * rows than the full report showed first (Nov 25, 2026).
+ */
+export const compareText = (a: string, b: string): number => textOrder.compare(a, b);
+
+/**
+ * How a report reads its lines so that any row limit cuts the same report:
+ * a preview of 100 is exactly the first 100 rows of the full run.
+ *
+ * <p>When every sort field is a database column and nothing is grouped, the
+ * database sorts and stops at the limit, with the record id last so lines
+ * that tie fall the same way every time. Otherwise the database cannot know
+ * which lines come first: it reads them all, in a fixed order, and `finish`
+ * sorts the rows on every sort field and then applies the limit. Taken
+ * first, a preview of 100 lines re-sorted by a worked out field (or by a
+ * group) showed other rows than the full report.
+ *
+ * @param unsorted the order when the report has no sort of its own
+ * @param then     what breaks ties after the report's own sort, before the id
+ */
+export function readOrder(
+  config: { sortBy: SortDef[]; groupBy?: string[]; limit?: number },
+  fieldMap: FieldMap,
+  opts: { unsorted: Record<string, unknown>[]; then?: Record<string, unknown>[] },
+) {
+  const inDatabase = config.sortBy.every((s) => fieldMap[s.field]) && !config.groupBy?.length;
+  const ownOrder = inDatabase && config.sortBy.length > 0 ? [...buildOrderBy(config.sortBy, fieldMap), ...(opts.then ?? [])] : opts.unsorted;
+  return {
+    orderBy: [...ownOrder, { id: "asc" as const }],
+    take: inDatabase ? config.limit : undefined,
+    /** The rows in report order and cut to the limit, with how many there were before the cut. */
+    finish<T extends Record<string, unknown>>(rows: T[]): { rows: T[]; total: number } {
+      if (inDatabase) return { rows, total: rows.length };
+      const sorted = sortRowsInMemory(rows, config.sortBy, {});
+      return { rows: config.limit ? sorted.slice(0, config.limit) : sorted, total: sorted.length };
+    },
+  };
+}
+
 /**
  * In-memory sort for computed fields not in the fieldMap.
  * Call this after building rows to apply sorts on derived columns.
  */
-export function sortRowsInMemory(
-  rows: Record<string, unknown>[],
+export function sortRowsInMemory<T extends Record<string, unknown>>(
+  rows: T[],
   sortBy: SortDef[],
   fieldMap: FieldMap
-): Record<string, unknown>[] {
+): T[] {
   // Only sort by fields NOT in the fieldMap (computed fields)
   const computedSorts = sortBy.filter((s) => !fieldMap[s.field]);
   if (computedSorts.length === 0) return rows;
@@ -200,7 +246,7 @@ export function sortRowsInMemory(
       if (typeof aVal === "number" && typeof bVal === "number") {
         if (aVal !== bVal) return (aVal - bVal) * dir;
       } else {
-        const cmp = String(aVal).localeCompare(String(bVal));
+        const cmp = compareText(String(aVal), String(bVal));
         if (cmp !== 0) return cmp * dir;
       }
     }

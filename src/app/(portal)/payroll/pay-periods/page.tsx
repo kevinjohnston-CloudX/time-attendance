@@ -310,17 +310,18 @@ function PeriodBody({
   const exceptions = validation.unresolvedExceptions;
   const isLocked = payPeriod.status === "LOCKED";
 
-  // ── Hours, from the buckets the overtime engine wrote ─────────────────────
-  let regMin = 0, otMin = 0, dtMin = 0, allMin = 0;
+  // ── Hours, counted from the timecard lines as each timecard shows them ────
+  // Regular counts leave too (PTO, sick, FMLA...), as on the timecard and in
+  // NovaTime's Reg Hrs; the bar shows that part in grey.
+  let regMin = 0, otMin = 0, dtMin = 0, allMin = 0, leaveMin = 0;
   for (const ts of sheets) {
-    for (const b of ts.overtimeBuckets) {
-      allMin += b.totalMinutes;
-      if (b.bucket === "REG") regMin += b.totalMinutes;
-      else if (b.bucket === "OT") otMin += b.totalMinutes;
-      else if (b.bucket === "DT") dtMin += b.totalMinutes;
-    }
+    regMin += ts.hours.reg;
+    otMin += ts.hours.ot;
+    dtMin += ts.hours.dt;
+    allMin += ts.hours.total;
+    leaveMin += ts.hours.leave;
   }
-  /** PTO, holiday and anything else the rules engine bucketed by pay code. */
+  /** Any other code, outside Regular, Overtime and Double. */
   const otherMin = allMin - regMin - otMin - dtMin;
 
   // ── Links the summary hands you to ───────────────────────────────────────
@@ -394,9 +395,9 @@ function PeriodBody({
       employeeId: ts.employeeId,
       employeeName: ts.employee.user?.name ?? `Employee ${ts.employeeId}`,
       status: ts.status,
-      reg: ts.overtimeBuckets.find((b) => b.bucket === "REG")?.totalMinutes ?? 0,
-      ot: ts.overtimeBuckets.find((b) => b.bucket === "OT")?.totalMinutes ?? 0,
-      dt: ts.overtimeBuckets.find((b) => b.bucket === "DT")?.totalMinutes ?? 0,
+      reg: ts.hours.reg,
+      ot: ts.hours.ot,
+      dt: ts.hours.dt,
       exceptions: ts.exceptions.length,
       siteId: ts.employee.siteId ?? null,
       siteName: ts.employee.site?.name ?? null,
@@ -404,7 +405,8 @@ function PeriodBody({
 
   const hoursBar = allMin
     ? [
-        { min: regMin, color: "var(--fill-accent)" },
+        { min: regMin - leaveMin, color: "var(--fill-accent)" },
+        { min: leaveMin, color: "var(--icon-tertiary)" },
         { min: otMin, color: "var(--fill-warning)" },
         { min: dtMin, color: "var(--fill-error)" },
         { min: otherMin, color: "var(--icon-tertiary)" },
@@ -453,13 +455,19 @@ function PeriodBody({
               <span key={i} className="block h-full" style={{ width: `${(s.min / allMin) * 100}%`, background: s.color }} />
             ))}
           >
-            {/* Named, not dropped, so the figures add up to the total: other
-                pay codes are PTO, holiday and the like. */}
+            {/* The figures add up to the total. Regular holds leave too, as on
+                every timecard, so its leave part is named (the grey in the bar);
+                other pay codes only show when there are any. */}
             <span className="tabular flex flex-wrap gap-x-3 gap-y-1" style={{ font: "var(--type-caption1)", color: "var(--text-tertiary)" }}>
               <span>Regular <b style={{ fontWeight: 600, color: "var(--text-secondary)" }}>{hoursOf(regMin)}</b></span>
               <span>Overtime <b style={{ fontWeight: 600, color: otMin ? "var(--text-warning)" : "var(--text-secondary)" }}>{hoursOf(otMin)}</b></span>
               <span>Double <b style={{ fontWeight: 600, color: dtMin ? "var(--text-error)" : "var(--text-secondary)" }}>{hoursOf(dtMin)}</b></span>
-              <span>Other pay codes <b style={{ fontWeight: 600, color: "var(--text-secondary)" }}>{hoursOf(otherMin)}</b></span>
+              {leaveMin > 0 && (
+                <span>Leave in Regular <b style={{ fontWeight: 600, color: "var(--text-secondary)" }}>{hoursOf(leaveMin)}</b></span>
+              )}
+              {otherMin > 0 && (
+                <span>Other pay codes <b style={{ fontWeight: 600, color: "var(--text-secondary)" }}>{hoursOf(otherMin)}</b></span>
+              )}
             </span>
           </Kpi>
         </div>

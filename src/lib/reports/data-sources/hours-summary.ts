@@ -5,7 +5,7 @@ import { readable } from "../readable";
 import { timesheetPayPeriodWhere } from "../date-scope";
 import { daysOf, describeSpan, type DaySpan } from "../period";
 import type { DataSourceDefinition, ExecuteContext, ReportResult } from "./index";
-import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
+import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap, compareText } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
 
 const fieldMap: FieldMap = {
@@ -77,10 +77,11 @@ export const hoursSummarySource: DataSourceDefinition = {
       },
     };
 
-    const orderBy =
-      config.sortBy.length > 0
-        ? buildOrderBy(config.sortBy, fieldMap)
-        : [{ employee: { user: { name: "asc" as const } } }];
+    const orderBy = [
+      ...(config.sortBy.length > 0 ? buildOrderBy(config.sortBy, fieldMap) : [{ employee: { user: { name: "asc" as const } } }]),
+      // The id last, so people who tie keep one order from run to run.
+      { id: "asc" as const },
+    ];
 
     const timesheets = await db.timesheet.findMany({
       where,
@@ -179,8 +180,9 @@ export const hoursSummarySource: DataSourceDefinition = {
     });
     const rows = [...byPerson.values()];
 
-    // In-memory sort for computed columns (regMinutes, otMinutes, etc.)
-    const sortedRows = sortRowsInMemory(rows, config.sortBy, fieldMap);
+    // Every sort on the merged people, so a sort by a name then by hours keeps
+    // the name order (sorting only the hours here undid the database sort).
+    const sortedRows = sortRowsInMemory(rows, config.sortBy, {});
 
     // Select only requested columns
     const colById = Object.fromEntries(hoursSummarySource.columns.map((c) => [c.id, c]));
@@ -317,7 +319,7 @@ async function hoursOnDays(config: ReportConfig, tenantId: string, span: DaySpan
     };
   });
 
-  rows.sort((a, b) => String(a.employeeName).localeCompare(String(b.employeeName)));
+  rows.sort((a, b) => compareText(String(a.employeeName), String(b.employeeName)));
   const sorted = sortRowsInMemory(rows, config.sortBy, {});
   const limited = config.limit ? sorted.slice(0, config.limit) : sorted;
   return { columns, rows: limited, totalRows: sorted.length, period };

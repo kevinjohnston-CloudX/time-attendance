@@ -5,6 +5,7 @@ import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
 import { writeAuditLog } from "@/lib/audit/logger";
 import type { RuleSet } from "@prisma/client";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /** How far back a rule set change reaches: open timecards ending within this many days. */
 const REACH_DAYS = 35;
@@ -40,7 +41,7 @@ export async function moveTimecardsToRuleSet(employeeId: string, ruleSet: RuleSe
   if (!employee.isActive) return;
   const timezone = personTimeZone(employee);
   const ownSchedule = Boolean(ruleSet.payFrequency && ruleSet.payPeriodAnchorDate);
-  const dayOf = (at: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(at);
+  const dayOf = (at: Date) => dateFormat("en-CA", { timeZone: timezone }).format(at);
 
   // The new rule set's open period for a day, or null. With a schedule of its
   // own it must be one of its periods: the lookup falls back to a company

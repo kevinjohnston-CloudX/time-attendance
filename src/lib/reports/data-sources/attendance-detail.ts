@@ -3,11 +3,12 @@ import { db } from "@/lib/db";
 import { readable } from "../readable";
 import { timesheetPayPeriodWhere } from "../date-scope";
 import type { DataSourceDefinition, ReportResult } from "./index";
-import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
+import { buildWhereClause, readOrder, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { tenantWeekStart } from "../moving-period";
 import { rateInEffect } from "@/lib/pay-rates";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /** What an hour pays in each bucket, against the rate: as Labor cost prices it. */
 const MULTIPLIER: Record<string, number> = { REG: 1, OT: 1.5, DT: 2 };
@@ -17,7 +18,7 @@ const MULTIPLIER: Record<string, number> = { REG: 1, OT: 1.5, DT: 2 };
  * as it was, every time is 4 hours out on a server kept on UTC.
  */
 function clockAt(instant: Date, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit", hour12: true }).format(instant);
+  return dateFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit", hour12: true }).format(instant);
 }
 
 const fieldMap: FieldMap = {
@@ -138,30 +139,37 @@ export const attendanceDetailSource: DataSourceDefinition = {
       },
     } as Prisma.WorkSegmentWhereInput;
 
-    const orderBy =
-      config.sortBy.length > 0
-        ? [...buildOrderBy(config.sortBy, fieldMap), { segmentDate: "asc" as const }, { startTime: "asc" as const }]
-        : [{ segmentDate: "asc" as const }, { startTime: "asc" as const }];
+    const byDay = [{ segmentDate: "asc" as const }, { startTime: "asc" as const }];
+    const order = readOrder(config, fieldMap, { unsorted: byDay, then: byDay });
 
+    // Only the fields the lines use: a month of the company is about 48,000
+    // lines, and reading every column of each person, user and site with
+    // them cost half a second more (Nov 24, 2026).
     const segments = await db.workSegment.findMany({
       where,
-      include: {
+      select: {
+        segmentDate: true, startTime: true, endTime: true, durationMinutes: true,
+        segmentType: true, payBucket: true, isPaid: true,
         payCode: { select: { code: true, label: true, expressCode: true, adpCode: true } },
         timesheet: {
-          include: {
+          select: {
+            status: true,
             employee: {
-              include: {
-                user: true, department: true, site: true,
+              select: {
+                employeeCode: true, wmsId: true, timeZone: true,
+                user: { select: { name: true } },
+                department: { select: { name: true } },
+                site: { select: { name: true, timezone: true } },
                 agencyRef: { select: { code: true, description: true } },
                 payRates: { select: { effectiveDate: true, rate1: true } },
               },
             },
-            dayReasons: { include: { reasonCode: { select: { code: true, label: true } } } },
+            dayReasons: { select: { segmentDate: true, reasonCode: { select: { code: true, label: true } } } },
           },
         },
       },
-      orderBy,
-      take: config.limit,
+      orderBy: order.orderBy,
+      take: order.take,
     });
 
     const weekStart = await tenantWeekStart(tenantId);
@@ -176,7 +184,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
         department: seg.timesheet.employee.department.name,
         site: seg.timesheet.employee.site.name,
         date: seg.segmentDate.toISOString().slice(0, 10),
-        weekday: seg.segmentDate.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" }),
+        weekday: dateFormat("en-US", { weekday: "short", timeZone: "UTC" }).format(seg.segmentDate),
         // The company's first day of the week first, for spreading the days across columns.
         weekdayOrder: (seg.segmentDate.getUTCDay() - weekStart + 7) % 7,
         segmentType: readable("segmentType", seg.segmentType),
@@ -208,8 +216,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
       };
     });
 
-    // In-memory sort for computed columns (date, startTime, endTime, etc.)
-    const sortedRows = sortRowsInMemory(rows, config.sortBy, fieldMap);
+    const { rows: sortedRows, total } = order.finish(rows);
 
     const colById = Object.fromEntries(attendanceDetailSource.columns.map((c) => [c.id, c]));
     const visibleColumns = config.columns.map((id) => colById[id]).filter(Boolean);
@@ -217,7 +224,7 @@ export const attendanceDetailSource: DataSourceDefinition = {
     return {
       columns: visibleColumns.map((c) => ({ id: c.id, label: c.label, type: c.type })),
       rows: sortedRows,
-      totalRows: sortedRows.length,
+      totalRows: total,
     };
   },
 };

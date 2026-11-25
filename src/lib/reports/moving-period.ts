@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { periodDayRange } from "@/lib/pay-period-days";
 import type { DateRange } from "@/lib/validators/report.schema";
 import { withoutVisitors } from "@/lib/utils/client-badge";
+import { compareText } from "./query-builder";
 
 /**
  * "The current pay period" and "the previous pay period", worked out each
@@ -30,7 +31,7 @@ export interface PeriodDays {
  * started stands in for "current".
  */
 export function pickMovingPeriod<T extends PeriodDays>(periods: T[], which: Moving, today: string): T | undefined {
-  const started = periods.filter((p) => p.firstDay <= today).sort((a, b) => a.firstDay.localeCompare(b.firstDay));
+  const started = periods.filter((p) => p.firstDay <= today).sort((a, b) => compareText(a.firstDay, b.firstDay));
   const current = started.find((p) => p.lastDay >= today) ?? started.at(-1);
   if (which === "current") return current;
   if (!current) return undefined;

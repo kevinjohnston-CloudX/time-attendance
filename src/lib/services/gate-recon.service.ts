@@ -5,6 +5,7 @@ import type { OracleGateScanRow } from "./gate-state-sync.service";
 import { recordScanEvent } from "./scan-event.service";
 import { SyncTally } from "./sync-run.service";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * Fills in gate crossings that happened at a reader CloudTime is not connected
@@ -84,7 +85,7 @@ export async function applyGateReconBatch(
     }
 
     const timezone = personTimeZone(employee);
-    const localDate = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(now);
+    const localDate = dateFormat("en-CA", { timeZone: timezone }).format(now);
     const todayStart = snapToLocalTime("00:00", localDate, timezone);
 
     // Both columns, deduplicated: a fresh Oracle row has outTime == scanTime.

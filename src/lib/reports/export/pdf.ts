@@ -1,4 +1,5 @@
 import { cellText, displayText } from "../cell";
+import { dateFormat } from "@/lib/utils/date-format";
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const PdfPrinter = require("pdfmake");
 import type { Content, TableCell, TDocumentDefinitions, TFontDictionary } from "pdfmake/interfaces";
@@ -205,7 +206,7 @@ export async function generatePdf(
     content: [
       { text: title, fontSize: 14, bold: true, margin: [0, 0, 0, 8] },
       {
-        text: `${result.period ? `${result.period.label} · ` : ""}${result.totalRows.toLocaleString("en-US")} ${result.totalRows === 1 ? "row" : "rows"} · Made ${new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}`,
+        text: `${result.period ? `${result.period.label} · ` : ""}${result.totalRows.toLocaleString("en-US")} ${result.totalRows === 1 ? "row" : "rows"} · Made ${dateFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date())}`,
         fontSize: 8,
         color: "#71717a",
         margin: [0, 0, 0, cut ? 2 : 12],

@@ -7,6 +7,8 @@
  * report goes out is worse than none.
  */
 
+import { dateFormat } from "@/lib/utils/date-format";
+
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 export const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -19,7 +21,7 @@ export function ordinal(n: number): string {
 export function timezoneAbbr(timezone: string, at: Date = new Date()): string {
   try {
     return (
-      new Intl.DateTimeFormat("en-US", { timeZone: timezone, timeZoneName: "short" })
+      dateFormat("en-US", { timeZone: timezone, timeZoneName: "short" })
         .formatToParts(at)
         .find((p) => p.type === "timeZoneName")?.value ?? ""
     );

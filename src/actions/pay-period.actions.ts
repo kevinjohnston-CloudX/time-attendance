@@ -14,6 +14,8 @@ import { nextTenantPeriod } from "@/lib/pay-period-utils";
 import { lockPeriod } from "@/lib/payroll/lock-period";
 import type { PayFrequency, Prisma } from "@prisma/client";
 import { siteLimit } from "@/lib/rbac/site-limit";
+import { hoursForTimesheets } from "@/lib/payroll/timecard-hours.server";
+import { NO_HOURS } from "@/lib/payroll/timecard-hours";
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -85,7 +87,6 @@ export const getPayPeriodDetail = withRBAC(
                   site: { select: { id: true, name: true } },
                 },
               },
-              overtimeBuckets: true,
               exceptions: { where: { resolvedAt: null }, select: { id: true } },
             },
           },
@@ -94,7 +95,13 @@ export const getPayPeriodDetail = withRBAC(
       validatePayPeriod(payPeriodId, sites),
     ]);
 
-    return { payPeriod, validation };
+    // Hours counted from the timecard lines, the way the timecard page counts
+    // them, never from the saved totals (which fall behind when a line is
+    // recoded or leave is added later).
+    const hours = await hoursForTimesheets(payPeriod.timesheets.map((ts) => ts.id));
+    const timesheets = payPeriod.timesheets.map((ts) => ({ ...ts, hours: hours.get(ts.id) ?? NO_HOURS }));
+
+    return { payPeriod: { ...payPeriod, timesheets }, validation };
   }
 );
 

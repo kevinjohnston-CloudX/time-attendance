@@ -42,6 +42,36 @@ const ownPressListeners = [
   "src/components/presence/on-site-board.tsx",
 ];
 
+// Building a date formatter loads its time zone and locale rules: a report
+// that built one per line built 57,000 a run and ran past the live server's
+// 5 minute limit (Nov 24, 2026). One built at the top of a file is built
+// once and is fine; inside a function it is built on every call.
+const formatterMessage =
+  "Use dateFormat() from @/lib/utils/date-format: it builds each date formatter once and reuses it. " +
+  "Building one inside a function repeats that work on every call (a report built 57,000 a run, Nov 24, 2026).";
+const formatterSelectors = [
+  { selector: ":function NewExpression[callee.object.name='Intl'][callee.property.name='DateTimeFormat'][arguments.length>0]", message: formatterMessage },
+  { selector: ":function CallExpression[callee.object.name='Intl'][callee.property.name='DateTimeFormat'][arguments.length>0]", message: formatterMessage },
+];
+
+// Report code runs once per line of a report, so the rest of the costly
+// locale work is kept out of it too, and its text order is the one the
+// groups use (see compareText in query-builder.ts).
+const reportSelectors = [
+  {
+    selector: ":function NewExpression[callee.object.name='Intl'][callee.property.name!='DateTimeFormat']",
+    message: "Build an Intl formatter once, at the top of the file (or use dateFormat()): report code runs once per line.",
+  },
+  {
+    selector: "CallExpression[callee.property.name=/^toLocale(Date|Time)?String$/][arguments.length>1]",
+    message: "Use dateFormat(locale, options).format(date): toLocaleDateString with options builds a new formatter on every call.",
+  },
+  {
+    selector: "CallExpression[callee.property.name='localeCompare']",
+    message: "Use compareText() from @/lib/reports/query-builder: it is the order report groups use, so a row limit and the groups agree.",
+  },
+];
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -49,7 +79,7 @@ const eslintConfig = defineConfig([
     files: ["src/**/*.{ts,tsx}"],
     ignores: ["src/components/ui/overlay.tsx"],
     rules: {
-      "no-restricted-syntax": ["error", ...overlaySelectors, pressSelector],
+      "no-restricted-syntax": ["error", ...overlaySelectors, pressSelector, ...formatterSelectors],
       "no-restricted-imports": [
         "error",
         { paths: [{ name: "react-dom", importNames: ["createPortal"], message: portalMessage }] },
@@ -57,7 +87,17 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    files: ["src/lib/reports/**/*.{ts,tsx}"],
+    rules: { "no-restricted-syntax": ["error", ...overlaySelectors, pressSelector, ...formatterSelectors, ...reportSelectors] },
+  },
+  {
     files: ownPressListeners,
+    rules: { "no-restricted-syntax": ["error", ...overlaySelectors, ...formatterSelectors] },
+  },
+  {
+    // The one place date formatters are built, and tests, which may build
+    // one to state what a result should read.
+    files: ["src/lib/utils/date-format.ts", "src/**/*.test.{ts,tsx}"],
     rules: { "no-restricted-syntax": ["error", ...overlaySelectors] },
   },
   {

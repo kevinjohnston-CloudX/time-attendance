@@ -92,6 +92,7 @@ export default async function PunchHistoryPage() {
       <Card padding={0}>
         <PunchHistoryTable
           punches={punches}
+          timeZone={personTimeZone(employee)}
           showNote
           footerLabel={punches.length === 1 ? "punch" : "punches"}
           // Which of the two empty lists this is decides what someone does

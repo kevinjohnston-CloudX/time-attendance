@@ -1,9 +1,9 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import type { DataSourceDefinition, ReportResult } from "./index";
-import { buildWhereClause, sortRowsInMemory, type FieldMap } from "../query-builder";
+import { buildWhereClause, sortRowsInMemory, type FieldMap, compareText } from "../query-builder";
 import { periodDayRange } from "@/lib/pay-period-days";
-import type { ReportConfig } from "@/lib/validators/report.schema";
+import { REPORT_ROW_LIMIT, type ReportConfig } from "@/lib/validators/report.schema";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { tenantWeekStart } from "../moving-period";
 import { timesheetPayPeriodWhere } from "../date-scope";
@@ -123,27 +123,48 @@ export const dailyHoursSource: DataSourceDefinition = {
       },
     } as Prisma.WorkSegmentWhereInput;
 
+    // The same lines whatever the row limit, at most 25 a row of the full
+    // report, so a preview is the full report's first rows and the trim
+    // below (keepOnlyShownDays) picks them. Cut at 25 lines a preview row,
+    // a preview of 100 read the first 2,500 lines by date and showed days
+    // with some of their hours missing (Nov 25, 2026).
+    const lineCap = config.limit ? Math.max(config.limit, REPORT_ROW_LIMIT) * 25 : undefined;
     const segments = await db.workSegment.findMany({
       where,
-      include: {
+      // Only the fields the day lines use. Every column of each person, user
+      // and department with a month of the company's 50,000 lines took 3.7 s
+      // of the 5 the Monthly attendance summary spent; these take 1.3 s
+      // (Nov 24, 2026).
+      select: {
+        segmentDate: true, durationMinutes: true, segmentType: true,
+        payBucket: true, payBucketOverride: true, isPaid: true,
         payCode: { select: { code: true, label: true, payBucket: true } },
         timesheet: {
-          include: {
-            employee: { include: { user: true, department: true, site: { select: { name: true, timezone: true } } } },
-            dayReasons: { include: { reasonCode: { select: { code: true, label: true } } } },
+          select: {
+            employeeId: true,
+            employee: {
+              select: {
+                employeeCode: true, wmsId: true, payType: true, timeZone: true,
+                user: { select: { name: true } },
+                department: { select: { name: true } },
+                site: { select: { name: true, timezone: true } },
+              },
+            },
+            dayReasons: { select: { segmentDate: true, reasonCode: { select: { code: true, label: true } } } },
           },
         },
       },
       // By person first when the report is, so the lines it keeps are whole
       // timesheets rather than the first days of everybody.
+      // The id last, so lines that tie fall the same way every run.
       orderBy: config.sortBy[0]?.field === "employeeName"
-        ? [{ timesheet: { employee: { user: { name: config.sortBy[0].direction } } } }, { segmentDate: "asc" }, { startTime: "asc" }]
-        : [{ segmentDate: "asc" }, { startTime: "asc" }],
-      take: config.limit ? config.limit * 25 : undefined, // over-fetch since we collapse to day rows
+        ? [{ timesheet: { employee: { user: { name: config.sortBy[0].direction } } } }, { segmentDate: "asc" }, { startTime: "asc" }, { id: "asc" }]
+        : [{ segmentDate: "asc" }, { startTime: "asc" }, { id: "asc" }],
+      take: lineCap,
     });
     // Stopped at the cap: the days read are short of some lines, so the
     // report says so rather than total them as if they were whole.
-    const cutShort = !!config.limit && segments.length >= config.limit * 25;
+    const cutShort = !!lineCap && segments.length >= lineCap;
     const overtimeCodes = overtimeCodesOf(
       await db.payCode.findMany({
         where: { tenantId, payBucket: { in: ["OT", "DT"] } },
@@ -328,7 +349,7 @@ const KNOWN_BEFORE_READS = new Set(Object.keys(dayLine({
  * here rather than read from one table, so the sort is too.
  */
 function inReportOrder<T extends { date: string; employeeName: string }>(rows: T[], config: ReportConfig): T[] {
-  rows.sort((a, b) => a.date.localeCompare(b.date) || a.employeeName.localeCompare(b.employeeName));
+  rows.sort((a, b) => compareText(a.date, b.date) || compareText(a.employeeName, b.employeeName));
   return sortRowsInMemory(
     filterRowsInMemory(textFilter(rows, config.filters, ["dayType"]), config.filters.filter((f) => f.field !== "dayType"), fieldMap),
     config.sortBy,

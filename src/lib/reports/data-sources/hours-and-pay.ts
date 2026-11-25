@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import type { DataSourceDefinition, ReportResult } from "./index";
-import { buildWhereClause, filterRowsInMemory, sortRowsInMemory, type FieldMap } from "../query-builder";
+import { buildWhereClause, filterRowsInMemory, sortRowsInMemory, type FieldMap, compareText } from "../query-builder";
 import { periodDayRange } from "@/lib/pay-period-days";
 import { daysOf, describeSpan, type DaySpan } from "../period";
 import { rateInEffect } from "@/lib/pay-rates";
@@ -146,6 +146,8 @@ export const hoursAndPaySource: DataSourceDefinition = {
 
     const employees = await db.employee.findMany({
       where: { tenantId, ...buildWhereClause(config.filters, fieldMap) },
+      // A fixed order, so rows that tie on the sort keep it from run to run.
+      orderBy: [{ user: { name: "asc" } }, { id: "asc" }],
       select: {
         id: true,
         wmsId: true,
@@ -234,7 +236,7 @@ export const hoursAndPaySource: DataSourceDefinition = {
       });
 
     // By last name, unless the report says otherwise.
-    rows.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+    rows.sort((a, b) => compareText(a.employeeName, b.employeeName));
     // Timesheet status was applied to the hours above.
     const filtered = filterRowsInMemory(rows, config.filters.filter((f) => f.field !== "status"), fieldMap);
     const sorted = sortRowsInMemory(filtered, config.sortBy, fieldMap);

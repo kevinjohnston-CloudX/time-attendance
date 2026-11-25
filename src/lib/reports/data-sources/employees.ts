@@ -8,6 +8,7 @@ import type { ReportConfig } from "@/lib/validators/report.schema";
 import { personTimeZone, timeZoneLabel } from "@/lib/utils/person-time-zone";
 import { rateInEffect, todayKey } from "@/lib/pay-rates";
 import { withoutVisitors } from "@/lib/utils/client-badge";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * Employees: one row per person, with their setup. The source HR's lists are
@@ -204,7 +205,7 @@ export const employeesSource: DataSourceDefinition = {
         payTypeLookup: { select: { number: true, description: true } },
         payRates: { select: { effectiveDate: true, rate1: true, markupPct: true, chargeRate: true } },
       },
-      orderBy: { user: { name: "asc" } },
+      orderBy: [{ user: { name: "asc" } }, { id: "asc" }],
       take: afterwards ? undefined : config.limit,
     });
     const ids = employees.map((e) => e.id);
@@ -263,7 +264,7 @@ export const employeesSource: DataSourceDefinition = {
         birthDate: day(e.dateOfBirth),
         // Month and day only, for a birthday list; ordered through the year.
         birthday: e.dateOfBirth
-          ? e.dateOfBirth.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+          ? dateFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(e.dateOfBirth)
           : null,
         birthdayKey: e.dateOfBirth ? e.dateOfBirth.toISOString().slice(5, 10) : null,
         // The newest pay rate that has taken effect.
@@ -278,7 +279,7 @@ export const employeesSource: DataSourceDefinition = {
         workEmail: e.user?.workEmail ?? null,
         personalEmail: e.user?.email ?? null,
         lastPunch: last
-          ? new Intl.DateTimeFormat("en-US", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit", hour: "numeric", minute: "2-digit" }).format(last)
+          ? dateFormat("en-US", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit", hour: "numeric", minute: "2-digit" }).format(last)
           : "Never",
         // Someone who has never punched counts from their hire date, so they
         // are found by "no punch in 14 days" as NovaTime's inactive list finds them.

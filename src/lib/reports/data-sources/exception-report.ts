@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { readable } from "../readable";
 import { dayAfter, timesheetPayPeriodWhere } from "../date-scope";
 import type { DataSourceDefinition, ReportResult } from "./index";
-import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from "../query-builder";
+import { buildWhereClause, readOrder, type FieldMap } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
 import { format } from "date-fns";
 
@@ -80,10 +80,7 @@ export const exceptionReportSource: DataSourceDefinition = {
       ...(Object.keys(filterWhere).length > 0 ? { AND: [filterWhere] } : {}),
     };
 
-    const orderBy =
-      config.sortBy.length > 0
-        ? buildOrderBy(config.sortBy, fieldMap)
-        : [{ occurredAt: "desc" as const }];
+    const order = readOrder(config, fieldMap, { unsorted: [{ occurredAt: "desc" as const }] });
 
     const exceptions = await db.exception.findMany({
       where,
@@ -94,8 +91,8 @@ export const exceptionReportSource: DataSourceDefinition = {
           },
         },
       },
-      orderBy,
-      take: config.limit,
+      orderBy: order.orderBy,
+      take: order.take,
     });
 
     const rows = exceptions.map((e) => ({
@@ -110,8 +107,7 @@ export const exceptionReportSource: DataSourceDefinition = {
       resolution: e.resolution,
     }));
 
-    // In-memory sort for computed columns (description, resolved, resolvedAt, resolution)
-    const sortedRows = sortRowsInMemory(rows, config.sortBy, fieldMap);
+    const { rows: sortedRows, total } = order.finish(rows);
 
     const colById = Object.fromEntries(exceptionReportSource.columns.map((c) => [c.id, c]));
     const visibleColumns = config.columns.map((id) => colById[id]).filter(Boolean);
@@ -119,7 +115,7 @@ export const exceptionReportSource: DataSourceDefinition = {
     return {
       columns: visibleColumns.map((c) => ({ id: c.id, label: c.label, type: c.type })),
       rows: sortedRows,
-      totalRows: sortedRows.length,
+      totalRows: total,
     };
   },
 };

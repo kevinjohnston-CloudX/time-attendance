@@ -3,6 +3,7 @@ import { cronAuthorized } from "@/lib/cron-auth";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { snapToLocalTime } from "@/lib/utils/date";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * Closes the scan log for anyone left showing IN on the time clock at 23:00
@@ -48,7 +49,7 @@ export const maxDuration = 60;
 
 /** The site-local calendar date of `now`, as YYYY-MM-DD. */
 function localDate(now: Date, timezone: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(now);
+  return dateFormat("en-CA", { timeZone: timezone }).format(now);
 }
 
 const CLOSE_AT_HOUR = 23;

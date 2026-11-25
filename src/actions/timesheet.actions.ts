@@ -10,6 +10,7 @@ import { rebuildSegments } from "@/lib/engines/segment-builder";
 import { timesheetIdSchema, type TimesheetIdInput } from "@/lib/validators/timesheet.schema";
 import { z } from "zod";
 import { assertNoPendingEdits } from "@/lib/timecards/pending-edits";
+import { dateFormat } from "@/lib/utils/date-format";
 
 // ─── recalculateSegments ──────────────────────────────────────────────────────
 
@@ -132,7 +133,7 @@ export const lockTimesheet = withRBAC(
 
 /** "Mon, Sep 30, 2026" for a yyyy-MM-dd day. */
 function dayLabel(day: string): string {
-  return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(new Date(day + "T00:00:00Z"));
+  return dateFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(new Date(day + "T00:00:00Z"));
 }
 
 const ORDINALS = ["First", "Second", "Third", "Fourth"];

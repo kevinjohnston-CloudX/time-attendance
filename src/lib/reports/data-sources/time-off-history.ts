@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import type { DataSourceDefinition, ExecuteContext, ReportResult } from "./index";
-import { sortRowsInMemory } from "../query-builder";
+import { sortRowsInMemory, compareText } from "../query-builder";
 import { describeSpan, REPORT_ZONE, todayIn } from "../period";
 import {
   localDay, peopleFor, PERSON_FIELDS, PERSON_FILTERS, personCells, reportSpan, spanMoments, textFilter, visible,
@@ -125,7 +125,7 @@ export const timeOffHistorySource: DataSourceDefinition = {
       });
     rows = textFilter(rows, config.filters, ["entry"]);
     // Each person's entries together, oldest first, so the balance reads down.
-    rows.sort((a, b) => String(a.employeeName).localeCompare(String(b.employeeName)) || String(a.leaveType).localeCompare(String(b.leaveType)));
+    rows.sort((a, b) => compareText(String(a.employeeName), String(b.employeeName)) || compareText(String(a.leaveType), String(b.leaveType)));
     const sorted = sortRowsInMemory(rows, config.sortBy, {});
     const limited = config.limit ? sorted.slice(0, config.limit) : sorted;
     return { columns: cols, rows: limited, totalRows: sorted.length, period: { ...span, label: describeSpan(span) } };
@@ -231,7 +231,7 @@ export const timeOffSummarySource: DataSourceDefinition = {
         forecastMinutes: Math.round(s.endBalance + (s.earnedYear / dayOfYear) * (daysInYear - dayOfYear)),
       };
     });
-    rows.sort((a, b) => String(a.employeeName).localeCompare(String(b.employeeName)) || String(a.leaveType).localeCompare(String(b.leaveType)));
+    rows.sort((a, b) => compareText(String(a.employeeName), String(b.employeeName)) || compareText(String(a.leaveType), String(b.leaveType)));
     const sorted = sortRowsInMemory(rows, config.sortBy, {});
     const limited = config.limit ? sorted.slice(0, config.limit) : sorted;
     return { columns: cols, rows: limited, totalRows: sorted.length, period: { ...span, label: describeSpan(span) } };

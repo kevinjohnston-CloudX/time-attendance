@@ -4,6 +4,7 @@ import { sortRowsInMemory } from "../query-builder";
 import { describeSpan, REPORT_ZONE } from "../period";
 import { localDay, reportSpan, spanMoments, textFilter, visible } from "../scope";
 import type { ReportConfig } from "@/lib/validators/report.schema";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * Scans that did not become a punch, and why: a badge nobody has, a scan the
@@ -94,7 +95,8 @@ export const scansNotRecordedSource: DataSourceDefinition = {
           AND (
             (se.outcome::text IN ('PUNCH_REJECTED', 'ERROR') AND e.id IS NOT NULL)
             OR (se."employeeId" IS NULL AND st.id IS NOT NULL)
-          )`,
+          )
+        ORDER BY se."scanTime", se.id`,
       db.gateRefusal.findMany({
         where: {
           tenantId,
@@ -104,6 +106,7 @@ export const scansNotRecordedSource: DataSourceDefinition = {
           workDate: true, firstAt: true, reason: true, attempts: true, deviceName: true, employeeId: true,
           site: { select: { id: true, name: true, timezone: true } },
         },
+        orderBy: [{ firstAt: "asc" }, { id: "asc" }],
       }),
     ]);
 
@@ -116,7 +119,7 @@ export const scansNotRecordedSource: DataSourceDefinition = {
       : [];
     const person = new Map(people.map((p) => [p.id, p]));
     const clock = (at: Date, tz: string) =>
-      new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true }).format(at);
+      dateFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true }).format(at);
 
     let rows: Record<string, unknown>[] = [];
     for (const s of scans) {

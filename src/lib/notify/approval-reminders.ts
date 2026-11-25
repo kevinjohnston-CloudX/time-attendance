@@ -6,6 +6,7 @@ import { hasPermissionByLegacy } from "@/lib/rbac/permission-resolver";
 import { countMissedPunchRequests } from "@/lib/team/team-overview";
 import { emailUsers, leaveDays, leaveHours, type ApprovalEmail } from "./approval-email";
 import { coversSite, hrApprovers, type HrApprover } from "./approvers";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * The two reminders about approvals left waiting, chosen over a daily nag
@@ -31,7 +32,7 @@ const LEAD_DAYS = 2;
 
 /** Today's date in Eastern time, every company's zone today, as the UTC midnight @db.Date columns hold. */
 function easternToday(now: Date): Date {
-  const ymd = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(now);
+  const ymd = dateFormat("en-CA", { timeZone: "America/New_York" }).format(now);
   return new Date(`${ymd}T00:00:00Z`);
 }
 

@@ -1,6 +1,7 @@
 import type { PresencePerson, SiteDay } from "@/lib/presence/types";
 import type { PersonDayView } from "@/lib/presence/movements";
 import { fmtShift, fmtTime, readerLines, siteDate, statusLabel } from "./presence-meta";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * What Live Attendance exports, as plain tables, and the three ways a table
@@ -98,13 +99,13 @@ export function whenIn(iso: string | null, tz: string, nowIso: string): string {
   if (!iso) return "";
   const t = fmtTime(iso, tz);
   if (siteDate(iso, tz) === siteDate(nowIso, tz)) return t;
-  const d = new Intl.DateTimeFormat("en-US", { timeZone: tz, month: "short", day: "numeric" }).format(new Date(iso));
+  const d = dateFormat("en-US", { timeZone: tz, month: "short", day: "numeric" }).format(new Date(iso));
   return `${d}, ${t}`;
 }
 
 /** "Tue, Oct 6, 2026 at 9:41 AM", for the line under a title. */
 export function stampLine(iso: string, tz: string): string {
-  const d = new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(new Date(iso));
+  const d = dateFormat("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(new Date(iso));
   return `${d} at ${fmtTime(iso, tz)}`;
 }
 
@@ -228,7 +229,7 @@ export function movementsLines(views: PersonDayView[], data: Pick<SiteDay, "site
 export function dayWords(day: string, today: string): string {
   const [y, m, d] = day.split("-").map(Number);
   const date = new Date(Date.UTC(y, m - 1, d));
-  const long = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(date);
+  const long = dateFormat("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(date);
   if (day === today) return `Today, ${long}`;
   return long;
 }

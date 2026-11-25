@@ -23,6 +23,7 @@ import { BadgeSample, badgeSampleHeight } from "./badge-sample";
 import { PAPER_LABEL, isBadgePaper, savedPaper, type BadgePaper } from "./visitor-badge-print";
 import { ID_BADGE_RATIO, VisitorIdBadge, shapeFor } from "./visitor-id-badge";
 import { PrintBadgeWindow } from "./print-badge-window";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * New visitor on Live Attendance (src/lib/visitors), on the Export window's
@@ -47,7 +48,7 @@ export function dayWords(d: string): string {
 
 /** Today on the building's calendar. */
 function todayAt(timezone: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
+  return dateFormat("en-CA", { timeZone: timezone }).format(new Date());
 }
 
 const KINDS: VisitorKind[] = ["DAY_PASS", "FREQUENT"];

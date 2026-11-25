@@ -224,8 +224,18 @@ function withAcross(def: DataSourceDefinition): DataSourceDefinition {
   };
 }
 
+/**
+ * A report type as every report runs it: calendar periods turned into dates,
+ * a field spread across the columns, then groups and totals. Exported so a
+ * speed or correctness check can run an older version of a type exactly the
+ * way the app runs the current one (_ops/ab-compare.mts).
+ */
+export function asRun(def: DataSourceDefinition): DataSourceDefinition {
+  return withGroups(withAcross(withCalendarDates(def)));
+}
+
 const dataSources = Object.fromEntries(
-  Object.entries(sources).map(([id, def]) => [id, withGroups(withAcross(withCalendarDates(def)))])
+  Object.entries(sources).map(([id, def]) => [id, asRun(def)])
 ) as Record<DataSourceId, DataSourceDefinition>;
 
 export function getDataSource(id: DataSourceId): DataSourceDefinition {

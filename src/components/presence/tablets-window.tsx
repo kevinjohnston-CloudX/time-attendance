@@ -9,6 +9,7 @@ import { countHealth, healthOf, issuesOf, statusOf, type Health } from "./tablet
 import bw from "./building-windows.module.css";
 import styles from "./tablets-window.module.css";
 import { isPhone } from "@/lib/phone";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * Every tablet at the building on Live Attendance, for loss prevention and
@@ -587,7 +588,7 @@ function timeZoneWords(t: Tablet): string {
   let name = t.timeZone;
   try {
     name =
-      new Intl.DateTimeFormat("en-US", { timeZone: t.timeZone, timeZoneName: "longGeneric" })
+      dateFormat("en-US", { timeZone: t.timeZone, timeZoneName: "longGeneric" })
         .formatToParts(new Date())
         .find((p) => p.type === "timeZoneName")?.value ?? t.timeZone;
   } catch {

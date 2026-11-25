@@ -2,11 +2,12 @@ import { db } from "@/lib/db";
 import { rateInEffect } from "@/lib/pay-rates";
 import type { DataSourceDefinition, ExecuteContext, ReportResult } from "./index";
 import { dailyHoursSource } from "./daily-hours";
-import { filterRowsInMemory, sortRowsInMemory } from "../query-builder";
+import { filterRowsInMemory, sortRowsInMemory, compareText } from "../query-builder";
 import { describeSpan } from "../period";
 import { tenantWeekStart } from "../moving-period";
 import { peopleFor, PERSON_FIELDS, PERSON_FILTERS, personCells, reportSpan, visible } from "../scope";
 import type { ReportConfig } from "@/lib/validators/report.schema";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * Reports that are a calculation over the timecard rather than a list from
@@ -141,7 +142,8 @@ export const weeklyOvertimeSource: DataSourceDefinition = {
         WHERE t."employeeId" = ANY(${ids}) AND s."segmentType" = 'WORK' AND s."isPaid"
           AND s."segmentDate" BETWEEN ${utc(span.start)}::date AND ${utc(span.end)}::date
         GROUP BY 1, 2
-        HAVING SUM(s."durationMinutes") FILTER (WHERE s."payBucket" IN ('OT', 'DT')) > 0`,
+        HAVING SUM(s."durationMinutes") FILTER (WHERE s."payBucket" IN ('OT', 'DT')) > 0
+        ORDER BY 2, 1`,
       db.employeePayRate.findMany({ where: { employeeId: { in: ids } }, select: { employeeId: true, effectiveDate: true, rate1: true } }),
     ]);
     const ratesOf = new Map<string, typeof rates>();
@@ -165,7 +167,7 @@ export const weeklyOvertimeSource: DataSourceDefinition = {
         obbbAmount: rate != null ? Math.round((s.ot / 60) * rate * 0.5 * 100) / 100 : null,
       };
     });
-    rows.sort((a, b) => String(a.employeeName).localeCompare(String(b.employeeName)) || a.weekStart.localeCompare(b.weekStart));
+    rows.sort((a, b) => compareText(String(a.employeeName), String(b.employeeName)) || compareText(a.weekStart, b.weekStart));
     return finish(rows, config, weeklyColumns, span);
   },
 };
@@ -222,7 +224,7 @@ export const attendanceSummarySource: DataSourceDefinition = {
       if (!line) {
         line = {
           employeeName: r.employeeName, employeeCode: r.employeeCode, department: r.department, site: r.site,
-          month: utc(date).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" }),
+          month: dateFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" }).format(utc(date)),
           monthKey: date.slice(0, 7),
           daysWorked: 0, lateDays: 0, lateBy: 0, absences: 0, excusedAbsences: 0, unexcusedAbsences: 0,
           missedPunches: 0, timeOffDays: 0, timeOffMinutes: 0, unpaidMinutes: 0,
@@ -244,7 +246,7 @@ export const attendanceSummarySource: DataSourceDefinition = {
       add("unpaidMinutes", (r.unpaidLeaveMinutes as number) ?? 0);
     }
     const rows = [...lines.values()].sort(
-      (a, b) => String(a.employeeName).localeCompare(String(b.employeeName)) || String(a.monthKey).localeCompare(String(b.monthKey))
+      (a, b) => compareText(String(a.employeeName), String(b.employeeName)) || compareText(String(a.monthKey), String(b.monthKey))
     );
     const result = finish(rows, config, attendanceColumns, span);
     return daily.truncated ? { ...result, truncated: true } : result;

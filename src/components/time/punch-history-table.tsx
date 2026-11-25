@@ -1,5 +1,6 @@
 import { format } from "date-fns";
 import { PUNCH_TYPE_LABEL } from "@/lib/state-machines/labels";
+import { toSiteClock } from "@/lib/utils/date";
 import { Badge, EmptyState, Table, THead, TBody, TR, TH, TD, TableFooter, statusTone } from "@/components/ui";
 import { Clock } from "lucide-react";
 import type { Punch, PunchSource } from "@prisma/client";
@@ -40,6 +41,12 @@ interface PunchHistoryTableProps {
   showNote?: boolean;
   /** Row noun for the footer count. Omit it and no footer is rendered. */
   footerLabel?: string;
+  /**
+   * The zone this person works in (personTimeZone). Required: the list renders
+   * on the server, whose clock is UTC in production, so a bare format() printed
+   * a California 7:58 AM clock in as 3:58 PM (CXT, Eddie Marin, Nov 24).
+   */
+  timeZone: string;
 }
 
 export function PunchHistoryTable({
@@ -48,6 +55,7 @@ export function PunchHistoryTable({
   emptyBody,
   showNote = false,
   footerLabel,
+  timeZone,
 }: PunchHistoryTableProps) {
   if (punches.length === 0) {
     return <EmptyState icon={<Clock className="h-8 w-8" />} title={emptyTitle} body={emptyBody} />;
@@ -78,12 +86,13 @@ export function PunchHistoryTable({
           {punches.map((punch) => {
             const isSuperseded = !!punch.correctedById;
             const isCorrection = !!punch.correctsId;
+            const actual = toSiteClock(punch.punchTime, timeZone);
             return (
               <TR
                 key={punch.id}
                 style={isSuperseded ? { opacity: 0.55, background: "var(--surface-tertiary)" } : undefined}
               >
-                <TD className={styles.date}>{format(punch.punchTime, "MMM d")}</TD>
+                <TD className={styles.date}>{format(actual, "MMM d")}</TD>
 
                 {/* Times are read down the column against each other, so they
                     get tabular figures. The raw time is struck through when a
@@ -99,10 +108,10 @@ export function PunchHistoryTable({
                       : undefined
                   }
                 >
-                  {format(punch.punchTime, "h:mm:ss a")}
+                  {format(actual, "h:mm:ss a")}
                 </TD>
                 <TD numeric align="left" className={styles.rounded}>
-                  {format(punch.roundedTime, "h:mm a")}
+                  {format(toSiteClock(punch.roundedTime, timeZone), "h:mm a")}
                 </TD>
 
                 <TD className={styles.type}>

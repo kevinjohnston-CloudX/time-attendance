@@ -11,6 +11,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { cleanEmail, emailHolders, emailTakenMessage } from "@/lib/login-email";
 import { Prisma, Role as RoleEnum, type AuditEntityType, type Role } from "@prisma/client";
+import { dateFormat } from "@/lib/utils/date-format";
 
 const BUILTIN_ROLES = Object.values(RoleEnum);
 import { publicError, withRBAC } from "@/lib/rbac/guard";
@@ -146,7 +147,7 @@ function calendarDay(day: string): Date {
 /** Today's date for the employee (their own time zone, else their site's), as yyyy-MM-dd. */
 async function siteToday(siteId: string | null, ownZone?: string | null): Promise<string> {
   const site = siteId && !ownZone ? await db.site.findUnique({ where: { id: siteId }, select: { timezone: true } }) : null;
-  return new Intl.DateTimeFormat("en-CA", { timeZone: personTimeZone({ timeZone: ownZone, site }) }).format(new Date());
+  return dateFormat("en-CA", { timeZone: personTimeZone({ timeZone: ownZone, site }) }).format(new Date());
 }
 
 /** Decimal money columns as plain numbers, so the record can reach a client component. */
@@ -2118,7 +2119,7 @@ export const getAuditLogs = withRBAC(
       let tz = "America/New_York";
       try {
         if (input.tz) {
-          new Intl.DateTimeFormat("en-US", { timeZone: input.tz });
+          dateFormat("en-US", { timeZone: input.tz });
           tz = input.tz;
         }
       } catch {}

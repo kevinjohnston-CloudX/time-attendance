@@ -701,7 +701,7 @@ export default async function DashboardPage({
                       style={{ font: "var(--type-body2)" }}
                     >
                       <span className="tabular w-[74px]" style={{ color: "var(--text-secondary)" }}>
-                        {format(p.time, "hh:mm a")}
+                        {format(toSiteClock(p.time, siteZone), "hh:mm a")}
                       </span>
                       <span className="flex-1">{p.label}</span>
                       <span style={{ color: "var(--text-tertiary)" }}>{p.source}</span>

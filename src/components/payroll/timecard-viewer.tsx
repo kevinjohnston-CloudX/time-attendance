@@ -21,6 +21,7 @@ import { periodLastDay } from "@/lib/pay-period-display";
 import type { PayFrequency } from "@prisma/client";
 import { minutesToHoursDecimal } from "@/lib/utils/duration";
 import { agencyParam, agencySummary } from "@/lib/agency-filter";
+import { PAID_LEAVE_BUCKETS, missedPunchDays as missedPunchDaysOf, timecardHours } from "@/lib/payroll/timecard-hours";
 import { FilterMultiChip } from "@/components/ui/filter-multi-chip";
 
 /** No agency picked: everybody. One array, so a default does not change on every render. */
@@ -575,8 +576,6 @@ function RecalculateButton({ timesheetId }: { timesheetId: string }) {
   );
 }
 
-// Buckets that are paid at regular rate (shown in Reg Hrs column in summary)
-const PAID_LEAVE_BUCKETS = new Set(["PTO", "SICK", "HOLIDAY", "FMLA", "BEREAVEMENT", "JURY_DUTY", "MILITARY"]);
 
 // ─── Summary Row Helper ─────────────────────────────────────────────────────
 
@@ -1082,41 +1081,18 @@ export function TimecardViewer({
   // Summary's Totals row, worked out once so the two always agree. Days
   // with a missed punch are left out, as the Summary always has: their
   // hours are not real until the punch is fixed.
-  const missedPunchDays = new Set(
-    (timecard?.exceptions ?? [])
-      .filter((e) => e.exceptionType === "MISSING_PUNCH")
-      .map((e) => format(atSite(e.occurredAt), "yyyy-MM-dd"))
-  );
+  const missedPunchDays = missedPunchDaysOf(timecard?.exceptions ?? [], siteTz);
   // Unpaid leave in the period (on days not left out for a missed punch): the
   // summary then shows an Unpaid column, so every coded hour is accounted for.
   const hasUnpaidLeave = (timecard?.segments ?? []).some(
     (s) => !s.isPaid && (s.segmentType === "LEAVE" || s.segmentType === "HOLIDAY") && s.durationMinutes > 0 &&
       !missedPunchDays.has(format(parseUtcDate(s.segmentDate), "yyyy-MM-dd")),
   );
-  const periodTotals = (() => {
-    const byBucket: Record<string, number> = {};
-    let premium = 0;
-    for (const s of timecard?.segments ?? []) {
-      if (!s.isPaid) continue;
-      if (missedPunchDays.has(format(parseUtcDate(s.segmentDate), "yyyy-MM-dd"))) continue;
-      // A meal premium is pay, not hours worked: kept out of Regular and Total.
-      if (s.segmentType === "MEAL_PREMIUM") { premium += s.durationMinutes; continue; }
-      const eb = (s.payBucketOverride && !["REG", "OT", "DT"].includes(s.payBucketOverride))
-        ? s.payBucketOverride
-        : s.payBucket;
-      byBucket[eb] = (byBucket[eb] ?? 0) + s.durationMinutes;
-    }
-    const paidLeave = Object.entries(byBucket)
-      .filter(([k]) => PAID_LEAVE_BUCKETS.has(k))
-      .reduce((sum, [, v]) => sum + v, 0);
-    return {
-      reg: (byBucket["REG"] ?? 0) + paidLeave,
-      ot: byBucket["OT"] ?? 0,
-      dt: byBucket["DT"] ?? 0,
-      total: Object.values(byBucket).reduce((a, b) => a + b, 0),
-      premium,
-    };
-  })();
+  // The same count every other screen and report makes (lib/payroll/timecard-hours).
+  const periodTotals = timecardHours(
+    (timecard?.segments ?? []).map((s) => ({ ...s, payCodeIsPaid: s.payCode?.isPaid ?? null })),
+    missedPunchDays,
+  );
 
   // Reset state when employee changes
   useEffect(() => {

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { PayFrequency } from "@prisma/client";
 import { asksForClientBadge, isClientBadge } from "@/lib/utils/client-badge";
 import { isLanguageCode, LANGUAGES, languageFromText } from "@/lib/languages";
+import { dateFormat } from "@/lib/utils/date-format";
 
 export const ROLES = [
   "EMPLOYEE",
@@ -150,7 +151,7 @@ export const updateEmployeeSchema = z.object({
   ]).optional().transform((v) => (v === undefined ? undefined : v || null)),
   // The person's own time zone; empty means the site's.
   timeZone: z.union([
-    z.string().refine((z) => { try { new Intl.DateTimeFormat("en-US", { timeZone: z }); return true; } catch { return false; } }, "Pick a time zone from the list"),
+    z.string().refine((z) => { try { dateFormat("en-US", { timeZone: z }); return true; } catch { return false; } }, "Pick a time zone from the list"),
     z.literal(""),
     z.null(),
   ]).optional().transform((v) => (v === undefined ? undefined : v || null)),

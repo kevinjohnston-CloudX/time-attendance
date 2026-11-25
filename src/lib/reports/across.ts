@@ -1,4 +1,6 @@
 import { addsUp } from "./grouping";
+import { compareText } from "./query-builder";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * A report with one field spread across the columns: a column for each day
@@ -30,7 +32,7 @@ interface Column {
 }
 
 const SHORT_DAY = (day: string) =>
-  new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  dateFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${day}T12:00:00Z`));
 
 export function spreadAcross(
   result: { columns: Column[]; rows: Record<string, unknown>[] },
@@ -84,7 +86,7 @@ export function spreadAcross(
   }
   const values = [...seen.keys()].sort((a, b) => {
     if (a === blank || b === blank) return a === blank ? 1 : -1;
-    return (seen.get(a) ?? a).localeCompare(seen.get(b) ?? b, "en-US", { numeric: true, sensitivity: "base" });
+    return compareText(seen.get(a) ?? a, seen.get(b) ?? b);
   });
   const columnOf = new Map(values.map((v, i) => [v, `a${i}_${value.id}`]));
   const totalId = `total_${value.id}`;

@@ -21,6 +21,7 @@ import {
 import { approveMissedPunch, correctPunch, deletePunch } from "@/actions/punch.actions";
 import { addManualHoursEntry, addManualPunchPair, addManualPunches } from "@/actions/timecard-entry.actions";
 import { toggleMealWaiver } from "@/actions/timesheet.actions";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * Supervisors' timecard changes, sent to HR (11/11), and HR's decision on
@@ -356,10 +357,10 @@ export const decideTimesheetEdits = withRBAC(
 
 // ─── The Approvals page (11/11) ──────────────────────────────────────────────
 
-const shortDay = (day: string) => new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(day + "T12:00:00Z"));
+const shortDay = (day: string) => dateFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(day + "T12:00:00Z"));
 const periodLabel = (start: Date, end: Date, timeZone: string) => {
   // A period is stored to the next one's first day; its own last day is the one before.
-  const fmt = (d: Date) => new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone }).format(d);
+  const fmt = (d: Date) => dateFormat("en-US", { month: "short", day: "numeric", timeZone }).format(d);
   return `${fmt(start)} – ${fmt(new Date(end.getTime() - 1))}`;
 };
 
@@ -451,7 +452,7 @@ export const getTimecardEditPreview = withRBAC(
     const requests = await editRequestsFor(sheet.id, tz);
     // Every waiting change, each with who sent it, when and why.
     const waiting = requests.flatMap((r) => r.items.map((i) => ({ ...i, requestId: r.id, reason: r.reason, sender: r.submittedBy, sentAt: r.createdAt })));
-    const clock = (d: Date | string) => new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz }).format(new Date(d));
+    const clock = (d: Date | string) => dateFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz }).format(new Date(d));
 
     // Punches as the timecard would show them with the waiting changes in:
     // a time changed shows its new time, a removal is struck through, an

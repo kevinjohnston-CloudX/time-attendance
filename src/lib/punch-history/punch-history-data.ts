@@ -8,6 +8,7 @@ import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { directReportsOf } from "@/lib/get-subordinate-ids";
 import { ownCompany } from "@/lib/rbac/company";
 import { withoutVisitors } from "@/lib/utils/client-badge";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * Everything the Team Punch History screen and its export read, in one place,
@@ -162,7 +163,7 @@ export type PunchHistoryData = {
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function localDateOf(instant: Date, timezone: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(instant);
+  return dateFormat("en-CA", { timeZone: timezone }).format(instant);
 }
 
 /**
@@ -725,9 +726,9 @@ export async function loadPunchExport(viewer: Viewer, params: PunchHistoryParams
     let c = clocks.get(tz);
     if (!c) {
       c = {
-        date: new Intl.DateTimeFormat("en-CA", { timeZone: tz }),
-        secs: new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true }),
-        mins: new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true }),
+        date: dateFormat("en-CA", { timeZone: tz }),
+        secs: dateFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true }),
+        mins: dateFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", hour12: true }),
       };
       clocks.set(tz, c);
     }
