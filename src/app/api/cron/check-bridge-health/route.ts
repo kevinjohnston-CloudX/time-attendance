@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import type { SyncKind } from "@prisma/client";
 import { BRIDGE_AGENT, BRIDGE_JOB_KINDS } from "@/lib/services/bridge.service";
 import { isEmailConfigured, sendMail } from "@/lib/email/send-mail";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * Says out loud when the WMS bridge has stopped working.
@@ -178,11 +179,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // row count is steady (about 750, weekends included), so late in the
   // evening tomorrow should look like today.
   const etHour = Number(
-    new Intl.DateTimeFormat("en-US", { timeZone: SCHEDULE_ZONE, hour: "2-digit", hourCycle: "h23" })
+    dateFormat("en-US", { timeZone: SCHEDULE_ZONE, hour: "2-digit", hourCycle: "h23" })
       .format(new Date(now)),
   );
   if (etHour >= SCHEDULE_CHECK_FROM_HOUR) {
-    const todayIso = new Intl.DateTimeFormat("en-CA", { timeZone: SCHEDULE_ZONE }).format(new Date(now));
+    const todayIso = dateFormat("en-CA", { timeZone: SCHEDULE_ZONE }).format(new Date(now));
     const today = new Date(`${todayIso}T00:00:00.000Z`);
     const tomorrow = new Date(today.getTime() + 86_400_000);
     // Oracle's rows only. A stand-in (schedule-stand-in.ts) is CloudTime

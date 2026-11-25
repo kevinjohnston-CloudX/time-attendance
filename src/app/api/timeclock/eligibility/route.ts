@@ -11,6 +11,7 @@ import { WMS_TERMINATION_ENDS_EMPLOYMENT, employmentEnded, madeActiveAt } from "
 import { CLIENT_DEPARTMENT_SHOWN, isClientBadge } from "@/lib/utils/client-badge";
 import { cachedDataProtection, photoOffAt } from "@/lib/privacy/data-protection";
 import { buildingLanguageCodes, tabletBuilding, tabletLanguages } from "@/lib/timeclock/tablet-languages";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * May this badge scan right now, and who is it?
@@ -62,7 +63,7 @@ const GATE_ACTIVE_WINDOW_MS = 4 * 60 * 60 * 1000;
 
 /** Today's date in a site's own zone, as YYYY-MM-DD. */
 function localDate(now: Date, timezone: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(now);
+  return dateFormat("en-CA", { timeZone: timezone }).format(now);
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {

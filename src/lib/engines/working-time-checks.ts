@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * Working time checks for a rule set that follows one country's working time
@@ -218,7 +219,7 @@ export async function syncWorkingTimeExceptions(
     if (have.has(keyOf(issue.type, issue.day))) continue;
     // Noon UTC, so the day reads the same in every time zone, as missed punches do.
     const occurredAt = new Date(`${issue.day}T12:00:00.000Z`);
-    const dayWords = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: timezone }).format(occurredAt);
+    const dayWords = dateFormat("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: timezone }).format(occurredAt);
     await db.exception.create({
       data: { timesheetId, exceptionType: issue.type, description: describeIssue(issue, dayWords), occurredAt },
     });

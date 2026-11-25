@@ -20,6 +20,7 @@ import type {
   PresencePerson,
   PresenceStatus,
 } from "./types";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /** A built in role's name, for somebody with no custom role picked. The same words as the employee record. */
 const SYSTEM_ROLE_NAME: Record<string, string> = {
@@ -73,7 +74,7 @@ type LatestRow = {
 type TodayRow = { employeeId: string; firstIn: Date | null; lastOut: Date | null };
 
 export function localDateString(at: Date, timezone: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(at);
+  return dateFormat("en-CA", { timeZone: timezone }).format(at);
 }
 
 /**

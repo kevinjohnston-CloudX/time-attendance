@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { decryptPii } from "@/lib/crypto/pii";
 import { readablePii } from "./data-protection";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * Everything CloudTime holds about one person, for a data access request
@@ -49,7 +50,7 @@ export function humanize(value: string | null | undefined): string | null {
 /** An instant on the person's clock: "Oct 14, 2026, 7:02 AM". */
 export function formatInstant(at: Date | null | undefined, timeZone: string): string | null {
   if (!at) return null;
-  return new Intl.DateTimeFormat("en-US", {
+  return dateFormat("en-US", {
     timeZone,
     year: "numeric",
     month: "short",
@@ -63,7 +64,7 @@ export function formatInstant(at: Date | null | undefined, timeZone: string): st
 /** A calendar date stored at midnight UTC: "Oct 14, 2026", never shifted a day by the time zone. */
 export function formatDay(at: Date | null | undefined): string | null {
   if (!at) return null;
-  return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", year: "numeric", month: "short", day: "numeric" }).format(at);
+  return dateFormat("en-US", { timeZone: "UTC", year: "numeric", month: "short", day: "numeric" }).format(at);
 }
 
 /** Minutes as hours with two decimals, the way timecards show them. */

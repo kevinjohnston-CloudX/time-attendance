@@ -8,6 +8,7 @@ import type { ReportConfig } from "@/lib/validators/report.schema";
 import { personTimeZone, timeZoneLabel } from "@/lib/utils/person-time-zone";
 import { rateInEffect, todayKey } from "@/lib/pay-rates";
 import { withoutVisitors } from "@/lib/utils/client-badge";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * Employees: one row per person, with their setup. The source HR's lists are
@@ -278,7 +279,7 @@ export const employeesSource: DataSourceDefinition = {
         workEmail: e.user?.workEmail ?? null,
         personalEmail: e.user?.email ?? null,
         lastPunch: last
-          ? new Intl.DateTimeFormat("en-US", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit", hour: "numeric", minute: "2-digit" }).format(last)
+          ? dateFormat("en-US", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit", hour: "numeric", minute: "2-digit" }).format(last)
           : "Never",
         // Someone who has never punched counts from their hire date, so they
         // are found by "no punch in 14 days" as NovaTime's inactive list finds them.

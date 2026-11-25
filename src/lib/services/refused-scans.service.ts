@@ -6,6 +6,7 @@ import { computeRoundedTime } from "@/lib/utils/date";
 import { findOrCreateTimesheet } from "@/lib/utils/timesheet";
 import { INACTIVE_TIMECARD_ERROR } from "@/lib/inactive-timecards";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * Time clock scans refused because nobody held the badge yet, and turning
@@ -119,7 +120,7 @@ async function refusedRows(tenantId: string, emp: Emp, start: Date, end: Date, i
 }
 
 function localDay(at: Date, tz: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(at);
+  return dateFormat("en-CA", { timeZone: tz }).format(at);
 }
 
 export async function getRefusedScans(
@@ -217,7 +218,7 @@ export async function recoverRefusedScans(
   for (const p of planned) {
     const k = p.roundedTime.getTime();
     if (seen.has(k)) {
-      const when = new Intl.DateTimeFormat("en-US", { timeZone: tz, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(p.roundedTime);
+      const when = dateFormat("en-US", { timeZone: tz, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(p.roundedTime);
       throw new RecoverError(`A punch already rounds to ${when}. Leave that scan out, or change the punch already there first.`);
     }
     seen.add(k);

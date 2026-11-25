@@ -8,6 +8,7 @@ import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { directReportsOf } from "@/lib/get-subordinate-ids";
 import { ownCompany } from "@/lib/rbac/company";
 import { withoutVisitors } from "@/lib/utils/client-badge";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * Everything the Team Punch History screen and its export read, in one place,
@@ -162,7 +163,7 @@ export type PunchHistoryData = {
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function localDateOf(instant: Date, timezone: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(instant);
+  return dateFormat("en-CA", { timeZone: timezone }).format(instant);
 }
 
 /**

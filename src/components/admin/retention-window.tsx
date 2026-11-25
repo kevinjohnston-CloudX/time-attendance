@@ -9,6 +9,7 @@ import { RETENTION_COUNTRY_LABEL } from "@/lib/privacy/retention-rules";
 import styles from "@/components/presence/export-window.module.css";
 import own from "./person-data-window.module.css";
 import { Shell } from "./person-data-window";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * Retention review, from Company Settings: the leavers past the retention
@@ -25,7 +26,7 @@ type Kind = "leavers" | "photos";
 
 const plural = (n: number, one: string, many: string) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
 const leftOn = (day: string) =>
-  day ? `Left ${new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`))}` : "";
+  day ? `Left ${dateFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`))}` : "";
 
 export function RetentionWindow({ onClose }: { onClose: () => void }) {
   const [review, setReview] = useState<Review | null>(null);

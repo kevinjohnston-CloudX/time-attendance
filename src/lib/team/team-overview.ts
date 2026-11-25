@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { directReportsOf } from "@/lib/get-subordinate-ids";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * What Team Overview puts on screen that the dashboard does not already have.
@@ -128,7 +129,7 @@ export async function countMissedPunchRequests(
 
 /** The calendar day an instant falls on in a zone, as YYYY-MM-DD. */
 function dayIn(instant: Date, zone: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: zone }).format(instant);
+  return dateFormat("en-CA", { timeZone: zone }).format(instant);
 }
 
 /** Open exceptions per type, largest first. Counted in SQL, not in a loop. */

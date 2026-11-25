@@ -17,6 +17,7 @@ import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { WorkQueueList, workQueueRows } from "@/components/supervisor/work-queue";
 import { TimeOffAheadCard } from "@/components/supervisor/time-off-ahead-card";
 import styles from "@/components/supervisor/team-overview.module.css";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * Team Overview: the screen the Team section opens on.
@@ -118,7 +119,7 @@ export default async function TeamOverviewPage() {
     : 0;
 
   const timezone = personTimeZone(me);
-  const asOf = new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", minute: "2-digit", hour12: true }).format(now);
+  const asOf = dateFormat("en-US", { timeZone: timezone, hour: "numeric", minute: "2-digit", hour12: true }).format(now);
 
   // ── The work queue ────────────────────────────────────────────────────────
   // `actionable` is whether this viewer can do anything about the count. A

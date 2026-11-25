@@ -18,6 +18,8 @@
  * server does (supervisor-edits.ts).
  */
 
+import { dateFormat } from "@/lib/utils/date-format";
+
 export type RowPunch = { id: string; punchType: string; roundedTime: Date; payCodeId: string | null };
 
 export const REGULAR_HOURS_ONLY_ERROR =
@@ -166,7 +168,7 @@ const PUNCH_WORD: Record<string, string> = { CLOCK_IN: "clock in", CLOCK_OUT: "c
 
 function clock(at: Date | string | null | undefined, timeZone: string): string {
   if (!at) return "";
-  return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone }).format(new Date(at));
+  return dateFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone }).format(new Date(at));
 }
 
 /** The change in words, as HR reads it: "Change clock in 7:31 AM to 7:30 AM". */

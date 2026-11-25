@@ -6,6 +6,7 @@ import { buildWhereClause, type FieldMap } from "./query-builder";
 import { daysOf, REPORT_ZONE, type DaySpan } from "./period";
 import type { ExecuteContext } from "./data-sources";
 import type { FilterDef, ReportConfig } from "@/lib/validators/report.schema";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * What the newer report types share: the days a report covers, and the
@@ -104,14 +105,14 @@ export function personCells(p: Person) {
 
 /** A moment as a person reads it where they are: "10/12/2026, 3:04 PM". */
 export function localMoment(at: Date, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-US", {
+  return dateFormat("en-US", {
     timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "numeric", minute: "2-digit",
   }).format(at);
 }
 
 /** The calendar day a moment falls on in a zone, yyyy-mm-dd. */
 export function localDay(at: Date, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
+  return dateFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
 }
 
 /** The columns a report asks for, from its type's list, in its order. */

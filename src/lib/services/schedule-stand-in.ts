@@ -26,6 +26,8 @@
  * last gate scan is IN.
  */
 
+import { dateFormat } from "@/lib/utils/date-format";
+
 /** How far back a person counts as someone this building schedules. */
 export const LOOKBACK_DAYS = 7;
 
@@ -46,9 +48,9 @@ export const ARRIVED_SHARE = 0.5;
 
 /** A building's date and hour in its own zone. */
 export function siteClock(now: Date, timezone: string): { today: string; hour: number } {
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(now);
+  const today = dateFormat("en-CA", { timeZone: timezone }).format(now);
   const hour = Number(
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "2-digit", hourCycle: "h23" }).format(now),
+    dateFormat("en-US", { timeZone: timezone, hour: "2-digit", hourCycle: "h23" }).format(now),
   );
   return { today, hour };
 }

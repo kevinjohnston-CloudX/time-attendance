@@ -18,6 +18,8 @@
  * module is used only by the newer scan ingest.)
  */
 
+import { dateFormat } from "@/lib/utils/date-format";
+
 /** True when the string names its own UTC offset, and so needs no timezone. */
 export function hasExplicitOffset(raw: string): boolean {
   // Matches a trailing Z, ±HH:MM or ±HHMM, but not the date's own hyphens.
@@ -35,7 +37,7 @@ function parseNaiveInZone(raw: string, timeZone: string): Date {
     throw new Error(`Invalid ScanDateTime: ${raw}`);
   }
 
-  const parts = new Intl.DateTimeFormat("en-US", {
+  const parts = dateFormat("en-US", {
     timeZone,
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", second: "2-digit",

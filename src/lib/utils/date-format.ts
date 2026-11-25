@@ -9,11 +9,11 @@
  * one is safe.
  *
  * <p>The options are keyed in the order they are written, so the same call
- * site always finds its own. Kept to a few hundred entries: a key is a
+ * site always finds its own. Kept to two thousand entries: a key is a
  * locale, a time zone and a handful of fields, so a real app never comes
  * near it, and anything that did would rebuild rather than grow.
  */
-const MAX = 500;
+const MAX = 2000;
 const cache = new Map<string, Intl.DateTimeFormat>();
 
 export function dateFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {

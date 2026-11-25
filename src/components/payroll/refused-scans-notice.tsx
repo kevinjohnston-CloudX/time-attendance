@@ -8,6 +8,7 @@ import type { RefusedScan } from "@/lib/services/refused-scans.service";
 import styles from "./refused-scans.module.css";
 import { codeOf } from "@/lib/action-errors";
 import { Window, WindowCard, WindowGroupLabel } from "@/components/ui/window";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * On a timecard: the time clock scans that were refused because this person
@@ -97,7 +98,7 @@ export function RefusedScansNotice({
 }
 
 function dayKey(iso: string, tz: string): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date(iso));
+  return dateFormat("en-CA", { timeZone: tz }).format(new Date(iso));
 }
 
 function ReviewDialog({
@@ -130,7 +131,7 @@ function ReviewDialog({
       else
         out.push({
           day: d,
-          label: new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "long", month: "short", day: "numeric" }).format(new Date(s.at)),
+          label: dateFormat("en-US", { timeZone: tz, weekday: "long", month: "short", day: "numeric" }).format(new Date(s.at)),
           scans: [s],
         });
     }
@@ -139,7 +140,7 @@ function ReviewDialog({
 
   const picked = scans.filter((s) => choice[s.id]);
   const time = (iso: string) =>
-    new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", second: "2-digit" }).format(new Date(iso));
+    dateFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", second: "2-digit" }).format(new Date(iso));
 
   async function save() {
     setSaving(true);

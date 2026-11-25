@@ -10,6 +10,7 @@ import type { Punch, RuleSet, PayBucket, SegmentType, HolidayCreditMethod } from
 import type { MealConfig } from "@/actions/shift.actions";
 import { shiftMeal as shiftMealOf } from "@/lib/shift-meal";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { dateFormat } from "@/lib/utils/date-format";
 
 type MealPremiumRowCfg = {
   applyFromMinutes: number;    // window start relative to shift start (minutes)
@@ -228,8 +229,8 @@ export function computeSegments(
 
     // Close the previous segment at this punch's truncated minute
     if (openState && openStart) {
-      const openDay = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(openStart);
-      const punchDay = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(punchMin);
+      const openDay = dateFormat("en-CA", { timeZone: timezone }).format(openStart);
+      const punchDay = dateFormat("en-CA", { timeZone: timezone }).format(punchMin);
 
       const dayDiff = (new Date(punchDay + "T00:00:00Z").getTime() - new Date(openDay + "T00:00:00Z").getTime()) / (24 * 60 * 60_000);
       // A hand-entered clock in and the next morning's clock out are one shift,
@@ -899,7 +900,7 @@ export function computeMealPremiums(
     if (workSegs.length === 0) continue;
 
     // Punches for this local calendar day (keyed by actual punchTime in site tz)
-    const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: timezone });
+    const fmt = dateFormat("en-CA", { timeZone: timezone });
     // Plus a clock out after midnight that ends a shift kept whole on this day
     // (a hand-entered 7:00 PM to 12:30 AM): without it the day looked still
     // clocked in.
@@ -1320,7 +1321,7 @@ export async function rebuildSegments(
   const clockInDays = new Set(
     punches
       .filter((p) => p.punchType === "CLOCK_IN")
-      .map((p) => new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(p.roundedTime)),
+      .map((p) => dateFormat("en-CA", { timeZone: timezone }).format(p.roundedTime)),
   );
   const payCodeMarkers = existingWorkWithPayCode
     .filter((s) => {
@@ -1343,10 +1344,10 @@ export async function rebuildSegments(
   // For brand-new missed-punch days (first miss — no prior WORK segment and no LEAVE
   // marker), seed a LEAVE marker from the CLOCK_IN punch's pay code, or fall back to
   // the tenant's code-0 so the day shows Regular Hours rather than Absent.
-  const todayLocalStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
+  const todayLocalStr = dateFormat("en-CA", { timeZone: timezone }).format(new Date());
   const needsDefault = punches.some((p) => {
     if (p.punchType !== "CLOCK_IN") return false;
-    const d = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(p.roundedTime);
+    const d = dateFormat("en-CA", { timeZone: timezone }).format(p.roundedTime);
     return d < todayLocalStr && !newSegmentDates.has(d) && !existingLeaveDates.has(d) && !payCodeMarkers.has(d);
   });
   if (needsDefault && tenantId) {
@@ -1357,7 +1358,7 @@ export async function rebuildSegments(
     if (defaultPayCode?.isActive) {
       for (const punch of punches) {
         if (punch.punchType !== "CLOCK_IN") continue;
-        const d = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(punch.roundedTime);
+        const d = dateFormat("en-CA", { timeZone: timezone }).format(punch.roundedTime);
         if (d >= todayLocalStr || newSegmentDates.has(d) || existingLeaveDates.has(d) || payCodeMarkers.has(d)) continue;
         payCodeMarkers.set(d, punch.payCodeId ?? defaultPayCode.id);
       }
@@ -1616,12 +1617,12 @@ async function syncAbsentExceptions(
   raiseNew = true,
 ): Promise<void> {
   // Today in the site timezone.
-  const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
+  const todayStr = dateFormat("en-CA", { timeZone: timezone }).format(new Date());
 
   // Build set of days that have at least one approved punch (local timezone).
   const punchedDays = new Set(
     punches.map((p) =>
-      new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(p.roundedTime)
+      dateFormat("en-CA", { timeZone: timezone }).format(p.roundedTime)
     )
   );
 
@@ -1672,7 +1673,7 @@ async function syncAbsentExceptions(
         data: {
           timesheetId,
           exceptionType: "ABSENT",
-          description: `No activity recorded on ${new Intl.DateTimeFormat("en-US", {
+          description: `No activity recorded on ${dateFormat("en-US", {
             month: "long",
             day: "numeric",
             year: "numeric",
@@ -1728,9 +1729,9 @@ async function syncMissingPunchExceptions(
   // last clock in must still clear its missed punch, or the day stays out of
   // the totals (Erika Vera de Romero, 10/15: hours entered by hand, then
   // removed, then the day coded Unpaid time off).
-  const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
+  const todayStr = dateFormat("en-CA", { timeZone: timezone }).format(new Date());
   const localDateOf = (d: Date) =>
-    new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(d);
+    dateFormat("en-CA", { timeZone: timezone }).format(d);
 
   // Group punches by local date, sorted ascending within each day.
   const punchesByDay = new Map<string, Punch[]>();
@@ -1788,7 +1789,7 @@ async function syncMissingPunchExceptions(
         data: {
           timesheetId,
           exceptionType: "MISSING_PUNCH",
-          description: `Shift on ${new Intl.DateTimeFormat("en-US", {
+          description: `Shift on ${dateFormat("en-US", {
             month: "long",
             day: "numeric",
             year: "numeric",
@@ -2000,9 +2001,9 @@ export async function syncHolidayCredits(
 
   const periodStartStr = format(payPeriodStart, "yyyy-MM-dd");
   const periodEndStr   = format(payPeriodEnd,   "yyyy-MM-dd");
-  const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(new Date());
+  const todayStr = dateFormat("en-CA", { timeZone: timezone }).format(new Date());
   const localDateOf = (d: Date) =>
-    new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(d);
+    dateFormat("en-CA", { timeZone: timezone }).format(d);
 
   // Effective holiday dates — use observedDate when set; track per-holiday bypass flag
   const holidayBypassAfter = new Map<string, boolean>();

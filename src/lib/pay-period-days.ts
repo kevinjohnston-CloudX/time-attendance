@@ -1,6 +1,7 @@
 import type { PayFrequency } from "@prisma/client";
 import { dayKey, periodLastDay } from "@/lib/pay-period-display";
 import { snapToLocalTime } from "@/lib/utils/date";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * A pay period as calendar days, and those days as moments in a site's time.
@@ -70,6 +71,6 @@ export function periodContains(
   timezone: string,
 ): boolean {
   const { firstDay, lastDay } = periodDayRange(period, frequency);
-  const day = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(at);
+  const day = dateFormat("en-CA", { timeZone: timezone }).format(at);
   return day >= firstDay && day <= lastDay;
 }

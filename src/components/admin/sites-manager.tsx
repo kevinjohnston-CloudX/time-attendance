@@ -23,6 +23,7 @@ import {
 import { useViewOnly } from "./setup/view-only";
 import { timeZoneLabel, timeZoneOptions } from "./setup/time-zones";
 import { LANGUAGES, languageName, TABLETS_USE_LANGUAGES, tabletLanguagesOutcome } from "@/lib/languages";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * Sites: the buildings people clock in at, each with the time zone its
@@ -204,7 +205,7 @@ function useTimeIn(timeZone: string): string | null {
     return () => window.clearInterval(id);
   }, []);
   try {
-    return new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit", hour12: true }).format(now);
+    return dateFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit", hour12: true }).format(now);
   } catch {
     return null;
   }

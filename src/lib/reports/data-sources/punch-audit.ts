@@ -6,10 +6,11 @@ import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap } from 
 import type { ReportConfig } from "@/lib/validators/report.schema";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { localDay } from "../scope";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /** A time of day on a zone's clock, with seconds: "7:58:12 AM". */
 function localTime(at: Date, zone: string): string {
-  return new Intl.DateTimeFormat("en-US", { timeZone: zone, hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true }).format(at);
+  return dateFormat("en-US", { timeZone: zone, hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true }).format(at);
 }
 
 const fieldMap: FieldMap = {

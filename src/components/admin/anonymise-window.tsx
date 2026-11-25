@@ -7,6 +7,7 @@ import { anonymiseEmployee, getAnonymisePreview } from "@/actions/privacy.action
 import styles from "@/components/presence/export-window.module.css";
 import own from "./person-data-window.module.css";
 import { Shell } from "./person-data-window";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * Anonymise, from the record of someone who has left, in a company that
@@ -93,7 +94,7 @@ export function AnonymiseWindow({ employeeId, onClose, onDone }: { employeeId: s
   }
 
   const exportedWords = preview?.exportedAt
-    ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true }).format(new Date(preview.exportedAt))
+    ? dateFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true }).format(new Date(preview.exportedAt))
     : null;
 
   return (

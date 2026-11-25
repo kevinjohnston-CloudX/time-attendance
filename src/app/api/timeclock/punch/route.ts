@@ -16,6 +16,7 @@ import type { Prisma, PunchType, PunchState } from "@prisma/client";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { CLIENT_TIME_CLOCK_REJECTION, isClientBadge } from "@/lib/utils/client-badge";
 import { WMS_TERMINATION_ENDS_EMPLOYMENT, employmentEnded, madeActiveAt } from "@/lib/presence/employment";
+import { dateFormat } from "@/lib/utils/date-format";
 
 function unauthorized() {
   return NextResponse.json({ success: false, code: "UNAUTHORIZED", error: "Unauthorized" }, { status: 401 });
@@ -31,7 +32,7 @@ function parseLocalDateTime(naiveDateStr: string, timezone: string): Date {
     throw new Error(`Invalid ScanDateTime: ${naiveDateStr}`);
   }
 
-  const parts = new Intl.DateTimeFormat("en-US", {
+  const parts = dateFormat("en-US", {
     timeZone: timezone,
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", second: "2-digit",
@@ -241,7 +242,7 @@ export async function POST(req: NextRequest) {
   // ended" with its alarm, 159 to 166 show the punch as not recorded. The
   // reason kept on the scan says which system ended it. Decides this punch
   // only; isActive and the timecard are left as they are.
-  const punchDay = new Intl.DateTimeFormat("en-CA", { timeZone: scanZone }).format(punchTime);
+  const punchDay = dateFormat("en-CA", { timeZone: scanZone }).format(punchTime);
   const madeActive = (await madeActiveAt([employee])).get(employee.id) ?? null;
   if (employmentEnded(employee, punchDay, madeActive, WMS_TERMINATION_ENDS_EMPLOYMENT)) {
     const byCloudTime = employmentEnded(employee, punchDay, madeActive, false);
@@ -396,7 +397,7 @@ export async function POST(req: NextRequest) {
 
       if (employee.ruleSet.workdayExpansionUseShiftDef && employee.shift) {
         // Shift-based expiry: shift_end + expansion_window_minutes
-        const localDate = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(lastOpenPunch.punchTime);
+        const localDate = dateFormat("en-CA", { timeZone: tz }).format(lastOpenPunch.punchTime);
         const { expiryUtc } = computeShiftExpiry(
           employee.shift,
           localDate,
@@ -432,7 +433,7 @@ export async function POST(req: NextRequest) {
           // NJ299, 4 at GA), every one past their shift's end time, and showed
           // "Clock-in" on the tablet to people walking out. Overtime is a long
           // day, not an expired shift, so the state stays WORK.
-          const thisDay = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(punchTime);
+          const thisDay = dateFormat("en-CA", { timeZone: tz }).format(punchTime);
           if (localDate !== thisDay) {
             stateBefore = "OUT";
           }
@@ -441,8 +442,8 @@ export async function POST(req: NextRequest) {
         // No shift schedule defined (calendar-day mode or no shift assigned).
         // Fallback: if the last WORK punch was on a previous calendar day the
         // expansion window has certainly closed — treat this as a new CLOCK_IN.
-        const lastPunchDay = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(lastOpenPunch.punchTime);
-        const currentDay   = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(punchTime);
+        const lastPunchDay = dateFormat("en-CA", { timeZone: tz }).format(lastOpenPunch.punchTime);
+        const currentDay   = dateFormat("en-CA", { timeZone: tz }).format(punchTime);
         if (lastPunchDay !== currentDay) {
           stateBefore = "OUT";
         }

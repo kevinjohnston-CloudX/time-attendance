@@ -4,6 +4,7 @@ import { PunchState } from "@prisma/client";
 import { db } from "@/lib/db";
 import { endOfDayInTz, computeShiftExpiry } from "@/lib/utils/date";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { dateFormat } from "@/lib/utils/date-format";
 
 // Runs at 10:00 AM UTC daily (= 6:00 AM EDT) AND at 16:00 AM UTC (= 12:00 PM EDT).
 // The second run catches night-shift workers whose expansion windows close mid-morning.
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const now = new Date();
   // Conservative initial filter: any non-corrected, non-OUT punch before 4 AM UTC
   // covers "midnight EDT or earlier" in all US Eastern locations.
-  const etTodayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(now);
+  const etTodayStr = dateFormat("en-CA", { timeZone: "America/New_York" }).format(now);
   const cutoffUtc = new Date(etTodayStr + "T04:00:00.000Z");
 
   const candidates = await db.punch.groupBy({
@@ -73,7 +74,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       }
 
       const timezone = personTimeZone(latestPunch.employee);
-      const localDate = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(latestPunch.punchTime);
+      const localDate = dateFormat("en-CA", { timeZone: timezone }).format(latestPunch.punchTime);
       const ruleSet = latestPunch.employee.ruleSet;
       const shift = latestPunch.employee.shift;
 
@@ -104,7 +105,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         closeAtTime = eod > shiftEndUtc ? eod : shiftEndUtc;
       } else {
         // Legacy behavior: close at 23:59:59 local time of the punch date.
-        const localToday = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(now);
+        const localToday = dateFormat("en-CA", { timeZone: timezone }).format(now);
         if (localDate >= localToday) {
           skipped++;
           continue; // punch is from today — don't auto-close yet

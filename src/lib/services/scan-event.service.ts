@@ -11,6 +11,7 @@ import type {
   ScanStream,
 } from "@prisma/client";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { dateFormat } from "@/lib/utils/date-format";
 
 /**
  * The tablets' transaction log — recording, direction resolution, and the
@@ -101,7 +102,7 @@ export type RecordScanInput = {
  * pull the previous evening's scans into today's window.
  */
 function localMidnightUtc(scanTime: Date, timezone: string): Date {
-  const localDate = new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(scanTime);
+  const localDate = dateFormat("en-CA", { timeZone: timezone }).format(scanTime);
   return snapToLocalTime("00:00", localDate, timezone);
 }
 
