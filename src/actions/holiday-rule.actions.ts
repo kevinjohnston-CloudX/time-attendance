@@ -5,6 +5,7 @@ import { withRBAC } from "@/lib/rbac/guard";
 import { RULES_READERS } from "@/lib/rbac/permissions";
 import { z } from "zod";
 import type { HolidayRule } from "@prisma/client";
+import { recalculateOpenTimecardsAfterSave } from "@/lib/engines/recalculate-open";
 
 // ─── List ────────────────────────────────────────────────────────────────────
 
@@ -218,6 +219,8 @@ export const updateHolidayRule = withRBAC(
       where: { id: own.id },
       data: { name: data.name, isActive, ...toDbFields(data) },
     });
+    // Holiday credits for everyone on the rule are worked out again, after this answers.
+    recalculateOpenTimecardsAfterSave(tenantId, { kind: "holidayRule", id: own.id });
     return { success: true };
   }
 );

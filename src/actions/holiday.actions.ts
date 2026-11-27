@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { withRBAC } from "@/lib/rbac/guard";
 import { RULES_READERS } from "@/lib/rbac/permissions";
 import { z } from "zod";
+import { recalculateOpenTimecardsAfterSave } from "@/lib/engines/recalculate-open";
 
 export const getHolidays = withRBAC(
   RULES_READERS,
@@ -81,6 +82,12 @@ export const createHoliday = withRBAC(
       });
     }
 
+    // Pay periods holding the day are worked out again, after this answers.
+    recalculateOpenTimecardsAfterSave(tenantId, {
+      kind: "holiday",
+      dates: [dateObj, ...(observedDateObj ? [observedDateObj] : [])],
+    });
+
     return { success: true };
   }
 );
@@ -112,7 +119,10 @@ export const updateHoliday = withRBAC(
     const tenantId = ctx.tenantId;
     if (!tenantId) throw new Error("Tenant context required");
     // Found inside this company first; another company's id is "not found".
-    const own = await db.holiday.findFirst({ where: { id: holidayId, tenantId }, select: { id: true } });
+    const own = await db.holiday.findFirst({
+      where: { id: holidayId, tenantId },
+      select: { id: true, date: true, observedDate: true },
+    });
     if (!own) throw new Error("NOT_FOUND");
     await assertOwnRules(tenantId, ruleIds);
 
@@ -140,6 +150,13 @@ export const updateHoliday = withRBAC(
       }
     });
 
+    // The pay periods holding the old day and the new one are worked out
+    // again, after this answers.
+    recalculateOpenTimecardsAfterSave(tenantId, {
+      kind: "holiday",
+      dates: [own.date, own.observedDate, dateObj, observedDateObj].filter((d): d is Date => d !== null),
+    });
+
     return { success: true };
   }
 );
@@ -149,8 +166,17 @@ export const deleteHoliday = withRBAC(
   async (ctx, input: unknown) => {
     const { holidayId } = z.object({ holidayId: z.string().min(1) }).parse(input);
     if (!ctx.tenantId) throw new Error("Tenant context required");
+    const own = await db.holiday.findFirst({
+      where: { id: holidayId, tenantId: ctx.tenantId },
+      select: { date: true, observedDate: true },
+    });
     const { count } = await db.holiday.deleteMany({ where: { id: holidayId, tenantId: ctx.tenantId } });
-    if (count === 0) throw new Error("NOT_FOUND");
+    if (count === 0 || !own) throw new Error("NOT_FOUND");
+    // The holiday's credit comes off the pay periods holding it, after this answers.
+    recalculateOpenTimecardsAfterSave(ctx.tenantId, {
+      kind: "holiday",
+      dates: [own.date, own.observedDate].filter((d): d is Date => d !== null),
+    });
     return { success: true };
   }
 );

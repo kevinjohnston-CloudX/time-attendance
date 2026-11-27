@@ -5,6 +5,7 @@ import { withRBAC } from "@/lib/rbac/guard";
 import { RULES_READERS } from "@/lib/rbac/permissions";
 import { z } from "zod";
 import type { Shift } from "@prisma/client";
+import { recalculateOpenTimecardsAfterSave } from "@/lib/engines/recalculate-open";
 
 // ─── List shifts for tenant ──────────────────────────────────────────────────
 
@@ -269,6 +270,10 @@ export const updateShift = withRBAC(
         differentialConfig: parsed.differentialConfig ?? undefined,
       },
     });
+
+    // Meals, breaks and times feed the hours: everyone on the shift is
+    // recalculated, after this answers.
+    recalculateOpenTimecardsAfterSave(tenantId, { kind: "shift", id: own.id });
 
     return { success: true };
   }
