@@ -141,7 +141,7 @@ describe("the summary of a period with unpaid leave", () => {
             seg("l1", "2026-10-19", "LEAVE", 480, false, "UNPAID", uto),
             seg("l2", "2026-10-20", "LEAVE", 480, false, "UNPAID", uto),
           ],
-          overtimeBuckets: [], mealWaivers: [], mealPremiumWaivers: [], notes: [], dayReasons: [],
+          mealWaivers: [], mealPremiumWaivers: [], notes: [], dayReasons: [],
         }}
         payFrequency="BIWEEKLY"
         payCodes={[regular, uto]}
@@ -193,7 +193,7 @@ describe("the summary of a period with unpaid leave", () => {
             seg("w1", "WORK", true, "REG", fmla),
             { ...seg("l1", "LEAVE", false, "UNPAID", uto), leaveRequest: { id: "lr1", leaveType: { name: "UnPaid Time Off", category: "UNPAID", payCode: uto } } },
           ] as never,
-          overtimeBuckets: [], mealWaivers: [], mealPremiumWaivers: [], notes: [], dayReasons: [],
+          mealWaivers: [], mealPremiumWaivers: [], notes: [], dayReasons: [],
         }}
         payFrequency="BIWEEKLY"
         payCodes={[fmla, uto]}
@@ -250,7 +250,7 @@ describe("a supervisor whose changes go to HR", { timeout: 20_000 }, () => {
             punch("i2", "CLOCK_IN", "2026-10-13T12:00:00.000Z"),
             punch("o2", "CLOCK_OUT", "2026-10-13T20:30:00.000Z"),
           ]) as never,
-          segments: (o.segments ?? []) as never, overtimeBuckets: [], mealWaivers: [], mealPremiumWaivers: [], notes: [], dayReasons: [],
+          segments: (o.segments ?? []) as never, mealWaivers: [], mealPremiumWaivers: [], notes: [], dayReasons: [],
         }}
         payFrequency="BIWEEKLY"
         payCodes={[{ id: "pc0", code: 0, label: "Regular hours" }]}
@@ -495,7 +495,7 @@ describe("someone who started partway through the period", () => {
             user: { name: "Test Person" }, department: { name: "Vas" }, employeeCode: "T1", wmsId: "115229", payRate: 15, payType: "HOURLY", startedOn: "2026-10-19", shift: null,
             ruleSet: { overtimeRequiresAuth: false, allowTimesheetOtAuth: false, defaultPayCodeId: null },
           },
-          punches: [], segments: [], overtimeBuckets: [], mealWaivers: [], mealPremiumWaivers: [], notes: [], dayReasons: [],
+          punches: [], segments: [], mealWaivers: [], mealPremiumWaivers: [], notes: [], dayReasons: [],
         }}
         payFrequency="BIWEEKLY"
         payCodes={[]}
