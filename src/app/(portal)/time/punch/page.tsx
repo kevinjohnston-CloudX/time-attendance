@@ -13,6 +13,8 @@ import { Badge, Card, PageHeader } from "@/components/ui";
 import { CalendarPlus, ClipboardList, FileClock, Plane } from "lucide-react";
 import type { PunchStateValue } from "@/lib/state-machines/labels";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { hoursForTimesheets } from "@/lib/payroll/timecard-hours.server";
+import { NO_HOURS } from "@/lib/payroll/timecard-hours";
 
 /**
  * The Punch Clock, as the portal design lays it out: a hero card carrying the
@@ -54,7 +56,7 @@ export default async function PunchPage() {
     payPeriod
       ? db.timesheet.findFirst({
           where: { employeeId, payPeriodId: payPeriod.id },
-          select: { overtimeBuckets: { select: { bucket: true, totalMinutes: true } } },
+          select: { id: true },
         })
       : null,
     db.punch.findMany({
@@ -70,8 +72,12 @@ export default async function PunchPage() {
   // The week needs today's live total, so it comes after.
   const week = await getWeek(employeeId, now, today.workedMinutes, siteZone);
 
-  const periodMinutes = (periodSheet?.overtimeBuckets ?? []).reduce((n, b) => n + b.totalMinutes, 0);
-  const periodOt = (periodSheet?.overtimeBuckets ?? []).find((b) => b.bucket === "OT")?.totalMinutes ?? 0;
+  // The period as the timecard shows it, counted from its lines.
+  const periodHours = periodSheet
+    ? ((await hoursForTimesheets([periodSheet.id])).get(periodSheet.id) ?? NO_HOURS)
+    : NO_HOURS;
+  const periodMinutes = periodHours.total;
+  const periodOt = periodHours.ot;
 
   const context = [
     format(toSiteClock(now, siteZone), "EEEE, d MMMM yyyy"),

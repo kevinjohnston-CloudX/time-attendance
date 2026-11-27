@@ -1,4 +1,5 @@
-import "server-only";
+// Server side: it reads the database. No "server-only" marker, so the report
+// checks and scripts that run outside Next (npm run check:reports) can load it.
 import { db } from "@/lib/db";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { NO_HOURS, missedPunchDays, timecardHours, type HoursLine, type TimecardHours } from "./timecard-hours";
@@ -21,9 +22,12 @@ export async function hoursForTimesheets(timesheetIds: string[]): Promise<Map<st
 
   const [groups, exceptions, sheets] = await Promise.all([
     db.workSegment.groupBy({
-      by: ["timesheetId", "segmentDate", "segmentType", "payBucket", "payBucketOverride", "payCodeId"],
-      where: { timesheetId: { in: timesheetIds }, isPaid: true },
-      _sum: { durationMinutes: true },
+      by: ["timesheetId", "segmentDate", "segmentType", "payBucket", "payBucketOverride", "payCodeId", "isPaid"],
+      where: { timesheetId: { in: timesheetIds } },
+      // Seconds, not the rounded minutes column: leave is kept to the
+      // hundredth of an hour (lib/leave-time), and the timecard page and the
+      // ADP file both count it exactly.
+      _sum: { durationSeconds: true },
     }),
     db.exception.findMany({
       where: { timesheetId: { in: timesheetIds }, resolvedAt: null, exceptionType: "MISSING_PUNCH" },
@@ -57,10 +61,10 @@ export async function hoursForTimesheets(timesheetIds: string[]): Promise<Map<st
       segmentType: g.segmentType,
       payBucket: g.payBucket,
       payBucketOverride: g.payBucketOverride,
-      isPaid: true,
+      isPaid: g.isPaid,
       payCodeIsPaid: g.payCodeId ? !notPaidCodes.has(g.payCodeId) : null,
       segmentDate: g.segmentDate,
-      durationMinutes: g._sum.durationMinutes ?? 0,
+      durationMinutes: (g._sum.durationSeconds ?? 0) / 60,
     });
     linesBySheet.set(g.timesheetId, list);
   }

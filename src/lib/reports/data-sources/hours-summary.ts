@@ -7,6 +7,8 @@ import { daysOf, describeSpan, type DaySpan } from "../period";
 import type { DataSourceDefinition, ExecuteContext, ReportResult } from "./index";
 import { buildWhereClause, buildOrderBy, sortRowsInMemory, type FieldMap, compareText } from "../query-builder";
 import type { ReportConfig } from "@/lib/validators/report.schema";
+import { hoursForTimesheets } from "@/lib/payroll/timecard-hours.server";
+import { NO_HOURS, type TimecardHours } from "@/lib/payroll/timecard-hours";
 
 const fieldMap: FieldMap = {
   employeeName:  { prismaPath: "employee.user.name",       type: "string" },
@@ -87,7 +89,6 @@ export const hoursSummarySource: DataSourceDefinition = {
       where,
       include: {
         employee: { include: { user: true, department: true, site: true } },
-        overtimeBuckets: true,
       },
       orderBy,
       // No limit here: a weekly person's two timesheets become one line
@@ -99,47 +100,24 @@ export const hoursSummarySource: DataSourceDefinition = {
     // has left this year, not PTO taken in the period, hence "PTO balance".
     const ptoByEmployee = await ptoBalances(timesheets.map((ts) => ts.employeeId));
 
-    // Meal premiums: an hour of pay each, not hours worked, so not in Regular or Total.
-    const timesheetIds = timesheets.map((ts) => ts.id);
-    const premiums =
-      timesheetIds.length > 0
-        ? await db.workSegment.groupBy({
-            by: ["timesheetId"],
-            where: { timesheetId: { in: timesheetIds }, segmentType: "MEAL_PREMIUM", isPaid: true },
-            _sum: { durationMinutes: true },
-          })
-        : [];
-    const premiumByTimesheet = new Map(premiums.map((p) => [p.timesheetId, p._sum.durationMinutes ?? 0]));
-
-    // Time off taken, by kind and whether it is paid, from the lines.
-    const leave =
-      timesheetIds.length > 0
-        ? await db.workSegment.groupBy({
-            by: ["timesheetId", "payBucket", "isPaid"],
-            where: { timesheetId: { in: timesheetIds }, segmentType: "LEAVE" },
-            _sum: { durationMinutes: true },
-          })
-        : [];
-    const leaveByTimesheet = new Map<string, LeaveHours>();
-    for (const l of leave) {
-      const t = leaveByTimesheet.get(l.timesheetId) ?? { vacation: 0, other: 0, unpaid: 0 };
-      addLeave(t, l.payBucket, l.isPaid, l._sum.durationMinutes ?? 0);
-      leaveByTimesheet.set(l.timesheetId, t);
-    }
+    // Every hour as the timecard shows it, counted from its lines with the one
+    // shared rule (lib/payroll/timecard-hours), never the saved totals, which
+    // fall behind when a line is recoded or leave is added later. Meal premium
+    // is an hour of pay, not hours worked, so it stays out of Regular and Total.
+    const hours = await hoursForTimesheets(timesheets.map((ts) => ts.id));
 
     // Build rows: one per timesheet, then one per person, below.
     const perTimesheet = timesheets.map((ts) => {
-      const buckets: Record<string, number> = {};
-      for (const b of ts.overtimeBuckets) {
-        buckets[b.bucket] = b.totalMinutes;
-      }
+      const h = hours.get(ts.id) ?? NO_HOURS;
+      // Paid hours of a code: its hours less any under a code set to Not paid.
+      const paid = (b: string) => (h.byBucket[b] ?? 0) - (h.notPaidByBucket[b] ?? 0);
 
-      const reg = buckets["REG"] ?? 0;
-      const ot = buckets["OT"] ?? 0;
-      const dt = buckets["DT"] ?? 0;
+      const reg = paid("REG");
+      const ot = paid("OT");
+      const dt = paid("DT");
       const pto = ptoByEmployee[ts.employeeId] ?? 0;
-      const sick = buckets["SICK"] ?? 0;
-      const holiday = buckets["HOLIDAY"] ?? 0;
+      const sick = paid("SICK");
+      const holiday = paid("HOLIDAY");
 
       return {
         employeeName: ts.employee.user?.name ?? ts.employeeId,
@@ -152,9 +130,9 @@ export const hoursSummarySource: DataSourceDefinition = {
         ptoMinutes: pto,
         sickMinutes: sick,
         holidayMinutes: holiday,
-        ...leaveColumns(leaveByTimesheet.get(ts.id), reg + ot + dt, sick, holiday),
+        ...leaveColumns(leaveOf(h), reg + ot + dt, sick, holiday),
         totalMinutes: reg + ot + dt,
-        premiumMinutes: premiumByTimesheet.get(ts.id) ?? 0,
+        premiumMinutes: h.premium,
         status: readable("timesheetStatus", ts.status) ?? "",
       };
     });
@@ -349,6 +327,23 @@ async function ptoBalances(employeeIds: string[]): Promise<Record<string, number
 
 /** Time off taken: paid PTO, other paid leave (sick has its own column), and unpaid. */
 type LeaveHours = { vacation: number; other: number; unpaid: number };
+
+/**
+ * A timecard's time off for the columns, from the shared count: paid PTO as
+ * vacation, other paid leave as other, and as unpaid both the leave lines
+ * marked unpaid and any hours under a code set to Not paid (FMLA).
+ */
+function leaveOf(h: TimecardHours): LeaveHours {
+  const t: LeaveHours = { vacation: 0, other: 0, unpaid: 0 };
+  for (const [b, m] of Object.entries(h.byBucket)) {
+    if (b === "REG" || b === "OT" || b === "DT" || b === "HOLIDAY") continue;
+    const notPaid = h.notPaidByBucket[b] ?? 0;
+    addLeave(t, b, true, m - notPaid);
+    t.unpaid += notPaid;
+  }
+  for (const m of Object.values(h.unpaidLeaveByBucket)) t.unpaid += m;
+  return t;
+}
 
 function addLeave(t: LeaveHours, bucket: string, isPaid: boolean, minutes: number) {
   if (!isPaid) t.unpaid += minutes;

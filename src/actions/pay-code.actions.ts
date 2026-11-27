@@ -17,6 +17,7 @@ async function notePayCode(timesheetId: string, day: string, actorId: string | n
 
 const BUCKET_WORD: Record<string, string> = { REG: "regular", OT: "overtime", DT: "double time", UNPAID: "unpaid" };
 import { z } from "zod";
+import { recalculateOpenTimecardsAfterSave } from "@/lib/engines/recalculate-open";
 
 // ─── List pay codes for tenant ──────────────────────────────────────────────
 
@@ -149,7 +150,10 @@ export const updatePayCode = withRBAC(
     if (!tenantId) throw new Error("No tenant");
 
     // Found inside the caller's company first; it used to update by id alone.
-    const own = await db.payCode.findFirst({ where: { id: payCodeId, tenantId }, select: { id: true } });
+    const own = await db.payCode.findFirst({
+      where: { id: payCodeId, tenantId },
+      select: { id: true, payBucket: true, countsTowardOt: true, isPaid: true, isActive: true },
+    });
     if (!own) throw new Error("NOT_FOUND");
 
     const conflict = await db.payCode.findFirst({
@@ -186,6 +190,19 @@ export const updatePayCode = withRBAC(
         },
         data: { payCodeId: own.id },
       });
+    }
+
+    // What the code is paid as, whether it counts toward overtime, whether it
+    // is paid at all: the timecards using it are worked out again, after this
+    // answers. A new name, number or export code changes no hours.
+    const newBucket = payBucket || null;
+    if (
+      newBucket !== own.payBucket ||
+      countsTowardOt !== own.countsTowardOt ||
+      isPaid !== own.isPaid ||
+      isActive !== own.isActive
+    ) {
+      recalculateOpenTimecardsAfterSave(tenantId, { kind: "payCode", id: own.id });
     }
 
     return { success: true };

@@ -43,6 +43,7 @@ import { auditPageInReach } from "@/lib/audit/audit-reach";
 import { NotFoundError, assertBalanceChangeAllowed, assertNotSenior, assertRecordInReach, assertSiteInReach, siteInReach, siteLimit } from "@/lib/rbac/scope";
 import { assertOwn, ownCompany } from "@/lib/rbac/company";
 import { forgetTabletLanguages } from "@/lib/timeclock/tablet-languages";
+import { recalculateOpenTimecardsAfterSave } from "@/lib/engines/recalculate-open";
 
 // Maps system custom role names to their legacy enum values
 /**
@@ -1170,10 +1171,15 @@ export const updateEmployee = withRBAC(
       });
     }
 
-    // A new time zone moves where their days start and end: their open
-    // timecards are recalculated now rather than at their next punch.
+    // A new time zone moves where their days start and end, a new shift their
+    // meals and breaks, a new holiday rule their holiday credits: their open
+    // timecards are recalculated now rather than at their next punch. (A new
+    // rule set moves the timecards themselves, above, which recalculates them.)
     // Not for someone inactive: their timecards stay as they were when they left.
-    if (timeZone !== undefined && timeZone !== current.timeZone && willBeActive) {
+    const zoneMoved = timeZone !== undefined && timeZone !== current.timeZone;
+    const shiftMoved = shiftId !== undefined && shiftId !== current.shiftId;
+    const holidayRuleMoved = holidayRuleId !== undefined && holidayRuleId !== current.holidayRuleId;
+    if ((zoneMoved || shiftMoved || holidayRuleMoved) && willBeActive) {
       const open = await db.timesheet.findMany({
         where: { employeeId, status: { notIn: ["LOCKED", "PAYROLL_APPROVED"] }, payPeriod: { status: "OPEN" } },
         select: { id: true, employee: { select: { ruleSet: true } } },
@@ -1835,6 +1841,8 @@ export const updateRuleSet = withRBAC(
       entityId: ruleSetId,
       action: "RULE_SET_UPDATED",
     });
+    // Its open timecards are worked out again under the new rules, after this answers.
+    recalculateOpenTimecardsAfterSave(tenantId, { kind: "ruleSet", id: own.id });
     revalidatePath("/admin/rules-setup");
     return updated;
   }

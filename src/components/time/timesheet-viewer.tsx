@@ -27,6 +27,7 @@ import { PUNCH_TYPE_LABEL, TIMESHEET_STATUS_LABEL } from "@/lib/state-machines/l
 import { SegmentTimeline } from "@/components/time/segment-timeline";
 import type { WorkSegment } from "@prisma/client";
 import styles from "./timesheet.module.css";
+import { PAID_LEAVE_BUCKETS, dayHours, timecardHours, type TimecardHours } from "@/lib/payroll/timecard-hours";
 
 /**
  * The timecard grid, as the portal design draws Template C.
@@ -81,7 +82,10 @@ export interface TimesheetDetailData {
     segmentDate: string;
     reasonCode: { code: string; label: string };
   }[];
-  overtimeBuckets: { bucket: string; totalMinutes: number }[];
+  /** The period's hours as the timecard shows them (lib/payroll/timecard-hours). */
+  hours: TimecardHours;
+  /** Days an open missed punch leaves out of the totals (yyyy-MM-dd). */
+  skipDays: string[];
   exceptionCount: number;
 }
 
@@ -198,13 +202,9 @@ function buildDayRows(detail: TimesheetDetailData, todayMidnight: Date): DayRow[
       (s) => format(parseUtcDate(s.segmentDate), "yyyy-MM-dd") === dayStr,
     );
 
-    const buckets: Record<string, number> = {};
-    for (const seg of segments) {
-      const eb = seg.payBucketOverride ?? seg.payBucket;
-      // Holiday credits display under the REG column (pay code identifies them as holiday)
-      const displayBucket = seg.segmentType === "HOLIDAY" ? "REG" : eb;
-      buckets[displayBucket] = (buckets[displayBucket] ?? 0) + seg.durationMinutes;
-    }
+    // The day rule HR's timecard uses too: leave and holiday under Regular,
+    // meal premium on its own line, not in the day's total.
+    const figures = dayHours(segments);
 
     const firstIn = punches.find((p) => p.punchType === "CLOCK_IN");
     const lastOut = [...punches].reverse().find((p) => p.punchType === "CLOCK_OUT");
@@ -236,10 +236,10 @@ function buildDayRows(detail: TimesheetDetailData, todayMidnight: Date): DayRow[
       mealOut: clock(mealOut),
       mealIn: clock(mealIn),
       punchOut: clock(lastOut),
-      reg: buckets["REG"] ?? 0,
-      ot: buckets["OT"] ?? 0,
-      dt: buckets["DT"] ?? 0,
-      total: segments.filter((s) => s.isPaid).reduce((a, s) => a + s.durationMinutes, 0),
+      reg: figures.reg,
+      ot: figures.ot,
+      dt: figures.dt,
+      total: figures.total,
       payCode: workPayCode ? `${workPayCode.code} · ${workPayCode.label}` : null,
       leaveName: leaveSegments[0]?.leaveTypeName ?? (leaveSegments.length > 0 ? "Leave" : null),
       reason: reason ? `${reason.code} · ${reason.label}` : null,
@@ -399,10 +399,6 @@ export function TimesheetViewer({
 
   const banner = detail ? sheetBanner(detail, rows.filter((r) => r.missingOut)) : null;
 
-  const bucketMap: Record<string, number> = Object.fromEntries(
-    (detail?.overtimeBuckets ?? []).map((b) => [b.bucket, b.totalMinutes]),
-  );
-
   const periodLabel = detail
     ? `${format(parseUtcDate(detail.payPeriod.startDate), "MMM d")} – ${format(
         addDays(parseUtcDate(detail.payPeriod.endDate), -1),
@@ -411,9 +407,14 @@ export function TimesheetViewer({
     : "";
 
   const summarySub = detail
-    ? `${periodLabel} · ${minutesToHoursDecimal(bucketMap["REG"] ?? 0)} reg · ` +
-      `${minutesToHoursDecimal(bucketMap["OT"] ?? 0)} OT · ` +
-      `${minutesToHoursDecimal(bucketMap["DT"] ?? 0)} DT`
+    ? `${periodLabel} · ${minutesToHoursDecimal(detail.hours.reg)} reg · ` +
+      `${minutesToHoursDecimal(detail.hours.ot)} OT · ` +
+      `${minutesToHoursDecimal(detail.hours.dt)} DT` +
+      (detail.skipDays.length === 0
+        ? ""
+        : detail.skipDays.length === 1
+          ? " · 1 day with a missed punch is not counted"
+          : ` · ${detail.skipDays.length} days with a missed punch are not counted`)
     : "";
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -761,7 +762,7 @@ export function TimesheetViewer({
             </THead>
             <TBody>
               {summaryGroupBy === "total" ? (
-                <TotalSummary bucketMap={bucketMap} />
+                <TotalSummary hours={detail.hours} />
               ) : (
                 <WeekSummary detail={detail} weeks={weeks} />
               )}
@@ -835,14 +836,13 @@ function PunchCell({
   );
 }
 
-/** Period totals by pay bucket, the way payroll reads them. */
-function TotalSummary({ bucketMap }: { bucketMap: Record<string, number> }) {
-  const reg = bucketMap["REG"] ?? 0;
-  const ot = bucketMap["OT"] ?? 0;
-  const dt = bucketMap["DT"] ?? 0;
-  const total = Object.values(bucketMap).reduce((a, b) => a + b, 0);
+/**
+ * Period totals by pay code, the way payroll reads them: leave counts in Reg
+ * Hrs, as on HR's timecard and in NovaTime (lib/payroll/timecard-hours).
+ */
+function TotalSummary({ hours }: { hours: TimecardHours }) {
   const others = BUCKET_ORDER.filter(
-    (key) => !["REG", "OT", "DT"].includes(key) && (bucketMap[key] ?? 0) > 0,
+    (key) => !["REG", "OT", "DT"].includes(key) && (hours.byBucket[key] ?? 0) > 0,
   );
 
   return (
@@ -851,13 +851,13 @@ function TotalSummary({ bucketMap }: { bucketMap: Record<string, number> }) {
         <SummaryRow
           key={key}
           label={BUCKET_LABEL[key] ?? key}
-          reg={0}
+          reg={PAID_LEAVE_BUCKETS.has(key) ? hours.byBucket[key] : 0}
           ot={0}
           dt={0}
-          total={bucketMap[key] ?? 0}
+          total={hours.byBucket[key] ?? 0}
         />
       ))}
-      <SummaryRow label="Totals" reg={reg} ot={ot} dt={dt} total={total} emphasis />
+      <SummaryRow label="Totals" reg={hours.reg} ot={hours.ot} dt={hours.dt} total={hours.total} emphasis />
     </>
   );
 }
@@ -870,22 +870,18 @@ function WeekSummary({
   detail: TimesheetDetailData;
   weeks: { key: string; label: string; start: Date; end: Date }[];
 }) {
+  // Each week counted with the period's own rule, so the weeks add up to
+  // the Totals of the pay code view.
+  const skip = new Set(detail.skipDays);
   const perWeek = weeks.map((week) => {
-    const wb: Record<string, number> = {};
-    for (const s of detail.segments) {
-      const sd = parseUtcDate(s.segmentDate);
-      if (sd < week.start || sd > week.end || !s.isPaid) continue;
-      const eb = s.payBucketOverride ?? s.payBucket;
-      wb[eb] = (wb[eb] ?? 0) + s.durationMinutes;
-    }
-    return {
-      key: week.key,
-      label: week.label,
-      reg: wb["REG"] ?? 0,
-      ot: wb["OT"] ?? 0,
-      dt: wb["DT"] ?? 0,
-      total: Object.values(wb).reduce((a, b) => a + b, 0),
-    };
+    const h = timecardHours(
+      detail.segments.filter((s) => {
+        const sd = parseUtcDate(s.segmentDate);
+        return sd >= week.start && sd <= week.end;
+      }),
+      skip,
+    );
+    return { key: week.key, label: week.label, reg: h.reg, ot: h.ot, dt: h.dt, total: h.total };
   });
 
   const grand = perWeek.reduce(

@@ -10,6 +10,9 @@ import {
   TIMESHEET_STATUS_LABEL,
   type TimesheetStatusValue,
 } from "@/lib/state-machines/labels";
+import { hoursForTimesheets } from "@/lib/payroll/timecard-hours.server";
+import { NO_HOURS, missedPunchDays } from "@/lib/payroll/timecard-hours";
+import { personTimeZone } from "@/lib/utils/person-time-zone";
 
 /**
  * My Timesheet, as the portal design's timecard grid (Template C).
@@ -40,7 +43,7 @@ export default async function TimesheetPage({
   // Fetch all timesheets for navigation list
   const timesheets = await db.timesheet.findMany({
     where: { employeeId: session.user.employeeId },
-    include: { payPeriod: true, overtimeBuckets: true },
+    include: { payPeriod: true },
     orderBy: { payPeriod: { startDate: "asc" } },
   });
 
@@ -81,11 +84,15 @@ export default async function TimesheetPage({
             },
           },
           dayReasons: { include: { reasonCode: { select: { code: true, label: true } } } },
-          overtimeBuckets: true,
           exceptions: { where: { resolvedAt: null } },
+          employee: { select: { timeZone: true, site: { select: { timezone: true } } } },
         },
       })
     : null;
+
+  // Each period's hours as the timecard shows them, counted from the lines
+  // (lib/payroll/timecard-hours), never from the saved totals.
+  const hours = await hoursForTimesheets(timesheets.map((ts) => ts.id));
 
   // Serialize — client component cannot receive Prisma Date objects
   const serializedTimesheets = timesheets.map((ts) => ({
@@ -97,7 +104,7 @@ export default async function TimesheetPage({
       endDate: ts.payPeriod.endDate.toISOString(),
     },
     status: ts.status,
-    totalMinutes: ts.overtimeBuckets.reduce((a, b) => a + b.totalMinutes, 0),
+    totalMinutes: (hours.get(ts.id) ?? NO_HOURS).total,
   }));
 
   const serializedDetail = rawDetail
@@ -133,10 +140,9 @@ export default async function TimesheetPage({
           segmentDate: dr.segmentDate.toISOString(),
           reasonCode: { code: dr.reasonCode.code, label: dr.reasonCode.label },
         })),
-        overtimeBuckets: rawDetail.overtimeBuckets.map((b) => ({
-          bucket: b.bucket,
-          totalMinutes: b.totalSeconds / 60,
-        })),
+        hours: hours.get(rawDetail.id) ?? NO_HOURS,
+        // Days an open missed punch leaves out of the totals, as on HR's timecard.
+        skipDays: [...missedPunchDays(rawDetail.exceptions, personTimeZone(rawDetail.employee))],
         exceptionCount: rawDetail.exceptions.length,
       }
     : null;

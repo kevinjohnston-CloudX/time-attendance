@@ -12,6 +12,7 @@ import { CLIENT_DEPARTMENT_SHOWN, isClientBadge } from "@/lib/utils/client-badge
 import { cachedDataProtection, photoOffAt } from "@/lib/privacy/data-protection";
 import { buildingLanguageCodes, tabletBuilding, tabletLanguages } from "@/lib/timeclock/tablet-languages";
 import { dateFormat } from "@/lib/utils/date-format";
+import { nextScanClocksOut } from "@/lib/timeclock/next-scan";
 
 /**
  * May this badge scan right now, and who is it?
@@ -113,6 +114,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       timeZone: true,
       preferredLanguage: true,
       site: { select: { timezone: true, gateScanMode: true } },
+      // What the punch endpoint classifies a scan by (next-scan.ts).
+      ruleSet: {
+        select: { workdayExpansionEnabled: true, workdayExpansionUseShiftDef: true, workdayExpansionAfterMinutes: true },
+      },
+      shift: { select: { startTime: true, endTime: true } },
     },
   });
 
@@ -158,7 +164,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // Keyed on the scanning employees' site rather than the scan's own `site`
   // string, because gates post numeric ids and time clocks post names, so the
   // two never join.
-  const gateActive =
+  const gateEnforced =
     // ENFORCE only. A site in REPORT is measured by the compliance job and
     // never refuses anybody, which is the whole point of that state — a
     // building can be watched for as long as it takes the number to climb,
@@ -173,6 +179,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       },
       select: { id: true },
     })) !== null;
+  // The rule stops a clock IN only: the security scan proves somebody came
+  // in through the gate before starting work. Someone clocked in is leaving,
+  // and scanning out at security first is no reason to refuse their clock
+  // out; it only left a missing punch (ticket 81278, about 20 at 5903 Nj in
+  // its first three days). Asked only where the rule is on, so other sites
+  // pay nothing for it.
+  const clockingOut = gateEnforced && (await nextScanClocksOut(employee, new Date()));
+  const gateActive = gateEnforced && !clockingOut;
 
   // Status decides; a termination date only while nothing since says they came
   // back (employment.ts). Someone made Active again is let in even when the
@@ -262,6 +276,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     standIn: scheduleDay?.source === "STAND_IN" || undefined,
     terminated: terminated || undefined,
     terminatedBy,
+    // The security rule set aside because this scan is a clock out.
+    clockingOut: clockingOut || undefined,
     ...from,
     noting,
     ms: Date.now() - started,
@@ -326,9 +342,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     presenceAt: lastScan?.scanTime?.toISOString() ?? null,
     /// Whether a kiosk may refuse this badge a punch for want of a gate scan:
     /// this site is in ENFORCE mode AND its gate has reported inside
-    /// GATE_ACTIVE_WINDOW_MS. False means the kiosk must fall back to the
-    /// legacy check — the site is not gated, or its gate has gone quiet, and in
-    /// neither case does CloudTime's silence say anything about the person.
+    /// GATE_ACTIVE_WINDOW_MS AND this scan would clock the person in.
+    /// False means the kiosk must fall back to the legacy check — the site is
+    /// not gated, its gate has gone quiet, or the person is clocking out, and
+    /// in none of those does CloudTime's silence say anything about them.
     gateActive,
     /// Whether the kiosk may take this person's photo. False only where the
     /// company turned time clock photos off for their site (Data Protection).

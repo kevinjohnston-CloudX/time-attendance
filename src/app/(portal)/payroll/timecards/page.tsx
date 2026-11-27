@@ -340,10 +340,6 @@ export default async function TimecardsPage({
             ? { id: s.payCode.id, code: s.payCode.code, label: s.payCode.label, isPaid: s.payCode.isPaid }
             : null,
         })),
-        overtimeBuckets: timecard.overtimeBuckets.map((b) => ({
-          bucket: b.bucket,
-          totalMinutes: b.totalSeconds / 60,
-        })),
         mealWaivers: timecard.mealWaivers,
         mealPremiumWaivers: timecard.mealPremiumWaivers,
         notes: timecard.notes,

@@ -38,6 +38,8 @@ import {
   type TimesheetStatusValue,
 } from "@/lib/state-machines/labels";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
+import { hoursForTimesheets } from "@/lib/payroll/timecard-hours.server";
+import { NO_HOURS } from "@/lib/payroll/timecard-hours";
 
 /**
  * The dashboard, as the portal design lays it out.
@@ -195,7 +197,7 @@ export default async function DashboardPage({
     payPeriod && employeeId
       ? db.timesheet.findFirst({
           where: { employeeId, payPeriodId: payPeriod.id },
-          include: { overtimeBuckets: true },
+          select: { id: true, status: true },
         })
       : null,
     employeeId && ownTime ? getToday(employeeId, now, siteZone) : null,
@@ -497,13 +499,16 @@ export default async function DashboardPage({
     .join(" · ");
 
   // ── Pay period hours ──────────────────────────────────────────────────────
-  const bucketMap = Object.fromEntries(
-    (currentTimesheet?.overtimeBuckets ?? []).map((b) => [b.bucket, b.totalMinutes])
-  );
-  const regMin = bucketMap["REG"] ?? 0;
-  const otMin  = bucketMap["OT"]  ?? 0;
-  const dtMin  = bucketMap["DT"]  ?? 0;
-  const ptoMin = bucketMap["PTO"] ?? 0;
+  // As the timecard shows them, counted from its lines (lib/payroll/timecard-hours).
+  // Total and Overtime are the timecard's own figures; Time off is the leave
+  // inside that total (PTO, sick, holiday...), so nothing reads as added twice.
+  const periodHours = currentTimesheet
+    ? ((await hoursForTimesheets([currentTimesheet.id])).get(currentTimesheet.id) ?? NO_HOURS)
+    : NO_HOURS;
+  const totalMin = periodHours.total;
+  const otMin = periodHours.ot;
+  const dtMin = periodHours.dt;
+  const timeOffMin = periodHours.leave;
 
   /** How far through the period we are — the width of the bar under the stats. */
   const elapsedPct = payPeriod
@@ -725,9 +730,9 @@ export default async function DashboardPage({
             <div className="flex flex-col gap-3.5">
               <div className="grid grid-cols-3 gap-3">
                 {[
-                  { label: "Regular", min: regMin },
+                  { label: "Total", min: totalMin },
                   { label: "Overtime", min: otMin },
-                  { label: "PTO", min: ptoMin },
+                  { label: "Time off", min: timeOffMin },
                 ].map((s) => (
                   <div key={s.label} className="flex flex-col gap-0.5">
                     <span className="wms-overline">{s.label}</span>
