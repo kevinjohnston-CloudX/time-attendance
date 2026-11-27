@@ -1,5 +1,6 @@
 import { format, eachDayOfInterval, isWeekend, addDays } from "date-fns";
-import { db } from "@/lib/db";
+import { db, inTimecardTransaction } from "@/lib/db";
+import { hoursForTimesheets } from "@/lib/payroll/timecard-hours.server";
 import { rulesFor, syncWorkingTimeExceptions } from "./working-time-checks";
 import { applyOvertime } from "@/lib/engines/overtime-engine";
 import { reconcileLeaveDeductions, relinkCreditLeave } from "@/lib/engines/leave-deduction";
@@ -1054,7 +1055,47 @@ export function computeMealPremiums(
   return premiums;
 }
 
-export async function rebuildSegments(
+/**
+ * Recalculates a timecard from its punches, leave and rules: every line, the
+ * overtime, holidays, leave deductions and exceptions, then the saved totals.
+ *
+ * <p>One database transaction holding a lock on the timecard
+ * ({@link inTimecardTransaction}): it all happens or none of it does, and two
+ * recalculations of one timecard take turns.
+ */
+export async function rebuildSegments(timesheetId: string, ruleSet: RuleSet): Promise<void> {
+  await inTimecardTransaction(timesheetId, async () => {
+    await rebuildSegmentsInTransaction(timesheetId, ruleSet);
+    await writeSavedTotals(timesheetId);
+  });
+}
+
+/**
+ * The saved totals, written last from the finished lines with the rule every
+ * screen counts by (lib/payroll/timecard-hours), so they can no longer fall
+ * behind the lines: one row per pay code, unpaid leave under its own code.
+ * Only the direct ADP send and the company data export still read them.
+ */
+async function writeSavedTotals(timesheetId: string): Promise<void> {
+  const totals = (await hoursForTimesheets([timesheetId])).get(timesheetId);
+  if (!totals) return;
+  const minutes: Record<string, number> = { REG: 0, OT: 0, DT: 0 };
+  for (const [bucket, m] of Object.entries(totals.byBucket)) minutes[bucket] = (minutes[bucket] ?? 0) + m;
+  for (const [bucket, m] of Object.entries(totals.unpaidLeaveByBucket)) minutes[bucket] = (minutes[bucket] ?? 0) + m;
+  await db.overtimeBucket.deleteMany({ where: { timesheetId } });
+  await db.overtimeBucket.createMany({
+    data: Object.entries(minutes).map(([bucket, m]) => ({
+      timesheetId,
+      bucket: bucket as PayBucket,
+      // Exact seconds (leave is kept to the hundredth of an hour); the
+      // database trigger sets the minutes column from them.
+      totalSeconds: Math.round(m * 60),
+      totalMinutes: Math.round(m),
+    })),
+  });
+}
+
+async function rebuildSegmentsInTransaction(
   timesheetId: string,
   ruleSet: RuleSet
 ): Promise<void> {

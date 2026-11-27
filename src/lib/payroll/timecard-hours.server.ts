@@ -1,4 +1,5 @@
-import "server-only";
+// Server side: it reads the database. No "server-only" marker, so the report
+// checks and scripts that run outside Next (npm run check:reports) can load it.
 import { db } from "@/lib/db";
 import { personTimeZone } from "@/lib/utils/person-time-zone";
 import { NO_HOURS, missedPunchDays, timecardHours, type HoursLine, type TimecardHours } from "./timecard-hours";
