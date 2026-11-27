@@ -22,6 +22,10 @@ const state = vi.hoisted(() => ({
   wmsId: "CL00007",
   ended: false,
   later: [] as (() => Promise<void>)[],
+  gateMode: "REPORT",
+  gateAlive: false,
+  clockingOut: false,
+  askedNextScan: 0,
 }));
 
 vi.mock("next/server", async (orig) => ({ ...(await orig<typeof import("next/server")>()), after: (fn: () => Promise<void>) => state.later.push(fn) }));
@@ -44,11 +48,18 @@ vi.mock("@/lib/db", () => ({
         department: { name: "Account Management" },
         timeZone: null,
         preferredLanguage: null,
-        site: { timezone: state.zone, gateScanMode: "REPORT" },
+        site: { timezone: state.zone, gateScanMode: state.gateMode },
+        ruleSet: { workdayExpansionEnabled: false, workdayExpansionUseShiftDef: true, workdayExpansionAfterMinutes: 120 },
+        shift: null,
       }),
     },
     scheduleDay: { findFirst: async () => state.scheduleDay },
-    scanEvent: { findFirst: async () => state.lastScan },
+    // The gate's liveness asks for any named device's recent scan; presence
+    // asks for the person's own latest one.
+    scanEvent: {
+      findFirst: async (args: { where: { deviceName?: unknown } }) =>
+        args.where.deviceName ? (state.gateAlive ? { id: "g1" } : null) : state.lastScan,
+    },
     visitorPass: { findUnique: async () => state.pass },
   },
 }));
@@ -60,6 +71,12 @@ vi.mock("@/lib/presence/employment", () => ({
   WMS_TERMINATION_ENDS_EMPLOYMENT: false,
   employmentEnded: () => state.ended,
   madeActiveAt: async () => new Map(),
+}));
+vi.mock("@/lib/timeclock/next-scan", () => ({
+  nextScanClocksOut: async () => {
+    state.askedNextScan++;
+    return state.clockingOut;
+  },
 }));
 vi.mock("@/lib/presence/gate-alert-log", () => ({ gateLog: () => {}, errorCode: () => "E" }));
 vi.mock("@/lib/privacy/data-protection", () => ({ cachedDataProtection: async () => null, photoOffAt: () => false }));
@@ -82,7 +99,7 @@ async function check(warehouse?: string, stream = "SECURITY") {
   const qs = new URLSearchParams({ badge: state.wmsId, stream, ...(warehouse ? { warehouse } : {}) });
   const res = await GET(new NextRequest(`http://x/api/timeclock/eligibility?${qs}`));
   for (const fn of state.later.splice(0)) await fn();
-  return (await res.json()) as { scheduled: boolean; reason: string; terminated: boolean; department: string };
+  return (await res.json()) as { scheduled: boolean; reason: string; terminated: boolean; department: string; gateActive: boolean; presence: string };
 }
 
 beforeEach(() => {
@@ -96,6 +113,10 @@ beforeEach(() => {
   state.noted = [];
   state.wmsId = "CL00007";
   state.ended = false;
+  state.gateMode = "REPORT";
+  state.gateAlive = false;
+  state.clockingOut = false;
+  state.askedNextScan = 0;
 });
 
 afterEach(() => {
@@ -254,5 +275,38 @@ describe("former employee at the gate", () => {
     state.ended = true;
     await check("7575");
     expect(state.noted).toEqual([]);
+  });
+});
+
+describe("scan at security before the time clock", () => {
+  /** An employee's badge, at a site whose rule is on and whose gate is live. */
+  beforeEach(() => {
+    state.wmsId = "102361";
+    state.scheduleDay = { isWorkday: true, startTime: "08:30", endTime: "17:00", source: "ORACLE" };
+    state.gateMode = "ENFORCE";
+    state.gateAlive = true;
+  });
+
+  it("holds a clock in to the rule", async () => {
+    state.lastScan = { direction: "OUT", scanTime: new Date() };
+    expect(await check("5903", "TIME_CLOCK")).toMatchObject({ gateActive: true, presence: "OUT" });
+  });
+
+  it("never holds a clock out to it, even after scanning out at security (ticket 81278)", async () => {
+    state.lastScan = { direction: "OUT", scanTime: new Date() };
+    state.clockingOut = true;
+    expect(await check("5903", "TIME_CLOCK")).toMatchObject({ gateActive: false, presence: "OUT" });
+  });
+
+  it("is off where the gate has gone quiet, whatever the scan", async () => {
+    state.gateAlive = false;
+    expect(await check("5903", "TIME_CLOCK")).toMatchObject({ gateActive: false });
+    expect(state.askedNextScan).toBe(0);
+  });
+
+  it("costs a site that does not enforce it nothing", async () => {
+    state.gateMode = "REPORT";
+    expect(await check("5903", "TIME_CLOCK")).toMatchObject({ gateActive: false });
+    expect(state.askedNextScan).toBe(0);
   });
 });
